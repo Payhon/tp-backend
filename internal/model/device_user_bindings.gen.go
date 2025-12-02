@@ -15,8 +15,8 @@ type DeviceUserBinding struct {
 	ID          string     `gorm:"column:id;primaryKey" json:"id"`
 	UserID      string     `gorm:"column:user_id;not null" json:"user_id"`
 	DeviceID    string     `gorm:"column:device_id;not null" json:"device_id"`
-	BindingTime *time.Time `gorm:"column:binding_time" json:"binding_time"`
-	IsOwner     *bool      `gorm:"column:is_owner;default:false" json:"is_owner"`
+	BindingTime *time.Time `gorm:"column:binding_time;default:now()" json:"binding_time"`
+	IsOwner     *bool      `gorm:"column:is_owner" json:"is_owner"`
 	Remark      *string    `gorm:"column:remark" json:"remark"`
 }
 

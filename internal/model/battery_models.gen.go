@@ -12,17 +12,17 @@ const TableNameBatteryModel = "battery_models"
 
 // BatteryModel mapped from table <battery_models>
 type BatteryModel struct {
-	ID             string     `gorm:"column:id;primaryKey" json:"id"`
-	Name           string     `gorm:"column:name;not null" json:"name"`
-	VoltageRated   *float64   `gorm:"column:voltage_rated" json:"voltage_rated"`
-	CapacityRated  *float64   `gorm:"column:capacity_rated" json:"capacity_rated"`
-	CellCount      *int32     `gorm:"column:cell_count" json:"cell_count"`
-	NominalPower   *float64   `gorm:"column:nominal_power" json:"nominal_power"`
-	WarrantyMonths *int32     `gorm:"column:warranty_months" json:"warranty_months"`
-	Description    *string    `gorm:"column:description" json:"description"`
-	TenantID       string     `gorm:"column:tenant_id;not null" json:"tenant_id"`
-	CreatedAt      *time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt      *time.Time `gorm:"column:updated_at" json:"updated_at"`
+	ID            string     `gorm:"column:id;primaryKey" json:"id"`
+	Name          string     `gorm:"column:name;not null" json:"name"`
+	VoltageRated  *float64   `gorm:"column:voltage_rated" json:"voltage_rated"`
+	CapacityRated *float64   `gorm:"column:capacity_rated" json:"capacity_rated"`
+	CellCount     *int32     `gorm:"column:cell_count" json:"cell_count"`
+	NominalPower  *float64   `gorm:"column:nominal_power" json:"nominal_power"`
+	WarrantyMonth *int32     `gorm:"column:warranty_months" json:"warranty_months"`
+	Description   *string    `gorm:"column:description" json:"description"`
+	TenantID      string     `gorm:"column:tenant_id;not null" json:"tenant_id"`
+	CreatedAt     *time.Time `gorm:"column:created_at;default:now()" json:"created_at"`
+	UpdatedAt     *time.Time `gorm:"column:updated_at;default:now()" json:"updated_at"`
 }
 
 // TableName BatteryModel's table name

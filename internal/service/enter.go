@@ -49,6 +49,11 @@ type ServiceGroup struct {
 	SystemMonitor
 	DeviceAuth
 	DeviceTopicMapping
+	Dealer         // BMS: 经销商管理
+	BatteryModel   // BMS: 电池型号管理
+	DeviceTransfer // BMS: 设备转移
+	DeviceBinding  // BMS: 设备绑定
+	Warranty       // BMS: 维保管理
 }
 
 var GroupApp = new(ServiceGroup)

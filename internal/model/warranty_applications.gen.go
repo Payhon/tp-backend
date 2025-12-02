@@ -12,18 +12,18 @@ const TableNameWarrantyApplication = "warranty_applications"
 
 // WarrantyApplication mapped from table <warranty_applications>
 type WarrantyApplication struct {
-	ID         string     `gorm:"column:id;primaryKey" json:"id"`
-	DeviceID   string     `gorm:"column:device_id;not null" json:"device_id"`
-	UserID     string     `gorm:"column:user_id;not null" json:"user_id"`
-	Type       *string    `gorm:"column:type" json:"type"` // REPAIR, RETURN, EXCHANGE
-	Description *string   `gorm:"column:description" json:"description"`
-	Images     *string    `gorm:"column:images;type:jsonb" json:"images"`
-	Status     *string    `gorm:"column:status;default:PENDING" json:"status"` // PENDING, APPROVED, REJECTED, PROCESSING, COMPLETED
-	ResultInfo *string    `gorm:"column:result_info;type:jsonb" json:"result_info"`
-	HandlerID  *string    `gorm:"column:handler_id" json:"handler_id"`
-	TenantID   string     `gorm:"column:tenant_id;not null" json:"tenant_id"`
-	CreatedAt  *time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt  *time.Time `gorm:"column:updated_at" json:"updated_at"`
+	ID          string     `gorm:"column:id;primaryKey" json:"id"`
+	DeviceID    string     `gorm:"column:device_id;not null" json:"device_id"`
+	UserID      string     `gorm:"column:user_id;not null" json:"user_id"`
+	Type        *string    `gorm:"column:type" json:"type"`
+	Description *string    `gorm:"column:description" json:"description"`
+	Image       *string    `gorm:"column:images" json:"images"`
+	Status      *string    `gorm:"column:status;default:PENDING" json:"status"`
+	ResultInfo  *string    `gorm:"column:result_info" json:"result_info"`
+	HandlerID   *string    `gorm:"column:handler_id" json:"handler_id"`
+	TenantID    string     `gorm:"column:tenant_id;not null" json:"tenant_id"`
+	CreatedAt   *time.Time `gorm:"column:created_at;default:now()" json:"created_at"`
+	UpdatedAt   *time.Time `gorm:"column:updated_at;default:now()" json:"updated_at"`
 }
 
 // TableName WarrantyApplication's table name

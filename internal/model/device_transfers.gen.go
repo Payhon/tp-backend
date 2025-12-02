@@ -12,14 +12,14 @@ const TableNameDeviceTransfer = "device_transfers"
 
 // DeviceTransfer mapped from table <device_transfers>
 type DeviceTransfer struct {
-	ID            string     `gorm:"column:id;primaryKey" json:"id"`
-	DeviceID      string     `gorm:"column:device_id;not null" json:"device_id"`
-	FromDealerID  *string    `gorm:"column:from_dealer_id" json:"from_dealer_id"`
-	ToDealerID    *string    `gorm:"column:to_dealer_id" json:"to_dealer_id"`
-	OperatorID    *string    `gorm:"column:operator_id" json:"operator_id"`
-	TransferTime  *time.Time `gorm:"column:transfer_time" json:"transfer_time"`
-	Remark        *string    `gorm:"column:remark" json:"remark"`
-	TenantID      string     `gorm:"column:tenant_id;not null" json:"tenant_id"`
+	ID           string     `gorm:"column:id;primaryKey" json:"id"`
+	DeviceID     string     `gorm:"column:device_id;not null" json:"device_id"`
+	FromDealerID *string    `gorm:"column:from_dealer_id" json:"from_dealer_id"`
+	ToDealerID   *string    `gorm:"column:to_dealer_id" json:"to_dealer_id"`
+	OperatorID   *string    `gorm:"column:operator_id" json:"operator_id"`
+	TransferTime *time.Time `gorm:"column:transfer_time;default:now()" json:"transfer_time"`
+	Remark       *string    `gorm:"column:remark" json:"remark"`
+	TenantID     string     `gorm:"column:tenant_id;not null" json:"tenant_id"`
 }
 
 // TableName DeviceTransfer's table name

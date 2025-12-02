@@ -85,6 +85,12 @@ var (
 	UserAddress                *userAddress
 	DeviceStatusHistory        *deviceStatusHistory
 	DeviceTopicMapping         *deviceTopicMapping
+	BatteryModel               *batteryModel
+	Dealer                     *dealer
+	DeviceBattery              *deviceBattery
+	DeviceTransfer             *deviceTransfer
+	DeviceUserBinding          *deviceUserBinding
+	WarrantyApplication        *warrantyApplication
 )
 
 func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
@@ -157,6 +163,12 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	UserAddress = &Q.UserAddress
 	DeviceStatusHistory = &Q.DeviceStatusHistory
 	DeviceTopicMapping = &Q.DeviceTopicMapping
+	BatteryModel = &Q.BatteryModel
+	Dealer = &Q.Dealer
+	DeviceBattery = &Q.DeviceBattery
+	DeviceTransfer = &Q.DeviceTransfer
+	DeviceUserBinding = &Q.DeviceUserBinding
+	WarrantyApplication = &Q.WarrantyApplication
 }
 
 func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
@@ -230,6 +242,12 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		UserAddress:                newUserAddress(db, opts...),
 		DeviceStatusHistory:        newDeviceStatusHistory(db, opts...),
 		DeviceTopicMapping:         newDeviceTopicMapping(db, opts...),
+		BatteryModel:               newBatteryModel(db, opts...),
+		Dealer:                     newDealer(db, opts...),
+		DeviceBattery:              newDeviceBattery(db, opts...),
+		DeviceTransfer:             newDeviceTransfer(db, opts...),
+		DeviceUserBinding:          newDeviceUserBinding(db, opts...),
+		WarrantyApplication:        newWarrantyApplication(db, opts...),
 	}
 }
 
@@ -304,6 +322,12 @@ type Query struct {
 	UserAddress                userAddress
 	DeviceStatusHistory        deviceStatusHistory
 	DeviceTopicMapping         deviceTopicMapping
+	BatteryModel               batteryModel
+	Dealer                     dealer
+	DeviceBattery              deviceBattery
+	DeviceTransfer             deviceTransfer
+	DeviceUserBinding          deviceUserBinding
+	WarrantyApplication        warrantyApplication
 }
 
 func (q *Query) Available() bool { return q.db != nil }
@@ -379,6 +403,12 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		UserAddress:                q.UserAddress.clone(db),
 		DeviceStatusHistory:        q.DeviceStatusHistory.clone(db),
 		DeviceTopicMapping:         q.DeviceTopicMapping.clone(db),
+		BatteryModel:               q.BatteryModel.clone(db),
+		Dealer:                     q.Dealer.clone(db),
+		DeviceBattery:              q.DeviceBattery.clone(db),
+		DeviceTransfer:             q.DeviceTransfer.clone(db),
+		DeviceUserBinding:          q.DeviceUserBinding.clone(db),
+		WarrantyApplication:        q.WarrantyApplication.clone(db),
 	}
 }
 
@@ -461,6 +491,12 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		UserAddress:                q.UserAddress.replaceDB(db),
 		DeviceStatusHistory:        q.DeviceStatusHistory.replaceDB(db),
 		DeviceTopicMapping:         q.DeviceTopicMapping.replaceDB(db),
+		BatteryModel:               q.BatteryModel.replaceDB(db),
+		Dealer:                     q.Dealer.replaceDB(db),
+		DeviceBattery:              q.DeviceBattery.replaceDB(db),
+		DeviceTransfer:             q.DeviceTransfer.replaceDB(db),
+		DeviceUserBinding:          q.DeviceUserBinding.replaceDB(db),
+		WarrantyApplication:        q.WarrantyApplication.replaceDB(db),
 	}
 }
 
@@ -533,6 +569,12 @@ type queryCtx struct {
 	UserAddress                IUserAddressDo
 	DeviceStatusHistory        IDeviceStatusHistoryDo
 	DeviceTopicMapping         IDeviceTopicMappingDo
+	BatteryModel               IBatteryModelDo
+	Dealer                     IDealerDo
+	DeviceBattery              IDeviceBatteryDo
+	DeviceTransfer             IDeviceTransferDo
+	DeviceUserBinding          IDeviceUserBindingDo
+	WarrantyApplication        IWarrantyApplicationDo
 }
 
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
@@ -605,6 +647,12 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 		UserAddress:                q.UserAddress.WithContext(ctx),
 		DeviceStatusHistory:        q.DeviceStatusHistory.WithContext(ctx),
 		DeviceTopicMapping:         q.DeviceTopicMapping.WithContext(ctx),
+		BatteryModel:               q.BatteryModel.WithContext(ctx),
+		Dealer:                     q.Dealer.WithContext(ctx),
+		DeviceBattery:              q.DeviceBattery.WithContext(ctx),
+		DeviceTransfer:             q.DeviceTransfer.WithContext(ctx),
+		DeviceUserBinding:          q.DeviceUserBinding.WithContext(ctx),
+		WarrantyApplication:        q.WarrantyApplication.WithContext(ctx),
 	}
 }
 

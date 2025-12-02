@@ -12,18 +12,18 @@ const TableNameDeviceBattery = "device_batteries"
 
 // DeviceBattery mapped from table <device_batteries>
 type DeviceBattery struct {
-	DeviceID          string     `gorm:"column:device_id;primaryKey" json:"device_id"`
-	BatteryModelID    *string    `gorm:"column:battery_model_id" json:"battery_model_id"`
-	DealerID          *string    `gorm:"column:dealer_id" json:"dealer_id"`
-	ProductionDate    *time.Time `gorm:"column:production_date" json:"production_date"`
+	DeviceID           string     `gorm:"column:device_id;primaryKey" json:"device_id"`
+	BatteryModelID     *string    `gorm:"column:battery_model_id" json:"battery_model_id"`
+	DealerID           *string    `gorm:"column:dealer_id" json:"dealer_id"`
+	ProductionDate     *time.Time `gorm:"column:production_date" json:"production_date"`
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date" json:"warranty_expire_date"`
-	ActivationDate    *time.Time `gorm:"column:activation_date" json:"activation_date"`
-	ActivationStatus  *string    `gorm:"column:activation_status;default:INACTIVE" json:"activation_status"`
-	TransferStatus    *string    `gorm:"column:transfer_status;default:FACTORY" json:"transfer_status"`
-	BatchNumber       *string    `gorm:"column:batch_number" json:"batch_number"`
-	SOC               *float64   `gorm:"column:soc" json:"soc"`
-	SOH               *float64   `gorm:"column:soh" json:"soh"`
-	UpdatedAt         *time.Time `gorm:"column:updated_at" json:"updated_at"`
+	ActivationDate     *time.Time `gorm:"column:activation_date" json:"activation_date"`
+	ActivationStatus   *string    `gorm:"column:activation_status;default:INACTIVE;comment:激活状态: INACTIVE, ACTIVE" json:"activation_status"` // 激活状态: INACTIVE, ACTIVE
+	TransferStatus     *string    `gorm:"column:transfer_status;default:FACTORY;comment:流转状态: FACTORY, DEALER, USER" json:"transfer_status"` // 流转状态: FACTORY, DEALER, USER
+	BatchNumber        *string    `gorm:"column:batch_number" json:"batch_number"`
+	Soc                *float64   `gorm:"column:soc" json:"soc"`
+	Soh                *float64   `gorm:"column:soh" json:"soh"`
+	UpdatedAt          *time.Time `gorm:"column:updated_at;default:now()" json:"updated_at"`
 }
 
 // TableName DeviceBattery's table name

@@ -12,8 +12,8 @@ const TableNameDealer = "dealers"
 
 // Dealer mapped from table <dealers>
 type Dealer struct {
-	ID            string     `gorm:"column:id;primaryKey" json:"id"`
-	Name          string     `gorm:"column:name;not null" json:"name"`
+	ID            string     `gorm:"column:id;primaryKey;comment:经销商ID" json:"id"`   // 经销商ID
+	Name          string     `gorm:"column:name;not null;comment:经销商名称" json:"name"` // 经销商名称
 	ContactPerson *string    `gorm:"column:contact_person" json:"contact_person"`
 	Phone         *string    `gorm:"column:phone" json:"phone"`
 	Email         *string    `gorm:"column:email" json:"email"`
@@ -22,9 +22,9 @@ type Dealer struct {
 	District      *string    `gorm:"column:district" json:"district"`
 	Address       *string    `gorm:"column:address" json:"address"`
 	ParentID      *string    `gorm:"column:parent_id" json:"parent_id"`
-	TenantID      string     `gorm:"column:tenant_id;not null" json:"tenant_id"`
-	CreatedAt     *time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt     *time.Time `gorm:"column:updated_at" json:"updated_at"`
+	TenantID      string     `gorm:"column:tenant_id;not null;comment:租户ID" json:"tenant_id"` // 租户ID
+	CreatedAt     *time.Time `gorm:"column:created_at;default:now()" json:"created_at"`
+	UpdatedAt     *time.Time `gorm:"column:updated_at;default:now()" json:"updated_at"`
 	Remark        *string    `gorm:"column:remark" json:"remark"`
 }
 
