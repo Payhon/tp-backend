@@ -48,8 +48,13 @@ type Controller struct {
 	OpenAPIKeyApi                 // OpenAPI密钥
 	MessagePushApi
 	SystemMonitorApi
-	DeviceAuthApi // 设备动态认证
+	DeviceAuthApi         // 设备动态认证
 	DeviceTopicMappingApi
+	DealerApi         // BMS: 经销商管理
+	BatteryModelApi   // BMS: 电池型号管理
+	DeviceTransferApi // BMS: 设备转移
+	DeviceBindingApi  // BMS: 设备绑定(APP)
+	WarrantyApi       // BMS: 维保管理
 }
 
 var (

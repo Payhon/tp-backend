@@ -187,6 +187,16 @@ func RouterInit() *gin.Engine {
 
 			// 初始化系统监控路由
 			apps.Model.SystemMonitor.InitSystemMonitor(v1, m)
+
+			// BMS 模块路由（附加经销商数据权限中间件）
+			bmsRouter := v1.Group("")
+			bmsRouter.Use(middleware.DealerAuthMiddleware())
+
+			apps.Model.Dealer.InitDealer(bmsRouter)                 // 经销商管理
+			apps.Model.BatteryModel.InitBatteryModel(bmsRouter)     // 电池型号管理
+			apps.Model.DeviceTransfer.InitDeviceTransfer(bmsRouter) // 设备转移
+			apps.Model.DeviceBinding.InitDeviceBinding(bmsRouter)   // APP设备绑定
+			apps.Model.Warranty.InitWarranty(bmsRouter)             // 维保管理
 		}
 	}
 
