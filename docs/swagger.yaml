@@ -14,6 +14,232 @@ definitions:
         description: 告警设备数量
         type: integer
     type: object
+  model.BatteryModel:
+    properties:
+      capacity_rated:
+        type: number
+      cell_count:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      nominal_power:
+        type: number
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      voltage_rated:
+        type: number
+      warranty_months:
+        type: integer
+    type: object
+  model.BatteryModelCreateReq:
+    properties:
+      capacity_rated:
+        type: number
+      cell_count:
+        type: integer
+      description:
+        type: string
+      name:
+        type: string
+      nominal_power:
+        type: number
+      voltage_rated:
+        type: number
+      warranty_months:
+        type: integer
+    required:
+    - name
+    type: object
+  model.BatteryModelListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.BatteryModelResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.BatteryModelResp:
+    properties:
+      capacity_rated:
+        type: number
+      cell_count:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      device_count:
+        description: 关联设备数
+        type: integer
+      id:
+        type: string
+      name:
+        type: string
+      nominal_power:
+        type: number
+      voltage_rated:
+        type: number
+      warranty_months:
+        type: integer
+    type: object
+  model.BatteryModelUpdateReq:
+    properties:
+      capacity_rated:
+        type: number
+      cell_count:
+        type: integer
+      description:
+        type: string
+      name:
+        type: string
+      nominal_power:
+        type: number
+      voltage_rated:
+        type: number
+      warranty_months:
+        type: integer
+    type: object
+  model.Dealer:
+    properties:
+      address:
+        type: string
+      city:
+        type: string
+      contact_person:
+        type: string
+      created_at:
+        type: string
+      district:
+        type: string
+      email:
+        type: string
+      id:
+        description: 经销商ID
+        type: string
+      name:
+        description: 经销商名称
+        type: string
+      parent_id:
+        type: string
+      phone:
+        type: string
+      province:
+        type: string
+      remark:
+        type: string
+      tenant_id:
+        description: 租户ID
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.DealerCreateReq:
+    properties:
+      address:
+        type: string
+      city:
+        type: string
+      contact_person:
+        type: string
+      district:
+        type: string
+      email:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+      phone:
+        type: string
+      province:
+        type: string
+      remark:
+        type: string
+    required:
+    - name
+    type: object
+  model.DealerListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.DealerResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.DealerResp:
+    properties:
+      active_count:
+        description: 激活设备数
+        type: integer
+      address:
+        type: string
+      city:
+        type: string
+      contact_person:
+        type: string
+      created_at:
+        type: string
+      device_count:
+        description: 设备总数
+        type: integer
+      district:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+      phone:
+        type: string
+      province:
+        type: string
+      remark:
+        type: string
+    type: object
+  model.DealerUpdateReq:
+    properties:
+      address:
+        type: string
+      city:
+        type: string
+      contact_person:
+        type: string
+      district:
+        type: string
+      email:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+      phone:
+        type: string
+      province:
+        type: string
+      remark:
+        type: string
+    type: object
   model.DeviceAuthReq:
     properties:
       device_name:
@@ -24,8 +250,16 @@ definitions:
         description: 设备唯一标识
         maxLength: 255
         type: string
+      parent_device_number:
+        description: 父设备编号(可选，用于子设备关联)
+        maxLength: 255
+        type: string
       product_key:
         description: 产品密钥(可选，用于产品关联)
+        maxLength: 255
+        type: string
+      sub_device_addr:
+        description: 子设备地址(可选，用于子设备关联)
         maxLength: 255
         type: string
       template_secret:
@@ -43,6 +277,111 @@ definitions:
         type: string
       voucher:
         description: 设备凭证
+        type: string
+    type: object
+  model.DeviceBindReq:
+    properties:
+      device_number:
+        type: string
+      device_secret:
+        description: 设备密钥（可选，用于验证）
+        type: string
+    required:
+    - device_number
+    type: object
+  model.DeviceTransferListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.DeviceTransferResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.DeviceTransferReq:
+    properties:
+      device_ids:
+        items:
+          type: string
+        type: array
+      remark:
+        type: string
+      to_dealer_id:
+        description: 为空表示转移给厂家
+        type: string
+    required:
+    - device_ids
+    type: object
+  model.DeviceTransferResp:
+    properties:
+      device_id:
+        type: string
+      device_model:
+        type: string
+      device_number:
+        type: string
+      from_dealer_id:
+        type: string
+      from_dealer_name:
+        type: string
+      id:
+        type: string
+      operator_id:
+        type: string
+      operator_name:
+        type: string
+      remark:
+        type: string
+      to_dealer_id:
+        type: string
+      to_dealer_name:
+        type: string
+      transfer_time:
+        type: string
+    type: object
+  model.DeviceUnbindReq:
+    properties:
+      device_id:
+        type: string
+    required:
+    - device_id
+    type: object
+  model.DeviceUserBindingListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.DeviceUserBindingResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.DeviceUserBindingResp:
+    properties:
+      binding_time:
+        type: string
+      device_id:
+        type: string
+      device_name:
+        type: string
+      device_number:
+        type: string
+      id:
+        type: string
+      is_owner:
+        type: boolean
+      user_id:
+        type: string
+      user_name:
+        type: string
+      user_phone:
         type: string
     type: object
   model.LoginReq:
@@ -72,6 +411,154 @@ definitions:
         type: integer
       token:
         description: 登录凭证
+        type: string
+    type: object
+  model.Response:
+    properties:
+      code:
+        description: 业务状态码
+        example: 200
+        type: integer
+      data:
+        description: 业务数据
+      message:
+        description: 提示信息
+        example: success
+        type: string
+    type: object
+  model.UpdateUserAddressReq:
+    properties:
+      additional_info:
+        description: 附加信息
+        maxLength: 500
+        type: string
+      address_label:
+        description: 地址标签
+        maxLength: 50
+        type: string
+      city:
+        description: 城市
+        maxLength: 50
+        type: string
+      country:
+        description: 国家
+        maxLength: 50
+        type: string
+      detailed_address:
+        description: 详细地址
+        maxLength: 200
+        type: string
+      district:
+        description: 区县
+        maxLength: 50
+        type: string
+      latitude:
+        description: 纬度
+        maxLength: 20
+        type: string
+      longitude:
+        description: 经度
+        maxLength: 20
+        type: string
+      postal_code:
+        description: 邮政编码
+        maxLength: 10
+        type: string
+      province:
+        description: 省份
+        maxLength: 50
+        type: string
+      street:
+        description: 街道/乡镇
+        maxLength: 100
+        type: string
+    type: object
+  model.WarrantyApplicationCreateReq:
+    properties:
+      description:
+        type: string
+      device_id:
+        type: string
+      images:
+        description: 图片URL数组
+        items:
+          type: string
+        type: array
+      type:
+        enum:
+        - REPAIR
+        - RETURN
+        - EXCHANGE
+        type: string
+    required:
+    - device_id
+    - type
+    type: object
+  model.WarrantyApplicationListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.WarrantyApplicationResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.WarrantyApplicationResp:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      device_id:
+        type: string
+      device_name:
+        type: string
+      device_number:
+        type: string
+      handler_id:
+        type: string
+      handler_name:
+        type: string
+      id:
+        type: string
+      images:
+        items:
+          type: string
+        type: array
+      result_info:
+        additionalProperties: true
+        type: object
+      status:
+        type: string
+      type:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      user_name:
+        type: string
+      user_phone:
+        type: string
+    type: object
+  model.WarrantyApplicationUpdateReq:
+    properties:
+      handler_id:
+        type: string
+      result_info:
+        additionalProperties: true
+        description: 处理结果信息
+        type: object
+      status:
+        enum:
+        - APPROVED
+        - REJECTED
+        - PROCESSING
+        - COMPLETED
         type: string
     type: object
   response.Response:
@@ -104,6 +591,84 @@ paths:
       summary: 获取租户下告警状态的设备数量
       tags:
       - 告警管理
+  /api/v1/app/device/bind:
+    post:
+      consumes:
+      - application/json
+      description: 终端用户通过设备编号与可选密钥绑定设备
+      parameters:
+      - description: 绑定请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.DeviceBindReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: APP绑定设备
+      tags:
+      - APP-Device
+  /api/v1/app/device/list:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询用户绑定的设备列表（默认当前登录用户）
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 用户ID（可选，不传则为当前用户）
+        in: query
+        name: user_id
+        type: string
+      - description: 设备编号
+        in: query
+        name: device_number
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DeviceUserBindingListResp'
+      summary: 获取用户绑定设备列表
+      tags:
+      - APP-Device
+  /api/v1/app/device/unbind:
+    post:
+      consumes:
+      - application/json
+      description: 终端用户解绑已绑定的设备
+      parameters:
+      - description: 解绑请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.DeviceUnbindReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: APP解绑设备
+      tags:
+      - APP-Device
   /api/v1/attribute/datas/{id}:
     delete:
       responses: {}
@@ -112,6 +677,124 @@ paths:
   /api/v1/attribute/datas/set/logs:
     get:
       responses: {}
+  /api/v1/battery/model:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询电池型号列表
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 型号名称
+        in: query
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryModelListResp'
+      summary: 获取电池型号列表
+      tags:
+      - 电池型号管理
+    post:
+      consumes:
+      - application/json
+      description: 创建新的电池型号
+      parameters:
+      - description: 电池型号信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.BatteryModelCreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryModel'
+      summary: 创建电池型号
+      tags:
+      - 电池型号管理
+  /api/v1/battery/model/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除电池型号（需确保无关联设备）
+      parameters:
+      - description: 电池型号ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 删除电池型号
+      tags:
+      - 电池型号管理
+    get:
+      consumes:
+      - application/json
+      description: 根据ID获取电池型号详细信息
+      parameters:
+      - description: 电池型号ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryModelResp'
+      summary: 获取电池型号详情
+      tags:
+      - 电池型号管理
+    put:
+      consumes:
+      - application/json
+      description: 更新电池型号信息
+      parameters:
+      - description: 电池型号ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 电池型号信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.BatteryModelUpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryModel'
+      summary: 更新电池型号
+      tags:
+      - 电池型号管理
   /api/v1/board:
     get:
       responses: {}
@@ -192,6 +875,136 @@ paths:
       responses: {}
     put:
       responses: {}
+  /api/v1/dealer:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询经销商列表
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 经销商名称
+        in: query
+        name: name
+        type: string
+      - description: 联系电话
+        in: query
+        name: phone
+        type: string
+      - description: 省份
+        in: query
+        name: province
+        type: string
+      - description: 城市
+        in: query
+        name: city
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DealerListResp'
+      summary: 获取经销商列表
+      tags:
+      - 经销商管理
+    post:
+      consumes:
+      - application/json
+      description: 创建新的经销商
+      parameters:
+      - description: 经销商信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.DealerCreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Dealer'
+      summary: 创建经销商
+      tags:
+      - 经销商管理
+  /api/v1/dealer/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除经销商（需确保无下级经销商和关联设备）
+      parameters:
+      - description: 经销商ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 删除经销商
+      tags:
+      - 经销商管理
+    get:
+      consumes:
+      - application/json
+      description: 根据ID获取经销商详细信息
+      parameters:
+      - description: 经销商ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DealerResp'
+      summary: 获取经销商详情
+      tags:
+      - 经销商管理
+    put:
+      consumes:
+      - application/json
+      description: 更新经销商信息
+      parameters:
+      - description: 经销商ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 经销商信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.DealerUpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Dealer'
+      summary: 更新经销商
+      tags:
+      - 经销商管理
   /api/v1/device:
     get:
       responses: {}
@@ -276,6 +1089,9 @@ paths:
       summary: 获取设备在线状态
       tags:
       - 设备
+  /api/v1/device/status/history:
+    get:
+      responses: {}
   /api/v1/device/template:
     get:
       responses: {}
@@ -295,6 +1111,90 @@ paths:
   /api/v1/device/template/menu:
     get:
       responses: {}
+  /api/v1/device/template/selector:
+    get:
+      responses: {}
+  /api/v1/device/template/stats:
+    get:
+      responses: {}
+  /api/v1/device/topic-mappings:
+    get:
+      responses: {}
+    post:
+      responses: {}
+  /api/v1/device/topic-mappings/{id}:
+    delete:
+      responses: {}
+    put:
+      responses: {}
+  /api/v1/device/transfer:
+    post:
+      consumes:
+      - application/json
+      description: 将设备从一个经销商转移到另一个经销商，或转移回厂家
+      parameters:
+      - description: 转移请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.DeviceTransferReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 批量转移设备
+      tags:
+      - 设备转移
+  /api/v1/device/transfer/history:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询设备转移历史记录
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 设备编号
+        in: query
+        name: device_number
+        type: string
+      - description: 原经销商ID
+        in: query
+        name: from_dealer_id
+        type: string
+      - description: 目标经销商ID
+        in: query
+        name: to_dealer_id
+        type: string
+      - description: 开始时间
+        in: query
+        name: start_time
+        type: string
+      - description: 结束时间
+        in: query
+        name: end_time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DeviceTransferListResp'
+      summary: 获取设备转移记录
+      tags:
+      - 设备转移
   /api/v1/device_config:
     get:
       responses: {}
@@ -311,6 +1211,9 @@ paths:
     put:
       responses: {}
   /api/v1/device_config/menu:
+    get:
+      responses: {}
+  /api/v1/devices/{device_id}/diagnostics:
     get:
       responses: {}
   /api/v1/dict:
@@ -434,6 +1337,9 @@ paths:
       responses: {}
     put:
       responses: {}
+  /api/v1/plugin/devices:
+    get:
+      responses: {}
   /api/v1/protocol_plugin:
     get:
       responses: {}
@@ -529,6 +1435,9 @@ paths:
   /api/v1/telemetry/datas/statistic:
     get:
       responses: {}
+  /api/v1/telemetry/datas/statistic/batch:
+    get:
+      responses: {}
   /api/v1/ui_elements:
     get:
       responses: {}
@@ -554,6 +1463,36 @@ paths:
       responses: {}
     get:
       responses: {}
+  /api/v1/user/address/{id}:
+    put:
+      consumes:
+      - application/json
+      description: 更新指定用户的地址信息，支持创建新地址或更新现有地址
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 地址信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateUserAddressReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema: {}
+        "400":
+          description: 错误响应
+          schema:
+            $ref: '#/definitions/errcode.Error'
+      summary: 更新用户地址信息
+      tags:
+      - 用户管理
   /api/v1/user/detail:
     get:
       responses: {}
@@ -563,6 +1502,124 @@ paths:
   /api/v1/user/update:
     put:
       responses: {}
+  /api/v1/warranty:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询维保/售后申请列表
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 设备编号
+        in: query
+        name: device_number
+        type: string
+      - description: 申请人用户ID
+        in: query
+        name: user_id
+        type: string
+      - description: 类型(REPAIR/RETURN/EXCHANGE)
+        in: query
+        name: type
+        type: string
+      - description: 状态(PENDING/APPROVED/REJECTED/PROCESSING/COMPLETED)
+        in: query
+        name: status
+        type: string
+      - description: 开始时间(yyyy-MM-dd HH:mm:ss)
+        in: query
+        name: start_time
+        type: string
+      - description: 结束时间(yyyy-MM-dd HH:mm:ss)
+        in: query
+        name: end_time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WarrantyApplicationListResp'
+      summary: 获取维保申请列表
+      tags:
+      - Warranty
+    post:
+      consumes:
+      - application/json
+      description: 终端用户或经销商创建维保/售后申请
+      parameters:
+      - description: 维保申请信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.WarrantyApplicationCreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WarrantyApplicationResp'
+      summary: 创建维保申请
+      tags:
+      - Warranty
+  /api/v1/warranty/{id}:
+    get:
+      consumes:
+      - application/json
+      description: 根据ID获取维保申请完整信息
+      parameters:
+      - description: 维保申请ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WarrantyApplicationResp'
+      summary: 获取维保申请详情
+      tags:
+      - Warranty
+    put:
+      consumes:
+      - application/json
+      description: 审核/处理维保申请，更新状态与处理结果
+      parameters:
+      - description: 维保申请ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 更新内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.WarrantyApplicationUpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 更新维保申请状态
+      tags:
+      - Warranty
 schemes:
 - http
 securityDefinitions:

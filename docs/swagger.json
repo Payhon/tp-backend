@@ -34,6 +34,125 @@
                 }
             }
         },
+        "/api/v1/app/device/bind": {
+            "post": {
+                "description": "终端用户通过设备编号与可选密钥绑定设备",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APP-Device"
+                ],
+                "summary": "APP绑定设备",
+                "parameters": [
+                    {
+                        "description": "绑定请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DeviceBindReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/app/device/list": {
+            "get": {
+                "description": "分页查询用户绑定的设备列表（默认当前登录用户）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APP-Device"
+                ],
+                "summary": "获取用户绑定设备列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "page_size",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "用户ID（可选，不传则为当前用户）",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "设备编号",
+                        "name": "device_number",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.DeviceUserBindingListResp"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/app/device/unbind": {
+            "post": {
+                "description": "终端用户解绑已绑定的设备",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APP-Device"
+                ],
+                "summary": "APP解绑设备",
+                "parameters": [
+                    {
+                        "description": "解绑请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DeviceUnbindReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/attribute/datas/set/logs": {
             "get": {
                 "responses": {}
@@ -45,6 +164,184 @@
             },
             "delete": {
                 "responses": {}
+            }
+        },
+        "/api/v1/battery/model": {
+            "get": {
+                "description": "分页查询电池型号列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "电池型号管理"
+                ],
+                "summary": "获取电池型号列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "page_size",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "型号名称",
+                        "name": "name",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.BatteryModelListResp"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "创建新的电池型号",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "电池型号管理"
+                ],
+                "summary": "创建电池型号",
+                "parameters": [
+                    {
+                        "description": "电池型号信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.BatteryModelCreateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.BatteryModel"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/battery/model/{id}": {
+            "get": {
+                "description": "根据ID获取电池型号详细信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "电池型号管理"
+                ],
+                "summary": "获取电池型号详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "电池型号ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.BatteryModelResp"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "更新电池型号信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "电池型号管理"
+                ],
+                "summary": "更新电池型号",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "电池型号ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "电池型号信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.BatteryModelUpdateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.BatteryModel"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "删除电池型号（需确保无关联设备）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "电池型号管理"
+                ],
+                "summary": "删除电池型号",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "电池型号ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
             }
         },
         "/api/v1/board": {
@@ -177,6 +474,202 @@
                 "responses": {}
             }
         },
+        "/api/v1/dealer": {
+            "get": {
+                "description": "分页查询经销商列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "经销商管理"
+                ],
+                "summary": "获取经销商列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "page_size",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "经销商名称",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "联系电话",
+                        "name": "phone",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "城市",
+                        "name": "city",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.DealerListResp"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "创建新的经销商",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "经销商管理"
+                ],
+                "summary": "创建经销商",
+                "parameters": [
+                    {
+                        "description": "经销商信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DealerCreateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Dealer"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dealer/{id}": {
+            "get": {
+                "description": "根据ID获取经销商详细信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "经销商管理"
+                ],
+                "summary": "获取经销商详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "经销商ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.DealerResp"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "更新经销商信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "经销商管理"
+                ],
+                "summary": "更新经销商",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "经销商ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "经销商信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DealerUpdateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Dealer"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "删除经销商（需确保无下级经销商和关联设备）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "经销商管理"
+                ],
+                "summary": "删除经销商",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "经销商ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/device": {
             "get": {
                 "responses": {}
@@ -304,6 +797,11 @@
                 "responses": {}
             }
         },
+        "/api/v1/device/status/history": {
+            "get": {
+                "responses": {}
+            }
+        },
         "/api/v1/device/template": {
             "get": {
                 "responses": {}
@@ -330,9 +828,138 @@
                 "responses": {}
             }
         },
+        "/api/v1/device/template/selector": {
+            "get": {
+                "responses": {}
+            }
+        },
+        "/api/v1/device/template/stats": {
+            "get": {
+                "responses": {}
+            }
+        },
         "/api/v1/device/template/{id}": {
             "delete": {
                 "responses": {}
+            }
+        },
+        "/api/v1/device/topic-mappings": {
+            "get": {
+                "responses": {}
+            },
+            "post": {
+                "responses": {}
+            }
+        },
+        "/api/v1/device/topic-mappings/{id}": {
+            "put": {
+                "responses": {}
+            },
+            "delete": {
+                "responses": {}
+            }
+        },
+        "/api/v1/device/transfer": {
+            "post": {
+                "description": "将设备从一个经销商转移到另一个经销商，或转移回厂家",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设备转移"
+                ],
+                "summary": "批量转移设备",
+                "parameters": [
+                    {
+                        "description": "转移请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DeviceTransferReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/device/transfer/history": {
+            "get": {
+                "description": "分页查询设备转移历史记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设备转移"
+                ],
+                "summary": "获取设备转移记录",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "page_size",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "设备编号",
+                        "name": "device_number",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "原经销商ID",
+                        "name": "from_dealer_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "目标经销商ID",
+                        "name": "to_dealer_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间",
+                        "name": "end_time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.DeviceTransferListResp"
+                        }
+                    }
+                }
             }
         },
         "/api/v1/device/{id}": {
@@ -366,6 +993,11 @@
                 "responses": {}
             },
             "delete": {
+                "responses": {}
+            }
+        },
+        "/api/v1/devices/{device_id}/diagnostics": {
+            "get": {
                 "responses": {}
             }
         },
@@ -564,6 +1196,11 @@
                 "responses": {}
             }
         },
+        "/api/v1/plugin/devices": {
+            "get": {
+                "responses": {}
+            }
+        },
         "/api/v1/protocol_plugin": {
             "get": {
                 "responses": {}
@@ -716,6 +1353,11 @@
                 "responses": {}
             }
         },
+        "/api/v1/telemetry/datas/statistic/batch": {
+            "get": {
+                "responses": {}
+            }
+        },
         "/api/v1/ui_elements": {
             "get": {
                 "responses": {}
@@ -748,6 +1390,51 @@
                 "responses": {}
             }
         },
+        "/api/v1/user/address/{id}": {
+            "put": {
+                "description": "更新指定用户的地址信息，支持创建新地址或更新现有地址",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "更新用户地址信息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "地址信息",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.UpdateUserAddressReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {}
+                    },
+                    "400": {
+                        "description": "错误响应",
+                        "schema": {
+                            "$ref": "#/definitions/errcode.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/user/detail": {
             "get": {
                 "responses": {}
@@ -769,6 +1456,184 @@
             },
             "delete": {
                 "responses": {}
+            }
+        },
+        "/api/v1/warranty": {
+            "get": {
+                "description": "分页查询维保/售后申请列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Warranty"
+                ],
+                "summary": "获取维保申请列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "page_size",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "设备编号",
+                        "name": "device_number",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "申请人用户ID",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "类型(REPAIR/RETURN/EXCHANGE)",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态(PENDING/APPROVED/REJECTED/PROCESSING/COMPLETED)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间(yyyy-MM-dd HH:mm:ss)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间(yyyy-MM-dd HH:mm:ss)",
+                        "name": "end_time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.WarrantyApplicationListResp"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "终端用户或经销商创建维保/售后申请",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Warranty"
+                ],
+                "summary": "创建维保申请",
+                "parameters": [
+                    {
+                        "description": "维保申请信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.WarrantyApplicationCreateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.WarrantyApplicationResp"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/warranty/{id}": {
+            "get": {
+                "description": "根据ID获取维保申请完整信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Warranty"
+                ],
+                "summary": "获取维保申请详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "维保申请ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.WarrantyApplicationResp"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "审核/处理维保申请，更新状态与处理结果",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Warranty"
+                ],
+                "summary": "更新维保申请状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "维保申请ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新内容",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.WarrantyApplicationUpdateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
             }
         }
     },
@@ -795,6 +1660,347 @@
                 }
             }
         },
+        "model.BatteryModel": {
+            "type": "object",
+            "properties": {
+                "capacity_rated": {
+                    "type": "number"
+                },
+                "cell_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nominal_power": {
+                    "type": "number"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "voltage_rated": {
+                    "type": "number"
+                },
+                "warranty_months": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.BatteryModelCreateReq": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "capacity_rated": {
+                    "type": "number"
+                },
+                "cell_count": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nominal_power": {
+                    "type": "number"
+                },
+                "voltage_rated": {
+                    "type": "number"
+                },
+                "warranty_months": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.BatteryModelListResp": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.BatteryModelResp"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.BatteryModelResp": {
+            "type": "object",
+            "properties": {
+                "capacity_rated": {
+                    "type": "number"
+                },
+                "cell_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "device_count": {
+                    "description": "关联设备数",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nominal_power": {
+                    "type": "number"
+                },
+                "voltage_rated": {
+                    "type": "number"
+                },
+                "warranty_months": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.BatteryModelUpdateReq": {
+            "type": "object",
+            "properties": {
+                "capacity_rated": {
+                    "type": "number"
+                },
+                "cell_count": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nominal_power": {
+                    "type": "number"
+                },
+                "voltage_rated": {
+                    "type": "number"
+                },
+                "warranty_months": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.Dealer": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "contact_person": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "district": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "经销商ID",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "经销商名称",
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "description": "租户ID",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DealerCreateReq": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "contact_person": {
+                    "type": "string"
+                },
+                "district": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DealerListResp": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DealerResp"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.DealerResp": {
+            "type": "object",
+            "properties": {
+                "active_count": {
+                    "description": "激活设备数",
+                    "type": "integer"
+                },
+                "address": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "contact_person": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "device_count": {
+                    "description": "设备总数",
+                    "type": "integer"
+                },
+                "district": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DealerUpdateReq": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "contact_person": {
+                    "type": "string"
+                },
+                "district": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                }
+            }
+        },
         "model.DeviceAuthReq": {
             "type": "object",
             "required": [
@@ -812,8 +2018,18 @@
                     "type": "string",
                     "maxLength": 255
                 },
+                "parent_device_number": {
+                    "description": "父设备编号(可选，用于子设备关联)",
+                    "type": "string",
+                    "maxLength": 255
+                },
                 "product_key": {
                     "description": "产品密钥(可选，用于产品关联)",
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "sub_device_addr": {
+                    "description": "子设备地址(可选，用于子设备关联)",
                     "type": "string",
                     "maxLength": 255
                 },
@@ -833,6 +2049,166 @@
                 },
                 "voucher": {
                     "description": "设备凭证",
+                    "type": "string"
+                }
+            }
+        },
+        "model.DeviceBindReq": {
+            "type": "object",
+            "required": [
+                "device_number"
+            ],
+            "properties": {
+                "device_number": {
+                    "type": "string"
+                },
+                "device_secret": {
+                    "description": "设备密钥（可选，用于验证）",
+                    "type": "string"
+                }
+            }
+        },
+        "model.DeviceTransferListResp": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DeviceTransferResp"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.DeviceTransferReq": {
+            "type": "object",
+            "required": [
+                "device_ids"
+            ],
+            "properties": {
+                "device_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "to_dealer_id": {
+                    "description": "为空表示转移给厂家",
+                    "type": "string"
+                }
+            }
+        },
+        "model.DeviceTransferResp": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string"
+                },
+                "device_model": {
+                    "type": "string"
+                },
+                "device_number": {
+                    "type": "string"
+                },
+                "from_dealer_id": {
+                    "type": "string"
+                },
+                "from_dealer_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "operator_id": {
+                    "type": "string"
+                },
+                "operator_name": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "to_dealer_id": {
+                    "type": "string"
+                },
+                "to_dealer_name": {
+                    "type": "string"
+                },
+                "transfer_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DeviceUnbindReq": {
+            "type": "object",
+            "required": [
+                "device_id"
+            ],
+            "properties": {
+                "device_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DeviceUserBindingListResp": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DeviceUserBindingResp"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.DeviceUserBindingResp": {
+            "type": "object",
+            "properties": {
+                "binding_time": {
+                    "type": "string"
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "device_name": {
+                    "type": "string"
+                },
+                "device_number": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_owner": {
+                    "type": "boolean"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "user_name": {
+                    "type": "string"
+                },
+                "user_phone": {
                     "type": "string"
                 }
             }
@@ -873,6 +2249,213 @@
                 "token": {
                     "description": "登录凭证",
                     "type": "string"
+                }
+            }
+        },
+        "model.Response": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "业务状态码",
+                    "type": "integer",
+                    "example": 200
+                },
+                "data": {
+                    "description": "业务数据"
+                },
+                "message": {
+                    "description": "提示信息",
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "model.UpdateUserAddressReq": {
+            "type": "object",
+            "properties": {
+                "additional_info": {
+                    "description": "附加信息",
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "address_label": {
+                    "description": "地址标签",
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "city": {
+                    "description": "城市",
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "country": {
+                    "description": "国家",
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "detailed_address": {
+                    "description": "详细地址",
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "district": {
+                    "description": "区县",
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "latitude": {
+                    "description": "纬度",
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "longitude": {
+                    "description": "经度",
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "postal_code": {
+                    "description": "邮政编码",
+                    "type": "string",
+                    "maxLength": 10
+                },
+                "province": {
+                    "description": "省份",
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "street": {
+                    "description": "街道/乡镇",
+                    "type": "string",
+                    "maxLength": 100
+                }
+            }
+        },
+        "model.WarrantyApplicationCreateReq": {
+            "type": "object",
+            "required": [
+                "device_id",
+                "type"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "images": {
+                    "description": "图片URL数组",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "REPAIR",
+                        "RETURN",
+                        "EXCHANGE"
+                    ]
+                }
+            }
+        },
+        "model.WarrantyApplicationListResp": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.WarrantyApplicationResp"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.WarrantyApplicationResp": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "device_name": {
+                    "type": "string"
+                },
+                "device_number": {
+                    "type": "string"
+                },
+                "handler_id": {
+                    "type": "string"
+                },
+                "handler_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "result_info": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "user_name": {
+                    "type": "string"
+                },
+                "user_phone": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.WarrantyApplicationUpdateReq": {
+            "type": "object",
+            "properties": {
+                "handler_id": {
+                    "type": "string"
+                },
+                "result_info": {
+                    "description": "处理结果信息",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "APPROVED",
+                        "REJECTED",
+                        "PROCESSING",
+                        "COMPLETED"
+                    ]
                 }
             }
         },
