@@ -1,0 +1,66 @@
+package model
+
+// BatteryListReq 电池列表查询请求（BMS：电池管理-电池列表）
+type BatteryListReq struct {
+	Page     int `form:"page" binding:"required,min=1"`
+	PageSize int `form:"page_size" binding:"required,min=1,max=100"`
+
+	// 设备编号（序列号）
+	DeviceNumber *string `form:"device_number"`
+
+	// 电池型号
+	BatteryModelID *string `form:"battery_model_id"`
+
+	// 在线状态：1-在线 0-离线
+	IsOnline *int16 `form:"is_online" binding:"omitempty,oneof=0 1"`
+
+	// 激活状态：ACTIVE/INACTIVE
+	ActivationStatus *string `form:"activation_status" binding:"omitempty,oneof=ACTIVE INACTIVE"`
+
+	// 经销商
+	DealerID *string `form:"dealer_id"`
+
+	// 出厂日期范围（YYYY-MM-DD）
+	ProductionDateStart *string `form:"production_date_start"`
+	ProductionDateEnd   *string `form:"production_date_end"`
+
+	// 质保状态：IN-在保 OVER-过保
+	WarrantyStatus *string `form:"warranty_status" binding:"omitempty,oneof=IN OVER"`
+}
+
+// BatteryListItemResp 电池列表项
+type BatteryListItemResp struct {
+	DeviceID     string  `json:"device_id"`
+	DeviceNumber string  `json:"device_number"`
+	DeviceName   *string `json:"device_name"`
+
+	BatteryModelID   *string `json:"battery_model_id"`
+	BatteryModelName *string `json:"battery_model_name"`
+
+	ProductionDate     *string `json:"production_date"`
+	WarrantyExpireDate *string `json:"warranty_expire_date"`
+
+	DealerID   *string `json:"dealer_id"`
+	DealerName *string `json:"dealer_name"`
+
+	UserID    *string `json:"user_id"`
+	UserName  *string `json:"user_name"`
+	UserPhone *string `json:"user_phone"`
+
+	ActivationDate   *string `json:"activation_date"`
+	ActivationStatus *string `json:"activation_status"`
+
+	IsOnline       int16    `json:"is_online"`
+	Soc            *float64 `json:"soc"`
+	Soh            *float64 `json:"soh"`
+	CurrentVersion *string  `json:"current_version"`
+	TransferStatus *string  `json:"transfer_status"`
+}
+
+// BatteryListResp 电池列表响应
+type BatteryListResp struct {
+	List     []BatteryListItemResp `json:"list"`
+	Total    int64                 `json:"total"`
+	Page     int                   `json:"page"`
+	PageSize int                   `json:"page_size"`
+}

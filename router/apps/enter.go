@@ -27,13 +27,14 @@ type apps struct {
 	SceneAutomations
 	Scene
 	SysFunction
-	ServicePlugin  // 插件管理
-	ExpectedData   // 预期数据
-	OpenAPIKey     // openAPI
+	ServicePlugin // 插件管理
+	ExpectedData  // 预期数据
+	OpenAPIKey    // openAPI
 	MessagePush
 	SystemMonitor  // 系统监控
 	DeviceAuth     // 设备动态认证
 	Dealer         // BMS: 经销商管理
+	Battery        // BMS: 电池管理
 	BatteryModel   // BMS: 电池型号管理
 	DeviceTransfer // BMS: 设备转移
 	DeviceBinding  // BMS: APP设备绑定

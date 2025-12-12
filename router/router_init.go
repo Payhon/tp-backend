@@ -193,6 +193,7 @@ func RouterInit() *gin.Engine {
 			bmsRouter.Use(middleware.DealerAuthMiddleware())
 
 			apps.Model.Dealer.InitDealer(bmsRouter)                 // 经销商管理
+			apps.Model.Battery.InitBattery(bmsRouter)               // 电池管理
 			apps.Model.BatteryModel.InitBatteryModel(bmsRouter)     // 电池型号管理
 			apps.Model.DeviceTransfer.InitDeviceTransfer(bmsRouter) // 设备转移
 			apps.Model.DeviceBinding.InitDeviceBinding(bmsRouter)   // APP设备绑定

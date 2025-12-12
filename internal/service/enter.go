@@ -50,6 +50,7 @@ type ServiceGroup struct {
 	DeviceAuth
 	DeviceTopicMapping
 	Dealer         // BMS: 经销商管理
+	Battery        // BMS: 电池管理（电池列表/导入导出等）
 	BatteryModel   // BMS: 电池型号管理
 	DeviceTransfer // BMS: 设备转移
 	DeviceBinding  // BMS: 设备绑定
