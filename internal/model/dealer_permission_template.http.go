@@ -12,4 +12,3 @@ type DealerPermissionTemplateResp struct {
 type DealerPermissionTemplateReq struct {
 	Template string `json:"template" binding:"required,oneof=BASIC ADVANCED"`
 }
-

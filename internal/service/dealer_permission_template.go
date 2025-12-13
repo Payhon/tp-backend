@@ -194,4 +194,3 @@ func (*Dealer) SetDealerPermissionTemplate(ctx context.Context, dealerID string,
 		UserCount: int64(len(userIDs)),
 	}, nil
 }
-

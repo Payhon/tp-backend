@@ -58,6 +58,7 @@ type Controller struct {
 	DeviceBindingApi  // BMS: 设备绑定(APP)
 	WarrantyApi       // BMS: 维保管理
 	EndUserApi        // BMS: 终端用户
+	ActivationLogApi  // BMS: 激活日志
 }
 
 var (

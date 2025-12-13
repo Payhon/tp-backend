@@ -107,6 +107,10 @@ func saveOperationLog(c *gin.Context, start time.Time, cost int64, requestMsg, r
 	}
 
 	path := c.Request.URL.Path
+	userAgent := c.GetHeader("User-Agent")
+	if len(userAgent) > 255 {
+		userAgent = userAgent[:255]
+	}
 
 	log := &model.OperationLog{
 		ID:              uuid.New(),
@@ -119,6 +123,7 @@ func saveOperationLog(c *gin.Context, start time.Time, cost int64, requestMsg, r
 		RequestMessage:  &requestMsg,
 		ResponseMessage: &responseMsg,
 		TenantID:        userClaims.TenantID,
+		Remark:          &userAgent,
 	}
 
 	query.OperationLog.Create(log)

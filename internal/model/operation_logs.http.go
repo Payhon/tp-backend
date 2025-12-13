@@ -21,6 +21,8 @@ type GetOperationLogListByPageReq struct {
 	EndTime   *time.Time `json:"end_time,omitempty" form:"end_time" validate:"omitempty"`     // 结束日期
 	UserName  *string    `json:"username" form:"username" validate:"omitempty,max=255"`
 	Method    *string    `json:"method" form:"method" validate:"omitempty,max=255"`
+	Module    *string    `json:"module" form:"module" validate:"omitempty,max=255"`   // 操作模块（由 path 推断或直接过滤）
+	OpType    *string    `json:"op_type" form:"op_type" validate:"omitempty,max=255"` // 操作类型（新增/编辑/删除/下发指令等，派生）
 }
 
 type GetOperationLogListByPageRsp struct {
@@ -37,4 +39,8 @@ type GetOperationLogListByPageRsp struct {
 	Remark          *string    `json:"remark" `           // 备注
 	UserName        *string    `json:"username"`          // 用户名
 	Email           *string    `json:"email"`             // 邮箱
+	Authority       *string    `json:"authority"`         // 所属角色（users.authority）
+	Module          string     `json:"module"`            // 操作模块（派生）
+	OpType          string     `json:"op_type"`           // 操作类型（派生）
+	Content         string     `json:"content"`           // 操作内容（派生）
 }

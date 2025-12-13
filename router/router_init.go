@@ -200,6 +200,7 @@ func RouterInit() *gin.Engine {
 			apps.Model.DeviceBinding.InitDeviceBinding(bmsRouter)   // APP设备绑定
 			apps.Model.Warranty.InitWarranty(bmsRouter)             // 维保管理
 			apps.Model.EndUser.InitEndUser(bmsRouter)               // 终端用户（穿透/强制解绑）
+			apps.Model.ActivationLog.InitActivationLog(bmsRouter)   // 激活日志（从操作日志派生）
 		}
 	}
 

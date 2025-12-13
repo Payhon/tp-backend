@@ -41,6 +41,7 @@ type apps struct {
 	DeviceBinding  // BMS: APP设备绑定
 	Warranty       // BMS: 维保管理
 	EndUser        // BMS: 终端用户
+	ActivationLog  // BMS: 激活日志
 }
 
 var Model = new(apps)

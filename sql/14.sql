@@ -186,3 +186,118 @@ VALUES (
   'view.bms_warranty'
 );
 
+-- 运营管理（目录）
+INSERT INTO public.sys_ui_elements (
+  id, parent_id, element_code, element_type, orders,
+  param1, param2, param3, authority, description,
+  created_at, remark, multilingual, route_path
+)
+VALUES (
+  '0f7af1e2-6d4f-4b03-9f2b-8c5f9b5d9e01',
+  'a753c525-780f-415f-a2b6-3d909c79f7f6',
+  'bms_ops',
+  2,
+  1305,
+  '/bms/ops',
+  'mdi:clipboard-text-outline',
+  'self',
+  '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+  '运营管理',
+  NOW(),
+  '',
+  'route.bms_ops',
+  'layout.base'
+);
+
+-- 激活（目录）
+INSERT INTO public.sys_ui_elements (
+  id, parent_id, element_code, element_type, orders,
+  param1, param2, param3, authority, description,
+  created_at, remark, multilingual, route_path
+)
+VALUES (
+  '0f7af1e2-6d4f-4b03-9f2b-8c5f9b5d9e01',
+  '7b3e1c2a-51e1-4c0e-b7c1-3d9bcb9c0101',
+  'bms_ops_activation',
+  2,
+  1306,
+  '/bms/ops/activation',
+  'mdi:history',
+  'self',
+  '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+  '激活',
+  NOW(),
+  '',
+  'route.bms_ops_activation',
+  'layout.base'
+);
+
+-- 激活日志
+INSERT INTO public.sys_ui_elements (
+  id, parent_id, element_code, element_type, orders,
+  param1, param2, param3, authority, description,
+  created_at, remark, multilingual, route_path
+)
+VALUES (
+  '1d2f3a74-6b2a-4f4d-9b55-4d7f3d5c0a11',
+  '7b3e1c2a-51e1-4c0e-b7c1-3d9bcb9c0101',
+  'bms_ops_activation_log',
+  3,
+  1307,
+  '/bms/ops/activation/log',
+  'mdi:history',
+  'self',
+  '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+  '激活日志',
+  NOW(),
+  '',
+  'route.bms_ops_activation_log',
+  'view.bms_ops_activation_log'
+);
+
+-- 操作（目录）
+INSERT INTO public.sys_ui_elements (
+  id, parent_id, element_code, element_type, orders,
+  param1, param2, param3, authority, description,
+  created_at, remark, multilingual, route_path
+)
+VALUES (
+  '0f7af1e2-6d4f-4b03-9f2b-8c5f9b5d9e01',
+  '8c22f3a1-91a3-4c1b-8d22-5d9a1b2f3c33',
+  'bms_ops_operation',
+  2,
+  1308,
+  '/bms/ops/operation',
+  'mdi:clipboard-list',
+  'self',
+  '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+  '操作',
+  NOW(),
+  '',
+  'route.bms_ops_operation',
+  'layout.base'
+);
+
+-- 操作记录
+INSERT INTO public.sys_ui_elements (
+  id, parent_id, element_code, element_type, orders,
+  param1, param2, param3, authority, description,
+  created_at, remark, multilingual, route_path
+)
+VALUES (
+  '2a4b7c9d-1f33-4a8e-9d31-7b5a9b2f3c22',
+  '8c22f3a1-91a3-4c1b-8d22-5d9a1b2f3c33',
+  'bms_ops_operation_log',
+  3,
+  1309,
+  '/bms/ops/operation/log',
+  'mdi:clipboard-list',
+  'self',
+  '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+  '操作记录',
+  NOW(),
+  '',
+  'route.bms_ops_operation_log',
+  'view.bms_ops_operation_log'
+);
+

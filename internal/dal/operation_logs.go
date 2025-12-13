@@ -35,6 +35,12 @@ func GetListByPage(operationLog *model.GetOperationLogListByPageReq, userClaims 
 		queryBuilder = queryBuilder.Where(q.Name.Eq(*operationLog.Method))
 	}
 
+	// 模块过滤：优先按 path 模糊匹配（由前端传入模块关键字或路径片段）
+	if operationLog.Module != nil && *operationLog.Module != "" {
+		// 支持两种：直接传入中文模块名（由 service 层派生后过滤不便），这里先支持按路径片段过滤
+		queryBuilder = queryBuilder.Where(q.Path.Like(fmt.Sprintf("%%%s%%", *operationLog.Module)))
+	}
+
 	if operationLog.StartTime != nil && operationLog.EndTime != nil {
 		queryBuilder = queryBuilder.Where(q.CreatedAt.Between(*operationLog.StartTime, *operationLog.EndTime))
 	}
@@ -56,7 +62,7 @@ func GetListByPage(operationLog *model.GetOperationLogListByPageReq, userClaims 
 		queryBuilder = queryBuilder.Offset((operationLog.Page - 1) * operationLog.PageSize)
 	}
 
-	err = queryBuilder.Select(q.ALL, u.Name.As("user_name"), u.Email).
+	err = queryBuilder.Select(q.ALL, u.Name.As("user_name"), u.Email, u.Authority).
 		Order(q.CreatedAt.Desc()).
 		Scan(&operationLogList)
 	if err != nil {
