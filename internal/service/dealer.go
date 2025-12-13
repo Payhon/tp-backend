@@ -1,13 +1,14 @@
 package service
 
 import (
+	"context"
 
 	"time"
-
 
 	"project/internal/model"
 	"project/internal/query"
 	"project/pkg/errcode"
+	global "project/pkg/global"
 	"project/pkg/utils"
 
 	"github.com/go-basic/uuid"
@@ -15,6 +16,95 @@ import (
 )
 
 type Dealer struct{}
+
+// GetDealerOverview 经销商穿透概览（聚合数字）
+func (*Dealer) GetDealerOverview(ctx context.Context, id string, claims *utils.UserClaims, dealerScopeID string) (*model.DealerOverviewResp, error) {
+	// 经销商账号只能看自己
+	if dealerScopeID != "" && dealerScopeID != id {
+		return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"message": "no permission",
+		})
+	}
+
+	// 校验经销商存在且属于租户
+	dealer, err := query.Dealer.Where(
+		query.Dealer.ID.Eq(id),
+		query.Dealer.TenantID.Eq(claims.TenantID),
+	).First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.New(404)
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	// 设备数量/激活数量（沿用详情口径）
+	deviceCount, _ := query.DeviceBattery.Where(query.DeviceBattery.DealerID.Eq(id)).Count()
+	activeCount, _ := query.DeviceBattery.Where(
+		query.DeviceBattery.DealerID.Eq(id),
+		query.DeviceBattery.ActivationStatus.Eq("ACTIVE"),
+	).Count()
+
+	// 终端用户数量（绑定关系 distinct user）
+	var endUserCount int64
+	if err := global.DB.Table("device_user_bindings AS dub").
+		Joins("LEFT JOIN devices AS d ON d.id = dub.device_id").
+		Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
+		Where("d.tenant_id = ?", claims.TenantID).
+		Where("dbat.dealer_id = ?", id).
+		Distinct("dub.user_id").
+		Count(&endUserCount).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	// 维保统计（按状态）
+	type statusRow struct {
+		Status string `gorm:"column:status"`
+		Cnt    int64  `gorm:"column:cnt"`
+	}
+	var statusRows []statusRow
+	if err := global.DB.Table("warranty_applications AS wa").
+		Joins("LEFT JOIN devices AS d ON d.id = wa.device_id").
+		Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
+		Where("wa.tenant_id = ?", claims.TenantID).
+		Where("dbat.dealer_id = ?", id).
+		Select("wa.status AS status, COUNT(1) AS cnt").
+		Group("wa.status").
+		Scan(&statusRows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	var total, pending, approved, rejected, processing, completed int64
+	for _, r := range statusRows {
+		total += r.Cnt
+		switch r.Status {
+		case "PENDING":
+			pending = r.Cnt
+		case "APPROVED":
+			approved = r.Cnt
+		case "REJECTED":
+			rejected = r.Cnt
+		case "PROCESSING":
+			processing = r.Cnt
+		case "COMPLETED":
+			completed = r.Cnt
+		}
+	}
+
+	return &model.DealerOverviewResp{
+		DealerID:           dealer.ID,
+		DealerName:         dealer.Name,
+		DeviceCount:        deviceCount,
+		ActiveCount:        activeCount,
+		EndUserCount:       endUserCount,
+		WarrantyTotal:      total,
+		WarrantyPending:    pending,
+		WarrantyApproved:   approved,
+		WarrantyRejected:   rejected,
+		WarrantyProcessing: processing,
+		WarrantyCompleted:  completed,
+	}, nil
+}
 
 // CreateDealer 创建经销商
 func (*Dealer) CreateDealer(req model.DealerCreateReq, claims *utils.UserClaims) (*model.Dealer, error) {

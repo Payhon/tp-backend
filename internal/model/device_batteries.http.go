@@ -64,3 +64,61 @@ type BatteryListResp struct {
 	Page     int                   `json:"page"`
 	PageSize int                   `json:"page_size"`
 }
+
+// BatteryTemplateResp 电池导入模板（CSV 内容）
+type BatteryTemplateResp struct {
+	Filename string `json:"filename"`
+	Content  string `json:"content"`
+}
+
+// BatteryExportResp 电池导出（CSV 内容）
+type BatteryExportResp struct {
+	Filename string `json:"filename"`
+	Content  string `json:"content"`
+}
+
+// BatteryImportFailure 导入失败明细
+type BatteryImportFailure struct {
+	Row          int     `json:"row"`
+	DeviceNumber *string `json:"device_number"`
+	Message      string  `json:"message"`
+}
+
+// BatteryImportResp 导入结果
+type BatteryImportResp struct {
+	Total    int                    `json:"total"`
+	Success  int                    `json:"success"`
+	Failed   int                    `json:"failed"`
+	Failures []BatteryImportFailure `json:"failures"`
+}
+
+// BatteryExportReq 电池导出请求（复用列表查询条件，但不分页）
+type BatteryExportReq struct {
+	// 设备编号（序列号）
+	DeviceNumber *string `form:"device_number"`
+
+	// 电池型号
+	BatteryModelID *string `form:"battery_model_id"`
+
+	// 在线状态：1-在线 0-离线
+	IsOnline *int16 `form:"is_online" binding:"omitempty,oneof=0 1"`
+
+	// 激活状态：ACTIVE/INACTIVE
+	ActivationStatus *string `form:"activation_status" binding:"omitempty,oneof=ACTIVE INACTIVE"`
+
+	// 经销商
+	DealerID *string `form:"dealer_id"`
+
+	// 出厂日期范围（YYYY-MM-DD）
+	ProductionDateStart *string `form:"production_date_start"`
+	ProductionDateEnd   *string `form:"production_date_end"`
+
+	// 质保状态：IN-在保 OVER-过保
+	WarrantyStatus *string `form:"warranty_status" binding:"omitempty,oneof=IN OVER"`
+}
+
+// BatteryBatchAssignDealerReq 批量分配经销商请求
+type BatteryBatchAssignDealerReq struct {
+	DeviceIDs []string `json:"device_ids" binding:"required,min=1"`
+	DealerID  string   `json:"dealer_id" binding:"required"`
+}

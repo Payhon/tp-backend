@@ -2,12 +2,22 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	dal "project/internal/dal"
 	"project/internal/model"
+	query "project/internal/query"
 	"project/pkg/errcode"
 	global "project/pkg/global"
 	"project/pkg/utils"
+
+	"github.com/sirupsen/logrus"
+	"github.com/xuri/excelize/v2"
+	"gorm.io/gorm"
 )
 
 // Battery BMS: 电池管理（电池列表/导入导出等）
@@ -188,4 +198,575 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 		Page:     req.Page,
 		PageSize: req.PageSize,
 	}, nil
+}
+
+// buildBatteryQuery 构建电池查询（复用逻辑）
+func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *utils.UserClaims, dealerID string) *gorm.DB {
+	db := global.DB.WithContext(ctx)
+
+	queryBuilder := db.Table("devices AS d").
+		Select(`
+			d.id AS device_id,
+			d.device_number AS device_number,
+			d.name AS device_name,
+			dbat.battery_model_id AS battery_model_id,
+			bm.name AS battery_model_name,
+			dbat.production_date AS production_date,
+			dbat.warranty_expire_date AS warranty_expire_date,
+			dbat.dealer_id AS dealer_id,
+			de.name AS dealer_name,
+			u.id AS user_id,
+			u.name AS user_name,
+			u.phone_number AS user_phone,
+			dbat.activation_date AS activation_date,
+			dbat.activation_status AS activation_status,
+			d.is_online AS is_online,
+			dbat.soc AS soc,
+			dbat.soh AS soh,
+			d.current_version AS current_version,
+			dbat.transfer_status AS transfer_status
+		`).
+		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
+		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`).
+		Joins(`LEFT JOIN device_user_bindings AS dub ON dub.device_id = d.id AND dub.is_owner = true`).
+		Joins(`LEFT JOIN users AS u ON u.id = dub.user_id`).
+		Where("d.tenant_id = ?", claims.TenantID)
+
+	// 经销商数据隔离
+	if dealerID != "" {
+		queryBuilder = queryBuilder.Where("dbat.dealer_id = ?", dealerID)
+	}
+
+	// 条件筛选
+	if req.DeviceNumber != nil && *req.DeviceNumber != "" {
+		queryBuilder = queryBuilder.Where("d.device_number ILIKE ?", "%"+*req.DeviceNumber+"%")
+	}
+	if req.BatteryModelID != nil && *req.BatteryModelID != "" {
+		queryBuilder = queryBuilder.Where("dbat.battery_model_id = ?", *req.BatteryModelID)
+	}
+	if req.IsOnline != nil {
+		queryBuilder = queryBuilder.Where("d.is_online = ?", *req.IsOnline)
+	}
+	if req.ActivationStatus != nil && *req.ActivationStatus != "" {
+		queryBuilder = queryBuilder.Where("dbat.activation_status = ?", *req.ActivationStatus)
+	}
+	if req.DealerID != nil && *req.DealerID != "" {
+		queryBuilder = queryBuilder.Where("dbat.dealer_id = ?", *req.DealerID)
+	}
+
+	// 出厂日期范围
+	if req.ProductionDateStart != nil && *req.ProductionDateStart != "" {
+		if t, err := time.ParseInLocation("2006-01-02", *req.ProductionDateStart, time.Local); err == nil {
+			queryBuilder = queryBuilder.Where("dbat.production_date >= ?", t)
+		}
+	}
+	if req.ProductionDateEnd != nil && *req.ProductionDateEnd != "" {
+		if t, err := time.ParseInLocation("2006-01-02", *req.ProductionDateEnd, time.Local); err == nil {
+			queryBuilder = queryBuilder.Where("dbat.production_date < ?", t.Add(24*time.Hour))
+		}
+	}
+
+	// 质保状态
+	if req.WarrantyStatus != nil && *req.WarrantyStatus != "" {
+		now := time.Now()
+		switch *req.WarrantyStatus {
+		case "IN":
+			queryBuilder = queryBuilder.Where("dbat.warranty_expire_date IS NOT NULL AND dbat.warranty_expire_date >= ?", now)
+		case "OVER":
+			queryBuilder = queryBuilder.Where("dbat.warranty_expire_date IS NOT NULL AND dbat.warranty_expire_date < ?", now)
+		}
+	}
+
+	return queryBuilder
+}
+
+// ExportBatteryList 导出电池列表（Excel）
+func (*Battery) ExportBatteryList(ctx context.Context, req model.BatteryExportReq, claims *utils.UserClaims, dealerID string) (string, error) {
+	queryBuilder := buildBatteryQuery(ctx, req, claims, dealerID)
+
+	// 限制导出数量（防止内存溢出）
+	const maxExportLimit = 50000
+	rows := make([]batteryListRow, 0)
+	if err := queryBuilder.
+		Order("d.created_at DESC").
+		Limit(maxExportLimit).
+		Scan(&rows).Error; err != nil {
+		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	if len(rows) == 0 {
+		return "", errcode.New(errcode.CodeParamError)
+	}
+
+	// 创建 Excel 文件
+	f := excelize.NewFile()
+	sheetName := "Sheet1"
+	index, _ := f.NewSheet(sheetName)
+	f.SetActiveSheet(index)
+
+	// 设置表头
+	headers := []string{"序列号", "设备名称", "电池型号", "出厂日期", "质保到期", "经销商", "终端用户", "用户电话", "激活状态", "激活时间", "在线状态", "SOC(%)", "SOH(%)", "固件版本", "流转状态"}
+	for i, h := range headers {
+		cell := fmt.Sprintf("%c1", 'A'+i)
+		f.SetCellValue(sheetName, cell, h)
+	}
+
+	// 写入数据
+	for i, r := range rows {
+		rowNum := i + 2
+		col := 0
+
+		setCell := func(val interface{}) {
+			cell := fmt.Sprintf("%c%d", 'A'+col, rowNum)
+			f.SetCellValue(sheetName, cell, val)
+			col++
+		}
+
+		setCell(r.DeviceNumber)
+		if r.DeviceName != nil {
+			setCell(*r.DeviceName)
+		} else {
+			setCell("")
+		}
+		if r.BatteryModelName != nil {
+			setCell(*r.BatteryModelName)
+		} else {
+			setCell("")
+		}
+		if r.ProductionDate != nil {
+			setCell(r.ProductionDate.Format("2006-01-02"))
+		} else {
+			setCell("")
+		}
+		if r.WarrantyExpireDate != nil {
+			setCell(r.WarrantyExpireDate.Format("2006-01-02"))
+		} else {
+			setCell("")
+		}
+		if r.DealerName != nil {
+			setCell(*r.DealerName)
+		} else {
+			setCell("厂家")
+		}
+		if r.UserName != nil {
+			setCell(*r.UserName)
+		} else {
+			setCell("")
+		}
+		if r.UserPhone != nil {
+			setCell(*r.UserPhone)
+		} else {
+			setCell("")
+		}
+		if r.ActivationStatus != nil {
+			if *r.ActivationStatus == "ACTIVE" {
+				setCell("已激活")
+			} else {
+				setCell("未激活")
+			}
+		} else {
+			setCell("未激活")
+		}
+		if r.ActivationDate != nil {
+			setCell(r.ActivationDate.Format("2006-01-02 15:04:05"))
+		} else {
+			setCell("")
+		}
+		if r.IsOnline == 1 {
+			setCell("在线")
+		} else {
+			setCell("离线")
+		}
+		if r.Soc != nil {
+			setCell(*r.Soc)
+		} else {
+			setCell("")
+		}
+		if r.Soh != nil {
+			setCell(*r.Soh)
+		} else {
+			setCell("")
+		}
+		if r.CurrentVersion != nil {
+			setCell(*r.CurrentVersion)
+		} else {
+			setCell("")
+		}
+		if r.TransferStatus != nil {
+			setCell(*r.TransferStatus)
+		} else {
+			setCell("FACTORY")
+		}
+	}
+
+	// 保存文件
+	uploadDir := "./files/excel/"
+	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+		return "", errcode.WithVars(errcode.CodeFilePathGenError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+
+	filename := fmt.Sprintf("电池列表_%s.xlsx", time.Now().Format("20060102150405"))
+	filePath := filepath.Join(uploadDir, filename)
+
+	if err := f.SaveAs(filePath); err != nil {
+		return "", errcode.WithVars(errcode.CodeFileSaveError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+
+	return filePath, nil
+}
+
+// GetBatteryImportTemplate 获取导入模板（Excel）
+func (*Battery) GetBatteryImportTemplate() (string, error) {
+	f := excelize.NewFile()
+	sheetName := "Sheet1"
+	index, _ := f.NewSheet(sheetName)
+	f.SetActiveSheet(index)
+
+	// 设置表头
+	headers := []string{"序列号*", "电池型号ID", "出厂日期(YYYY-MM-DD)", "质保到期(YYYY-MM-DD)", "批次号", "经销商ID"}
+	for i, h := range headers {
+		cell := fmt.Sprintf("%c1", 'A'+i)
+		f.SetCellValue(sheetName, cell, h)
+	}
+
+	// 添加示例数据（第2行）
+	example := []string{"DEVICE001", "", "2024-01-01", "2027-01-01", "BATCH001", ""}
+	for i, val := range example {
+		cell := fmt.Sprintf("%c2", 'A'+i)
+		f.SetCellValue(sheetName, cell, val)
+	}
+
+	// 保存文件
+	uploadDir := "./files/excel/"
+	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+		return "", errcode.WithVars(errcode.CodeFilePathGenError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+
+	filename := "电池导入模板.xlsx"
+	filePath := filepath.Join(uploadDir, filename)
+
+	if err := f.SaveAs(filePath); err != nil {
+		return "", errcode.WithVars(errcode.CodeFileSaveError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+
+	return filePath, nil
+}
+
+// ImportBatteryList 导入电池列表（Excel）
+func (*Battery) ImportBatteryList(ctx context.Context, filePath string, claims *utils.UserClaims, dealerID string) (*model.BatteryImportResp, error) {
+	f, err := excelize.OpenFile(filePath)
+	if err != nil {
+		return nil, errcode.WithVars(errcode.CodeFileSaveError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			logrus.Error("close excel file error:", err)
+		}
+	}()
+
+	rows, err := f.GetRows("Sheet1")
+	if err != nil {
+		return nil, errcode.WithVars(errcode.CodeFileSaveError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+
+	if len(rows) < 2 {
+		return nil, errcode.New(errcode.CodeParamError)
+	}
+
+	// 跳过表头，从第2行开始
+	resp := &model.BatteryImportResp{
+		Failures: make([]model.BatteryImportFailure, 0),
+	}
+
+	db := global.DB.WithContext(ctx)
+	tx := db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	for i := 1; i < len(rows); i++ {
+		row := rows[i]
+		resp.Total++
+
+		// 解析行数据：序列号*, 电池型号ID, 出厂日期, 质保到期, 批次号, 经销商ID
+		if len(row) < 1 || strings.TrimSpace(row[0]) == "" {
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryImportFailure{
+				Row:          i + 1,
+				DeviceNumber: nil,
+				Message:      "序列号不能为空",
+			})
+			continue
+		}
+
+		deviceNumber := strings.TrimSpace(row[0])
+		var batteryModelID *string
+		if len(row) > 1 && strings.TrimSpace(row[1]) != "" {
+			s := strings.TrimSpace(row[1])
+			batteryModelID = &s
+		}
+
+		var productionDate *time.Time
+		if len(row) > 2 && strings.TrimSpace(row[2]) != "" {
+			if t, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(row[2]), time.Local); err == nil {
+				productionDate = &t
+			} else {
+				resp.Failed++
+				resp.Failures = append(resp.Failures, model.BatteryImportFailure{
+					Row:          i + 1,
+					DeviceNumber: &deviceNumber,
+					Message:      "出厂日期格式错误，应为 YYYY-MM-DD",
+				})
+				continue
+			}
+		}
+
+		var warrantyExpireDate *time.Time
+		if len(row) > 3 && strings.TrimSpace(row[3]) != "" {
+			if t, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(row[3]), time.Local); err == nil {
+				warrantyExpireDate = &t
+			} else {
+				resp.Failed++
+				resp.Failures = append(resp.Failures, model.BatteryImportFailure{
+					Row:          i + 1,
+					DeviceNumber: &deviceNumber,
+					Message:      "质保到期日期格式错误，应为 YYYY-MM-DD",
+				})
+				continue
+			}
+		}
+
+		var batchNumber *string
+		if len(row) > 4 && strings.TrimSpace(row[4]) != "" {
+			s := strings.TrimSpace(row[4])
+			batchNumber = &s
+		}
+
+		var importDealerID *string
+		if len(row) > 5 && strings.TrimSpace(row[5]) != "" {
+			s := strings.TrimSpace(row[5])
+			importDealerID = &s
+		} else if dealerID != "" {
+			// 经销商视角导入时，默认使用当前经销商ID
+			importDealerID = &dealerID
+		}
+
+		// 查找设备
+		device, err := dal.GetDeviceByDeviceNumber(deviceNumber)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				resp.Failed++
+				resp.Failures = append(resp.Failures, model.BatteryImportFailure{
+					Row:          i + 1,
+					DeviceNumber: &deviceNumber,
+					Message:      "设备不存在",
+				})
+				continue
+			}
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryImportFailure{
+				Row:          i + 1,
+				DeviceNumber: &deviceNumber,
+				Message:      "查询设备失败: " + err.Error(),
+			})
+			continue
+		}
+
+		// 校验租户
+		if device.TenantID != claims.TenantID {
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryImportFailure{
+				Row:          i + 1,
+				DeviceNumber: &deviceNumber,
+				Message:      "设备不属于当前租户",
+			})
+			continue
+		}
+
+		// 查找或创建 device_batteries 记录
+		deviceBattery, err := query.DeviceBattery.WithContext(ctx).
+			Where(query.DeviceBattery.DeviceID.Eq(device.ID)).
+			First()
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				// 创建新记录
+				now := time.Now()
+				deviceBattery = &model.DeviceBattery{
+					DeviceID:           device.ID,
+					BatteryModelID:     batteryModelID,
+					DealerID:           importDealerID,
+					ProductionDate:     productionDate,
+					WarrantyExpireDate: warrantyExpireDate,
+					BatchNumber:        batchNumber,
+					ActivationStatus:   StringPtr("INACTIVE"),
+					TransferStatus:     StringPtr("FACTORY"),
+					UpdatedAt:          &now,
+				}
+				if err := tx.Create(deviceBattery).Error; err != nil {
+					tx.Rollback()
+					return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+						"sql_error": err.Error(),
+					})
+				}
+			} else {
+				resp.Failed++
+				resp.Failures = append(resp.Failures, model.BatteryImportFailure{
+					Row:          i + 1,
+					DeviceNumber: &deviceNumber,
+					Message:      "查询电池信息失败: " + err.Error(),
+				})
+				continue
+			}
+		} else {
+			// 更新现有记录
+			updates := make(map[string]interface{})
+			if batteryModelID != nil {
+				updates["battery_model_id"] = *batteryModelID
+			}
+			if importDealerID != nil {
+				updates["dealer_id"] = *importDealerID
+			}
+			if productionDate != nil {
+				updates["production_date"] = *productionDate
+			}
+			if warrantyExpireDate != nil {
+				updates["warranty_expire_date"] = *warrantyExpireDate
+			}
+			if batchNumber != nil {
+				updates["batch_number"] = *batchNumber
+			}
+			updates["updated_at"] = time.Now()
+
+			if err := tx.Model(&model.DeviceBattery{}).
+				Where("device_id = ?", device.ID).
+				Updates(updates).Error; err != nil {
+				tx.Rollback()
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"sql_error": err.Error(),
+				})
+			}
+		}
+
+		resp.Success++
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	return resp, nil
+}
+
+// BatchAssignDealer 批量分配经销商
+func (*Battery) BatchAssignDealer(ctx context.Context, req model.BatteryBatchAssignDealerReq, claims *utils.UserClaims, dealerID string) error {
+	db := global.DB.WithContext(ctx)
+	tx := db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	now := time.Now()
+
+	for _, deviceID := range req.DeviceIDs {
+		// 校验设备是否存在且属于当前租户
+		_, err := query.Device.WithContext(ctx).
+			Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
+			First()
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				tx.Rollback()
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"message": "设备不存在: " + deviceID,
+				})
+			}
+			tx.Rollback()
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+
+		// 经销商数据隔离：经销商只能操作自己名下的设备
+		if dealerID != "" {
+			existingBattery, err := query.DeviceBattery.WithContext(ctx).
+				Where(query.DeviceBattery.DeviceID.Eq(deviceID)).
+				First()
+			if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
+				tx.Rollback()
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"message": "无权操作该设备: " + deviceID,
+				})
+			}
+		}
+
+		// 查找或创建 device_batteries 记录
+		_, err = query.DeviceBattery.WithContext(ctx).
+			Where(query.DeviceBattery.DeviceID.Eq(deviceID)).
+			First()
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				// 创建新记录
+				newBattery := &model.DeviceBattery{
+					DeviceID:         deviceID,
+					DealerID:         &req.DealerID,
+					ActivationStatus: StringPtr("INACTIVE"),
+					TransferStatus:   StringPtr("DEALER"),
+					UpdatedAt:        &now,
+				}
+				if err := tx.Create(newBattery).Error; err != nil {
+					tx.Rollback()
+					return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+						"sql_error": err.Error(),
+					})
+				}
+			} else {
+				tx.Rollback()
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"sql_error": err.Error(),
+				})
+			}
+		} else {
+			// 更新经销商ID
+			if err := tx.Model(&model.DeviceBattery{}).
+				Where("device_id = ?", deviceID).
+				Updates(map[string]interface{}{
+					"dealer_id":       req.DealerID,
+					"updated_at":      now,
+					"transfer_status": "DEALER",
+				}).Error; err != nil {
+				tx.Rollback()
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"sql_error": err.Error(),
+				})
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	return nil
 }

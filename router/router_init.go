@@ -192,12 +192,14 @@ func RouterInit() *gin.Engine {
 			bmsRouter := v1.Group("")
 			bmsRouter.Use(middleware.DealerAuthMiddleware())
 
+			apps.Model.BmsDashboard.InitBmsDashboard(bmsRouter)     // BMS Dashboard
 			apps.Model.Dealer.InitDealer(bmsRouter)                 // 经销商管理
 			apps.Model.Battery.InitBattery(bmsRouter)               // 电池管理
 			apps.Model.BatteryModel.InitBatteryModel(bmsRouter)     // 电池型号管理
 			apps.Model.DeviceTransfer.InitDeviceTransfer(bmsRouter) // 设备转移
 			apps.Model.DeviceBinding.InitDeviceBinding(bmsRouter)   // APP设备绑定
 			apps.Model.Warranty.InitWarranty(bmsRouter)             // 维保管理
+			apps.Model.EndUser.InitEndUser(bmsRouter)               // 终端用户（穿透/强制解绑）
 		}
 	}
 

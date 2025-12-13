@@ -24,6 +24,13 @@ func (*Dealer) InitDealer(Router *gin.RouterGroup) {
 		// 详情查询
 		dealerApi.GET(":id", api.Controllers.DealerApi.GetDealerByID)
 
+		// 穿透概览
+		dealerApi.GET(":id/overview", api.Controllers.DealerApi.GetDealerOverview)
+
+		// 权限模板
+		dealerApi.GET(":id/permission_template", api.Controllers.DealerApi.GetDealerPermissionTemplate)
+		dealerApi.PUT(":id/permission_template", api.Controllers.DealerApi.SetDealerPermissionTemplate)
+
 		// 分页查询
 		dealerApi.GET("", api.Controllers.DealerApi.GetDealerList)
 	}

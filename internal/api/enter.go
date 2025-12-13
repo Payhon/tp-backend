@@ -51,11 +51,13 @@ type Controller struct {
 	DeviceAuthApi // 设备动态认证
 	DeviceTopicMappingApi
 	DealerApi         // BMS: 经销商管理
+	BmsDashboardApi   // BMS: Dashboard
 	BatteryApi        // BMS: 电池管理
 	BatteryModelApi   // BMS: 电池型号管理
 	DeviceTransferApi // BMS: 设备转移
 	DeviceBindingApi  // BMS: 设备绑定(APP)
 	WarrantyApi       // BMS: 维保管理
+	EndUserApi        // BMS: 终端用户
 }
 
 var (
