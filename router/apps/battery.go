@@ -39,5 +39,10 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.POST("/offline-commands", api.Controllers.OfflineCommandApi.CreateOfflineCommand)
 		batteryApi.GET("/offline-commands/:id", api.Controllers.OfflineCommandApi.GetOfflineCommandDetail)
 		batteryApi.DELETE("/offline-commands/:id", api.Controllers.OfflineCommandApi.CancelOfflineCommand)
+
+		// 参数远程查看/修改（BMS）
+		batteryApi.GET("/params/:id", api.Controllers.BatteryApi.GetBatteryParams)
+		batteryApi.POST("/params/pub", api.Controllers.BatteryApi.PutBatteryParams)
+		batteryApi.POST("/params/get", api.Controllers.BatteryApi.GetBatteryParamsFromDevice)
 	}
 }

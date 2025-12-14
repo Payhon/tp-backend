@@ -53,6 +53,113 @@ type batteryListRow struct {
 	TransferStatus *string  `gorm:"column:transfer_status"`
 }
 
+// GetDeviceAttributes BMS：参数远程查看（带租户/经销商隔离）
+func (*Battery) GetDeviceAttributes(ctx context.Context, deviceID string, claims *utils.UserClaims, dealerID string) (interface{}, error) {
+	// 校验设备租户
+	device, err := query.Device.WithContext(ctx).
+		Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
+		First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "设备不存在"})
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	// 经销商隔离
+	if dealerID != "" {
+		existingBattery, err := query.DeviceBattery.WithContext(ctx).
+			Where(query.DeviceBattery.DeviceID.Eq(deviceID)).
+			First()
+		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
+			return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权查看该设备"})
+		}
+	}
+
+	data, err := dal.GetAttributeDataListWithDeviceName(device.ID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	var easyData []map[string]interface{}
+	for _, v := range data {
+		d := make(map[string]interface{})
+		d["id"] = v["id"]
+		d["device_id"] = deviceID
+		d["ts"] = v["ts"]
+		d["key"] = v["key"]
+		d["data_name"] = v["data_name"]
+		d["unit"] = v["unit"]
+		d["read_write_flag"] = v["read_write_flag"]
+		d["data_type"] = v["data_type"]
+		d["enum"] = v["enum"]
+		if v["string_v"] != nil {
+			d["value"] = v["string_v"]
+		}
+		if v["bool_v"] != nil {
+			d["value"] = v["bool_v"]
+		}
+		if v["number_v"] != nil {
+			d["value"] = v["number_v"]
+		}
+		easyData = append(easyData, d)
+	}
+	return easyData, nil
+}
+
+// PutDeviceAttributes BMS：参数远程修改（带租户/经销商隔离）
+func (*Battery) PutDeviceAttributes(ctx context.Context, req model.AttributePutMessage, claims *utils.UserClaims, dealerID string) error {
+	// 校验设备租户
+	_, err := query.Device.WithContext(ctx).
+		Where(query.Device.ID.Eq(req.DeviceID), query.Device.TenantID.Eq(claims.TenantID)).
+		First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "设备不存在"})
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	// 经销商隔离
+	if dealerID != "" {
+		existingBattery, err := query.DeviceBattery.WithContext(ctx).
+			Where(query.DeviceBattery.DeviceID.Eq(req.DeviceID)).
+			First()
+		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权操作该设备"})
+		}
+	}
+
+	// 复用现有属性下发逻辑（会写入 attribute_set_logs，并走 downlink）
+	return GroupApp.AttributeData.AttributePutMessage(ctx, claims.ID, &req, strconv.Itoa(constant.Manual))
+}
+
+// RequestDeviceAttributes BMS：请求设备上报参数（带租户/经销商隔离）
+func (*Battery) RequestDeviceAttributes(ctx context.Context, req model.AttributeGetMessageReq, claims *utils.UserClaims, dealerID string) error {
+	// 校验设备租户
+	_, err := query.Device.WithContext(ctx).
+		Where(query.Device.ID.Eq(req.DeviceID), query.Device.TenantID.Eq(claims.TenantID)).
+		First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "设备不存在"})
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	// 经销商隔离
+	if dealerID != "" {
+		existingBattery, err := query.DeviceBattery.WithContext(ctx).
+			Where(query.DeviceBattery.DeviceID.Eq(req.DeviceID)).
+			First()
+		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权操作该设备"})
+		}
+	}
+
+	return GroupApp.AttributeData.AttributeGetMessage(claims, &req)
+}
+
 // GetBatteryList 获取电池列表（厂家/经销商视角）
 func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, claims *utils.UserClaims, dealerID string) (*model.BatteryListResp, error) {
 	db := global.DB.WithContext(ctx)
