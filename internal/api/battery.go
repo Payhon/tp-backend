@@ -202,3 +202,31 @@ func (*BatteryApi) BatchAssignDealer(c *gin.Context) {
 		"message": "批量分配成功",
 	})
 }
+
+// BatchSendCommand 批量下发指令
+// @Summary 批量下发指令
+// @Description BMS 电池管理-批量下发指令（仅在线设备）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryBatchCommandReq true "请求参数"
+// @Success 200 {object} model.BatteryBatchCommandResp
+// @Router /api/v1/battery/batch-command [post]
+func (*BatteryApi) BatchSendCommand(c *gin.Context) {
+	var req model.BatteryBatchCommandReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	dealerIDVal, _ := c.Get(middleware.DealerIDContextKey)
+	dealerID, _ := dealerIDVal.(string)
+
+	data, err := service.GroupApp.Battery.BatchSendCommand(context.Background(), req, userClaims, dealerID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.Set("data", data)
+}

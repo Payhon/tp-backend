@@ -122,3 +122,24 @@ type BatteryBatchAssignDealerReq struct {
 	DeviceIDs []string `json:"device_ids" binding:"required,min=1"`
 	DealerID  string   `json:"dealer_id" binding:"required"`
 }
+
+// BatteryBatchCommandReq 批量下发指令请求
+type BatteryBatchCommandReq struct {
+	DeviceIDs   []string `json:"device_ids" binding:"required,min=1"`
+	CommandType string   `json:"command_type" binding:"required,max=64"` // 展示用
+	Identify    string   `json:"identify" binding:"required,max=255"`
+	Value       *string  `json:"value" binding:"omitempty,max=9999"` // JSON 字符串
+}
+
+type BatteryBatchCommandFailure struct {
+	DeviceID     string `json:"device_id"`
+	DeviceNumber string `json:"device_number"`
+	Message      string `json:"message"`
+}
+
+type BatteryBatchCommandResp struct {
+	Total    int                     `json:"total"`
+	Success  int                     `json:"success"`
+	Failed   int                     `json:"failed"`
+	Failures []BatteryBatchCommandFailure `json:"failures"`
+}

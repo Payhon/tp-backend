@@ -22,6 +22,8 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.POST("/import", api.Controllers.BatteryApi.ImportBatteryList)
 		// 批量分配经销商
 		batteryApi.POST("/batch-assign-dealer", api.Controllers.BatteryApi.BatchAssignDealer)
+		// 批量下发指令（在线）
+		batteryApi.POST("/batch-command", api.Controllers.BatteryApi.BatchSendCommand)
 
 		// 标签管理
 		batteryApi.GET("/tags", api.Controllers.BatteryTagApi.ListBatteryTags)

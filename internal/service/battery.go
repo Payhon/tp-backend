@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	dal "project/internal/dal"
 	"project/internal/model"
 	query "project/internal/query"
+	"project/pkg/constant"
 	"project/pkg/errcode"
 	global "project/pkg/global"
 	"project/pkg/utils"
@@ -601,14 +603,14 @@ func (*Battery) ImportBatteryList(ctx context.Context, filePath string, claims *
 		}
 
 		// 查找或创建 device_batteries 记录
-		deviceBattery, err := query.DeviceBattery.WithContext(ctx).
+		_, err = query.DeviceBattery.WithContext(ctx).
 			Where(query.DeviceBattery.DeviceID.Eq(device.ID)).
 			First()
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
 				// 创建新记录
 				now := time.Now()
-				deviceBattery = &model.DeviceBattery{
+				newDeviceBattery := &model.DeviceBattery{
 					DeviceID:           device.ID,
 					BatteryModelID:     batteryModelID,
 					DealerID:           importDealerID,
@@ -619,7 +621,7 @@ func (*Battery) ImportBatteryList(ctx context.Context, filePath string, claims *
 					TransferStatus:     StringPtr("FACTORY"),
 					UpdatedAt:          &now,
 				}
-				if err := tx.Create(deviceBattery).Error; err != nil {
+				if err := tx.Create(newDeviceBattery).Error; err != nil {
 					tx.Rollback()
 					return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 						"sql_error": err.Error(),
@@ -769,4 +771,78 @@ func (*Battery) BatchAssignDealer(ctx context.Context, req model.BatteryBatchAss
 	}
 
 	return nil
+}
+
+// BatchSendCommand 批量下发指令（在线设备）
+func (*Battery) BatchSendCommand(ctx context.Context, req model.BatteryBatchCommandReq, claims *utils.UserClaims, dealerID string) (*model.BatteryBatchCommandResp, error) {
+	resp := &model.BatteryBatchCommandResp{
+		Total:    len(req.DeviceIDs),
+		Success:  0,
+		Failed:   0,
+		Failures: make([]model.BatteryBatchCommandFailure, 0),
+	}
+
+	for _, deviceID := range req.DeviceIDs {
+		// 校验设备是否存在且属于当前租户
+		device, err := query.Device.WithContext(ctx).
+			Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
+			First()
+		if err != nil {
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryBatchCommandFailure{
+				DeviceID:     deviceID,
+				DeviceNumber: "",
+				Message:      "设备不存在或无权限",
+			})
+			continue
+		}
+
+		// 经销商隔离
+		if dealerID != "" {
+			existingBattery, err := query.DeviceBattery.WithContext(ctx).
+				Where(query.DeviceBattery.DeviceID.Eq(deviceID)).
+				First()
+			if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
+				resp.Failed++
+				resp.Failures = append(resp.Failures, model.BatteryBatchCommandFailure{
+					DeviceID:     deviceID,
+					DeviceNumber: device.DeviceNumber,
+					Message:      "无权操作该设备",
+				})
+				continue
+			}
+		}
+
+		// 仅在线设备允许立即下发
+		if device.IsOnline != 1 {
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryBatchCommandFailure{
+				DeviceID:     deviceID,
+				DeviceNumber: device.DeviceNumber,
+				Message:      "设备离线（请使用离线指令）",
+			})
+			continue
+		}
+
+		put := &model.PutMessageForCommand{
+			DeviceID: deviceID,
+			Value:    req.Value,
+			Identify: req.Identify,
+		}
+
+		_, err = GroupApp.CommandData.CommandPutMessageReturnMessageID(ctx, claims.ID, put, strconv.Itoa(constant.Manual))
+		if err != nil {
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryBatchCommandFailure{
+				DeviceID:     deviceID,
+				DeviceNumber: device.DeviceNumber,
+				Message:      err.Error(),
+			})
+			continue
+		}
+
+		resp.Success++
+	}
+
+	return resp, nil
 }
