@@ -48,6 +48,8 @@ func (*Dealer) EnsureDealerTemplatePolicies(ctx context.Context) error {
 		"bms_battery_list",
 		"bms_battery_tag",
 		"bms_battery_offline_cmd",
+		"bms_battery_ota_package",
+		"bms_battery_ota_task",
 		"bms_battery_transfer",
 		"bms_warranty",
 		"bms_end_user",
