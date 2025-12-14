@@ -60,6 +60,7 @@ type Controller struct {
 	EndUserApi            // BMS: 终端用户
 	ActivationLogApi      // BMS: 激活日志
 	BatteryMaintenanceApi // BMS: 电池维保记录
+	BatteryTagApi         // BMS: 电池标签
 }
 
 var (

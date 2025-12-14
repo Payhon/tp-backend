@@ -36,6 +36,7 @@ func (*Dealer) EnsureDealerTemplatePolicies(ctx context.Context) error {
 		"bms",
 		"bms_dashboard",
 		"bms_battery_list",
+		"bms_battery_tag",
 		"bms_warranty",
 		"bms_end_user",
 	}
@@ -44,6 +45,7 @@ func (*Dealer) EnsureDealerTemplatePolicies(ctx context.Context) error {
 		"bms",
 		"bms_dashboard",
 		"bms_battery_list",
+		"bms_battery_tag",
 		"bms_battery_transfer",
 		"bms_warranty",
 		"bms_end_user",
