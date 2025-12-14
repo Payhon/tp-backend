@@ -29,5 +29,11 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.PUT("/tags/:id", api.Controllers.BatteryTagApi.UpdateBatteryTag)
 		batteryApi.DELETE("/tags/:id", api.Controllers.BatteryTagApi.DeleteBatteryTag)
 		batteryApi.POST("/tags/assign", api.Controllers.BatteryTagApi.AssignBatteryTags)
+
+		// 离线指令
+		batteryApi.GET("/offline-commands", api.Controllers.OfflineCommandApi.ListOfflineCommands)
+		batteryApi.POST("/offline-commands", api.Controllers.OfflineCommandApi.CreateOfflineCommand)
+		batteryApi.GET("/offline-commands/:id", api.Controllers.OfflineCommandApi.GetOfflineCommandDetail)
+		batteryApi.DELETE("/offline-commands/:id", api.Controllers.OfflineCommandApi.CancelOfflineCommand)
 	}
 }

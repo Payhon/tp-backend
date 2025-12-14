@@ -3,8 +3,10 @@ package uplink
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"project/internal/query"
+	global "project/pkg/global"
 
 	"github.com/sirupsen/logrus"
 )
@@ -164,6 +166,19 @@ func (f *ResponseUplink) updateCommandLog(messageID string, success bool, errorM
 		f.logger.WithField("message_id", messageID).Warn("Command log not found")
 		return
 	}
+
+	// 同步更新离线指令任务状态（如果该 message_id 来源于离线指令执行）
+	offlineStatus := "SUCCESS"
+	if !success {
+		offlineStatus = "FAILED"
+	}
+	_ = global.DB.WithContext(f.ctx).Table("offline_command_tasks").
+		Where("message_id = ?", messageID).
+		Updates(map[string]interface{}{
+			"status":        offlineStatus,
+			"executed_at":   time.Now().UTC(),
+			"error_message": errorMsgPtr,
+		}).Error
 
 	f.logger.WithFields(logrus.Fields{
 		"message_id": messageID,

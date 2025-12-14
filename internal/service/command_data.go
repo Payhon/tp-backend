@@ -32,10 +32,16 @@ func (c *CommandData) SetDownlinkBus(bus *downlink.Bus) {
 // PutMessage 下发命令（改造为异步模式，支持多层网关）
 // 保持原有的 CommandPutMessage 接口签名
 func (c *CommandData) CommandPutMessage(ctx context.Context, operatorID string, putMessageReq *model.PutMessageForCommand, operationType string) error {
+	_, err := c.CommandPutMessageReturnMessageID(ctx, operatorID, putMessageReq, operationType)
+	return err
+}
+
+// CommandPutMessageReturnMessageID 下发命令并返回 message_id（供离线指令等场景关联）
+func (c *CommandData) CommandPutMessageReturnMessageID(ctx context.Context, operatorID string, putMessageReq *model.PutMessageForCommand, operationType string) (string, error) {
 	// 1. 获取设备信息
 	device, err := initialize.GetDeviceCacheById(putMessageReq.DeviceID)
 	if err != nil {
-		return fmt.Errorf("device not found: %w", err)
+		return "", fmt.Errorf("device not found: %w", err)
 	}
 
 	// 2. 生成 message_id，8位唯一字符串
@@ -47,7 +53,7 @@ func (c *CommandData) CommandPutMessage(ctx context.Context, operatorID string, 
 	if device.DeviceConfigID != nil {
 		deviceConfig, err := dal.GetDeviceConfigByID(*device.DeviceConfigID)
 		if err != nil {
-			return fmt.Errorf("failed to get device config: %w", err)
+			return "", fmt.Errorf("failed to get device config: %w", err)
 		}
 		deviceType = deviceConfig.DeviceType
 		if deviceConfig.ProtocolType != nil {
@@ -74,7 +80,7 @@ func (c *CommandData) CommandPutMessage(ctx context.Context, operatorID string, 
 	// 5. 处理多层网关数据嵌套
 	transformedData, err := transformCommandDataForMultiLevelGateway(commandData, device, deviceType)
 	if err != nil {
-		return fmt.Errorf("failed to transform command data: %w", err)
+		return "", fmt.Errorf("failed to transform command data: %w", err)
 	}
 
 	jsonData, _ := json.Marshal(transformedData)
@@ -82,7 +88,7 @@ func (c *CommandData) CommandPutMessage(ctx context.Context, operatorID string, 
 	// 6. 处理网关层级，获取目标设备信息
 	targetDevice, targetDeviceNumber, topicPrefix, err := c.resolveDeviceInfo(device, deviceType, protocolType)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// 7. 创建 pending 日志（记录转换后的完整数据）
@@ -116,10 +122,10 @@ func (c *CommandData) CommandPutMessage(ctx context.Context, operatorID string, 
 			"identify":            putMessageReq.Identify,
 		}).Info("Command sent via downlink")
 	} else {
-		return fmt.Errorf("downlink service not available")
+		return "", fmt.Errorf("downlink service not available")
 	}
 
-	return nil
+	return messageId, nil
 }
 
 // createCommandLogForPut 创建命令日志（for PutMessageForCommand）

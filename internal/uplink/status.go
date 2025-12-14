@@ -177,6 +177,8 @@ func (f *StatusUplink) processMessage(msg *DeviceMessage) {
 	// 9. 预期数据发送(上线时)
 	if status == 1 {
 		go f.sendExpectedData(device)
+		// 10. 离线指令：设备上线后自动执行
+		go service.GroupApp.OfflineCommand.ExecutePendingForDevice(context.Background(), device.ID)
 	}
 }
 
