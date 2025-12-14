@@ -31,4 +31,3 @@ func (*ActivationLogApi) GetActivationLogs(c *gin.Context) {
 	}
 	c.Set("data", data)
 }
-

@@ -58,6 +58,7 @@ type ServiceGroup struct {
 	Warranty       // BMS: 维保管理
 	EndUser        // BMS: 终端用户（穿透/强制解绑）
 	ActivationLog  // BMS: 激活日志（从操作日志派生）
+	BatteryMaintenance // BMS: 电池维保记录（手动）
 }
 
 var GroupApp = new(ServiceGroup)

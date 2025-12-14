@@ -14,4 +14,3 @@ func (*ActivationLog) InitActivationLog(Router *gin.RouterGroup) {
 		url.GET("", api.Controllers.ActivationLogApi.GetActivationLogs)
 	}
 }
-

@@ -42,6 +42,7 @@ type apps struct {
 	Warranty       // BMS: 维保管理
 	EndUser        // BMS: 终端用户
 	ActivationLog  // BMS: 激活日志
+	BatteryMaintenance // BMS: 电池维保记录
 }
 
 var Model = new(apps)

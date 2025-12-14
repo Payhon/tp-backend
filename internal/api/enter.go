@@ -59,6 +59,7 @@ type Controller struct {
 	WarrantyApi       // BMS: 维保管理
 	EndUserApi        // BMS: 终端用户
 	ActivationLogApi  // BMS: 激活日志
+	BatteryMaintenanceApi // BMS: 电池维保记录
 }
 
 var (

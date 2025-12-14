@@ -29,13 +29,13 @@ func (*ActivationLog) GetActivationLogList(ctx context.Context, req model.Activa
 	// 基于 operation_logs 里 APP bind 的请求记录（POST /api/v1/app/device/bind）
 	// 通过 request_message::jsonb->>'device_number' 获取序列号
 	type row struct {
-		DeviceNumber   string     `gorm:"column:device_number"`
-		BatteryModel   *string    `gorm:"column:battery_model"`
-		UserPhone      string     `gorm:"column:user_phone"`
-		CreatedAt      time.Time  `gorm:"column:created_at"`
-		IP             string     `gorm:"column:ip"`
-		UserAgent      *string    `gorm:"column:user_agent"`
-		ActivationWay  string     `gorm:"column:activation_way"`
+		DeviceNumber    string    `gorm:"column:device_number"`
+		BatteryModel    *string   `gorm:"column:battery_model"`
+		UserPhone       string    `gorm:"column:user_phone"`
+		CreatedAt       time.Time `gorm:"column:created_at"`
+		IP              string    `gorm:"column:ip"`
+		UserAgent       *string   `gorm:"column:user_agent"`
+		ActivationWay   string    `gorm:"column:activation_way"`
 		BindingTerminal string    `gorm:"-"`
 	}
 
@@ -144,4 +144,3 @@ LIMIT ? OFFSET ?
 		PageSize: req.PageSize,
 	}, nil
 }
-
