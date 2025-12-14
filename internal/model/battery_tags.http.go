@@ -45,4 +45,3 @@ type BatteryTagAssignReq struct {
 	TagIDs    []string `json:"tag_ids" binding:"omitempty"`
 	Mode      *string  `json:"mode" binding:"omitempty,oneof=REPLACE APPEND"` // REPLACE: 覆盖；APPEND: 追加
 }
-

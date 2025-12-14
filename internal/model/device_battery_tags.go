@@ -16,4 +16,3 @@ type DeviceBatteryTag struct {
 func (*DeviceBatteryTag) TableName() string {
 	return TableNameDeviceBatteryTag
 }
-

@@ -87,4 +87,3 @@ func (*BatteryTagApi) AssignBatteryTags(c *gin.Context) {
 	}
 	c.Set("data", nil)
 }
-

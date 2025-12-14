@@ -211,4 +211,3 @@ func (*BatteryTag) Assign(ctx context.Context, req model.BatteryTagAssignReq, cl
 
 	return nil
 }
-

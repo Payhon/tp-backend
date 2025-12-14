@@ -18,4 +18,3 @@ type BatteryTag struct {
 func (*BatteryTag) TableName() string {
 	return TableNameBatteryTag
 }
-
