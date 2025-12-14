@@ -44,5 +44,6 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.GET("/params/:id", api.Controllers.BatteryApi.GetBatteryParams)
 		batteryApi.POST("/params/pub", api.Controllers.BatteryApi.PutBatteryParams)
 		batteryApi.POST("/params/get", api.Controllers.BatteryApi.GetBatteryParamsFromDevice)
+		batteryApi.GET("/params/set/logs", api.Controllers.BatteryApi.GetBatteryParamSetLogs)
 	}
 }

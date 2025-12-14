@@ -160,6 +160,40 @@ func (*Battery) RequestDeviceAttributes(ctx context.Context, req model.Attribute
 	return GroupApp.AttributeData.AttributeGetMessage(claims, &req)
 }
 
+// GetDeviceAttributeSetLogs BMS：参数下发记录/回执（带租户/经销商隔离）
+func (*Battery) GetDeviceAttributeSetLogs(ctx context.Context, req model.GetAttributeSetLogsListByPageReq, claims *utils.UserClaims, dealerID string) (interface{}, error) {
+	// 校验设备租户
+	_, err := query.Device.WithContext(ctx).
+		Where(query.Device.ID.Eq(req.DeviceId), query.Device.TenantID.Eq(claims.TenantID)).
+		First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "设备不存在"})
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	// 经销商隔离
+	if dealerID != "" {
+		existingBattery, err := query.DeviceBattery.WithContext(ctx).
+			Where(query.DeviceBattery.DeviceID.Eq(req.DeviceId)).
+			First()
+		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
+			return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权查看该设备"})
+		}
+	}
+
+	count, list, err := dal.GetAttributeSetLogsDataListByPage(req)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	return map[string]interface{}{
+		"count": count,
+		"list":  list,
+	}, nil
+}
+
 // GetBatteryList 获取电池列表（厂家/经销商视角）
 func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, claims *utils.UserClaims, dealerID string) (*model.BatteryListResp, error) {
 	db := global.DB.WithContext(ctx)

@@ -65,3 +65,21 @@ func (*BatteryApi) GetBatteryParamsFromDevice(c *gin.Context) {
 	c.Set("data", nil)
 }
 
+// GetBatteryParamSetLogs 参数下发记录/回执（BMS，带经销商隔离）
+// @Router /api/v1/battery/params/set/logs [get]
+func (*BatteryApi) GetBatteryParamSetLogs(c *gin.Context) {
+	var req model.GetAttributeSetLogsListByPageReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	dealerIDVal, _ := c.Get(middleware.DealerIDContextKey)
+	dealerID, _ := dealerIDVal.(string)
+
+	data, err := service.GroupApp.Battery.GetDeviceAttributeSetLogs(context.Background(), req, userClaims, dealerID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
