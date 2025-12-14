@@ -25,4 +25,3 @@ type OfflineCommandTask struct {
 func (*OfflineCommandTask) TableName() string {
 	return TableNameOfflineCommandTask
 }
-

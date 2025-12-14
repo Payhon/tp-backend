@@ -846,3 +846,97 @@ func (*Battery) BatchSendCommand(ctx context.Context, req model.BatteryBatchComm
 
 	return resp, nil
 }
+
+// BatchPushOTA 批量 OTA 推送（创建 OTA 任务并触发推送）
+func (*Battery) BatchPushOTA(ctx context.Context, req model.BatteryBatchOtaPushReq, claims *utils.UserClaims, dealerID string) (*model.BatteryBatchOtaPushResp, error) {
+	// 校验升级包归属当前租户
+	pkg, err := query.OtaUpgradePackage.WithContext(ctx).
+		Where(query.OtaUpgradePackage.ID.Eq(req.OTAUpgradePackageID), query.OtaUpgradePackage.TenantID.Eq(claims.TenantID)).
+		First()
+	if err != nil || pkg == nil {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "升级包不存在或无权限"})
+	}
+
+	accepted := make([]string, 0, len(req.DeviceIDs))
+	failures := make([]model.BatteryBatchOtaPushFailure, 0)
+
+	for _, deviceID := range req.DeviceIDs {
+		device, err := query.Device.WithContext(ctx).
+			Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
+			First()
+		if err != nil || device == nil {
+			failures = append(failures, model.BatteryBatchOtaPushFailure{
+				DeviceID:     deviceID,
+				DeviceNumber: "",
+				Message:      "设备不存在或无权限",
+			})
+			continue
+		}
+
+		// 经销商隔离
+		if dealerID != "" {
+			existingBattery, err := query.DeviceBattery.WithContext(ctx).
+				Where(query.DeviceBattery.DeviceID.Eq(deviceID)).
+				First()
+			if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
+				failures = append(failures, model.BatteryBatchOtaPushFailure{
+					DeviceID:     deviceID,
+					DeviceNumber: device.DeviceNumber,
+					Message:      "无权操作该设备",
+				})
+				continue
+			}
+		}
+
+		accepted = append(accepted, deviceID)
+	}
+
+	if len(accepted) == 0 {
+		return &model.BatteryBatchOtaPushResp{
+			TaskID:   "",
+			Total:    len(req.DeviceIDs),
+			Accepted: 0,
+			Rejected: len(failures),
+			Failures: failures,
+		}, nil
+	}
+
+	// 生成任务名称
+	taskName := ""
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		taskName = strings.TrimSpace(*req.Name)
+	} else {
+		taskName = fmt.Sprintf("BMS批量OTA_%s_%s", pkg.Version, time.Now().In(time.Local).Format("20060102150405"))
+	}
+
+	createReq := &model.CreateOTAUpgradeTaskReq{
+		Name:                taskName,
+		OTAUpgradePackageId: req.OTAUpgradePackageID,
+		Description:         req.Description,
+		Remark:              req.Remark,
+		DeviceIdList:        accepted,
+	}
+
+	// 用 DAL 创建任务以拿到 task_id，然后逐个触发推送
+	taskDetails, err := dal.CreateOTAUpgradeTaskWithDetail(createReq)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	taskID := ""
+	if len(taskDetails) > 0 {
+		taskID = taskDetails[0].OtaUpgradeTaskID
+	}
+	go func(details []*model.OtaUpgradeTaskDetail) {
+		for _, d := range details {
+			_ = GroupApp.OTA.PushOTAUpgradePackage(d)
+		}
+	}(taskDetails)
+
+	return &model.BatteryBatchOtaPushResp{
+		TaskID:   taskID,
+		Total:    len(req.DeviceIDs),
+		Accepted: len(accepted),
+		Rejected: len(failures),
+		Failures: failures,
+	}, nil
+}

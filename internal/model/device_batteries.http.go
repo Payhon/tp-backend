@@ -138,8 +138,31 @@ type BatteryBatchCommandFailure struct {
 }
 
 type BatteryBatchCommandResp struct {
-	Total    int                     `json:"total"`
-	Success  int                     `json:"success"`
-	Failed   int                     `json:"failed"`
+	Total    int                          `json:"total"`
+	Success  int                          `json:"success"`
+	Failed   int                          `json:"failed"`
 	Failures []BatteryBatchCommandFailure `json:"failures"`
+}
+
+// BatteryBatchOtaPushReq 批量 OTA 推送
+type BatteryBatchOtaPushReq struct {
+	DeviceIDs          []string `json:"device_ids" binding:"required,min=1"`
+	OTAUpgradePackageID string   `json:"ota_upgrade_package_id" binding:"required,max=36"`
+	Name               *string  `json:"name" binding:"omitempty,max=200"` // 可选：任务名称
+	Description        *string  `json:"description" binding:"omitempty,max=500"`
+	Remark             *string  `json:"remark" binding:"omitempty,max=255"`
+}
+
+type BatteryBatchOtaPushFailure struct {
+	DeviceID     string `json:"device_id"`
+	DeviceNumber string `json:"device_number"`
+	Message      string `json:"message"`
+}
+
+type BatteryBatchOtaPushResp struct {
+	TaskID   string                   `json:"task_id"`
+	Total    int                      `json:"total"`
+	Accepted int                      `json:"accepted"`
+	Rejected int                      `json:"rejected"`
+	Failures []BatteryBatchOtaPushFailure `json:"failures"`
 }

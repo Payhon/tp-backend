@@ -56,4 +56,3 @@ type OfflineCommandDetailResp struct {
 	CommandLogRspData  *string `json:"command_log_rsp_data"`
 	CommandLogErrorMsg *string `json:"command_log_error_message"`
 }
-

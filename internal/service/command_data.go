@@ -73,7 +73,7 @@ func (c *CommandData) CommandPutMessageReturnMessageID(ctx context.Context, oper
 	}
 
 	commandData := map[string]interface{}{
-		"method": putMessageReq.Identify, // identify 映射为 method
+		"method": putMessageReq.Identify,    // identify 映射为 method
 		"params": json.RawMessage(valueStr), // Value 是 JSON 字符串
 	}
 
@@ -101,25 +101,25 @@ func (c *CommandData) CommandPutMessageReturnMessageID(ctx context.Context, oper
 	// 8. 使用 downlink.Bus 发送
 	if c.downlinkBus != nil {
 		msg := &downlink.Message{
-			DeviceID:       device.ID,                          // 原始设备ID（用于日志关联）
-			DeviceNumber:   targetDeviceNumber,                 // 目标设备编号
-			DeviceType:     deviceType,                         // 设备类型
-			DeviceConfigID: c.getDeviceConfigID(targetDevice),  // 使用顶层网关的配置ID（用于脚本编码）
+			DeviceID:       device.ID,                         // 原始设备ID（用于日志关联）
+			DeviceNumber:   targetDeviceNumber,                // 目标设备编号
+			DeviceType:     deviceType,                        // 设备类型
+			DeviceConfigID: c.getDeviceConfigID(targetDevice), // 使用顶层网关的配置ID（用于脚本编码）
 			Type:           downlink.MessageTypeCommand,
 			Data:           jsonData,
-			Topic:          "",                                 // 不再传Topic，由Adapter构造
-			TopicPrefix:    topicPrefix,                        // 协议插件前缀
+			Topic:          "",          // 不再传Topic，由Adapter构造
+			TopicPrefix:    topicPrefix, // 协议插件前缀
 			MessageID:      messageId,
 		}
 		c.downlinkBus.PublishCommand(msg)
 
 		logrus.WithFields(logrus.Fields{
-			"device_id":           device.ID,
-			"target_device_id":    targetDevice.ID,
+			"device_id":            device.ID,
+			"target_device_id":     targetDevice.ID,
 			"target_device_number": targetDeviceNumber,
-			"device_type":         deviceType,
-			"message_id":          messageId,
-			"identify":            putMessageReq.Identify,
+			"device_type":          deviceType,
+			"message_id":           messageId,
+			"identify":             putMessageReq.Identify,
 		}).Info("Command sent via downlink")
 	} else {
 		return "", fmt.Errorf("downlink service not available")

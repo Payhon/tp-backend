@@ -250,12 +250,15 @@ func (*OTA) PushOTAUpgradePackage(taskDetail *model.OtaUpgradeTaskDetail) error 
 		return fmt.Errorf("the device is upgrading")
 	}
 	// 推送升级包
-	taskQuery, err := query.OtaUpgradeTask.Select(query.OtaUpgradeTask.ID).Where(query.OtaUpgradeTask.ID.Eq(taskDetail.OtaUpgradeTaskID)).First()
+	taskQuery, err := query.OtaUpgradeTask.
+		Select(query.OtaUpgradeTask.OtaUpgradePackageID).
+		Where(query.OtaUpgradeTask.ID.Eq(taskDetail.OtaUpgradeTaskID)).
+		First()
 	if err != nil {
 		return err
 	}
-	otataskid := taskQuery.ID
-	otapackage, err := query.OtaUpgradePackage.Where(query.OtaUpgradePackage.ID.Eq(otataskid)).First()
+	packageID := taskQuery.OtaUpgradePackageID
+	otapackage, err := query.OtaUpgradePackage.Where(query.OtaUpgradePackage.ID.Eq(packageID)).First()
 	if err != nil {
 		return err
 	}
@@ -287,8 +290,7 @@ func (*OTA) PushOTAUpgradePackage(taskDetail *model.OtaUpgradeTaskDetail) error 
 		logrus.Error(err)
 	} else {
 		// 修改设备升级任务信息
-		//修改设备升级任务信息
-		taskDetail.Status = 1
+		taskDetail.Status = 2
 		desc := "已通知设备"
 		taskDetail.StatusDescription = &desc
 		t := time.Now().UTC()

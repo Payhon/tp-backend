@@ -309,9 +309,9 @@ func (c *OfflineCommand) ExecutePendingForDevice(ctx context.Context, deviceID s
 				_ = tx.Table(model.TableNameOfflineCommandTask).
 					Where("id = ? AND status = ?", t.ID, OfflineCmdStatusPending).
 					Updates(map[string]interface{}{
-						"status":       OfflineCmdStatusFailed,
+						"status":        OfflineCmdStatusFailed,
 						"dispatched_at": now,
-						"executed_at":  now,
+						"executed_at":   now,
 						"error_message": errMsg,
 					}).Error
 				continue
@@ -328,4 +328,3 @@ func (c *OfflineCommand) ExecutePendingForDevice(ctx context.Context, deviceID s
 		return nil
 	})
 }
-

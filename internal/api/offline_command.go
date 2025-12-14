@@ -75,4 +75,3 @@ func (*OfflineCommandApi) CancelOfflineCommand(c *gin.Context) {
 	}
 	c.Set("data", nil)
 }
-

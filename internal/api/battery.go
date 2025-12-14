@@ -230,3 +230,30 @@ func (*BatteryApi) BatchSendCommand(c *gin.Context) {
 
 	c.Set("data", data)
 }
+
+// BatchPushOTA 批量 OTA 推送
+// @Summary 批量 OTA 推送
+// @Description BMS 电池管理-批量 OTA 推送（创建升级任务并触发推送）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryBatchOtaPushReq true "请求参数"
+// @Success 200 {object} model.BatteryBatchOtaPushResp
+// @Router /api/v1/battery/batch-ota [post]
+func (*BatteryApi) BatchPushOTA(c *gin.Context) {
+	var req model.BatteryBatchOtaPushReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	dealerIDVal, _ := c.Get(middleware.DealerIDContextKey)
+	dealerID, _ := dealerIDVal.(string)
+
+	data, err := service.GroupApp.Battery.BatchPushOTA(context.Background(), req, userClaims, dealerID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
