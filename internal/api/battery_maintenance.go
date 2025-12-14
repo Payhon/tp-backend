@@ -71,4 +71,3 @@ func (*BatteryMaintenanceApi) GetBatteryMaintenanceDetail(c *gin.Context) {
 	}
 	c.Set("data", data)
 }
-

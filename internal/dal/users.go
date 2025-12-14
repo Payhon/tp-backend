@@ -252,6 +252,19 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 		"user_roles":            roles,
 	}
 
+	// 补充经销商归属（users.dealer_id）与经销商名称（dealers.name）
+	var dealerID string
+	_ = global.DB.Table("users").Select("dealer_id").Where("id = ?", result.ID).Scan(&dealerID).Error
+	if dealerID != "" {
+		var dealerName string
+		_ = global.DB.Table("dealers").Select("name").Where("id = ?", dealerID).Scan(&dealerName).Error
+		userMap["dealer_id"] = dealerID
+		userMap["dealer_name"] = dealerName
+	} else {
+		userMap["dealer_id"] = ""
+		userMap["dealer_name"] = ""
+	}
+
 	// 添加地址信息（如果存在）
 	if result.AddressID != nil {
 		userMap["address"] = map[string]interface{}{
@@ -327,7 +340,15 @@ func GetUserListByPageWithAddress(userListReq *model.UserListReq, claims *utils.
 	// 权限过滤
 	if claims.Authority == TENANT_ADMIN || claims.Authority == TENANT_USER {
 		queryBuilder = queryBuilder.Where(q.TenantID.Eq(claims.TenantID))
-		queryBuilder = queryBuilder.Where(q.Authority.Eq(TENANT_USER))
+		// 默认保持原逻辑：仅查询租户用户
+		// 若显式指定 authority 或 all_authorities=true，则按需放宽
+		if userListReq != nil && userListReq.AllAuthorities != nil && *userListReq.AllAuthorities {
+			// no-op: do not restrict by authority
+		} else if userListReq != nil && userListReq.Authority != nil && *userListReq.Authority != "" {
+			queryBuilder = queryBuilder.Where(q.Authority.Eq(*userListReq.Authority))
+		} else {
+			queryBuilder = queryBuilder.Where(q.Authority.Eq(TENANT_USER))
+		}
 	} else if claims.Authority == SYS_ADMIN {
 		queryBuilder = queryBuilder.Where(q.Authority.Eq(TENANT_ADMIN))
 	} else {

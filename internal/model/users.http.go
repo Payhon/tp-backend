@@ -12,6 +12,8 @@ type CreateUserReq struct {
 	Name              *string                 `json:"name" validate:"omitempty,min=2,max=50"`         // 姓名
 	PhoneNumber       string                  `json:"phone_number" validate:"required,max=50"`        // 手机号
 	RoleIDs           []string                `json:"userRoles" validate:"omitempty"`                 // 角色ID
+	Authority         *string                 `json:"authority" validate:"omitempty,oneof=TENANT_ADMIN TENANT_USER"` // 账号类型（BMS：厂家管理员/经销商管理员映射）
+	DealerID          *string                 `json:"dealer_id" validate:"omitempty,max=36"`          // 关联经销商（仅经销商管理员需要）
 	Remark            *string                 `json:"remark" validate:"omitempty,max=255"`            // 备注
 	Organization      *string                 `json:"organization" validate:"omitempty,max=200"`      // 用户所属组织机构名称
 	Timezone          *string                 `json:"timezone" validate:"omitempty,max=50"`           // 所在时区
@@ -37,6 +39,9 @@ type UserListReq struct {
 	Name         *string `json:"name" form:"name" validate:"omitempty,max=50"`                  // 姓名
 	Status       *string `json:"status" form:"status" validate:"omitempty,oneof=N F"`           // 用户状态 F-冻结 N-正常
 	Organization *string `json:"organization" form:"organization" validate:"omitempty,max=200"` // 组织机构名称
+	Authority    *string `json:"authority" form:"authority" validate:"omitempty,oneof=TENANT_ADMIN TENANT_USER"` // 账号类型筛选
+	AllAuthorities *bool `json:"all_authorities" form:"all_authorities" validate:"omitempty"` // 是否查询全部账号类型（默认保持原逻辑）
+	DealerID     *string `json:"dealer_id" form:"dealer_id" validate:"omitempty,max=36"`      // 关联经销商筛选（当前仅用于前端展示/后处理）
 	// 地址相关查询字段
 	Country  *string `json:"country" form:"country" validate:"omitempty,max=50"`   // 国家
 	Province *string `json:"province" form:"province" validate:"omitempty,max=50"` // 省份
@@ -54,6 +59,7 @@ type UpdateUserReq struct {
 	Password        *string                 `json:"password" validate:"omitempty,max=255"`          // 密码
 	UpdatedAt       *time.Time              `json:"updated_at" validate:"omitempty"`                // 更新时间
 	RoleIDs         []string                `json:"userRoles" validate:"omitempty"`                 // 角色ID
+	DealerID         *string                 `json:"dealer_id" validate:"omitempty,max=36"`          // 关联经销商（仅经销商管理员需要；传空字符串表示解绑）
 	Organization    *string                 `json:"organization" validate:"omitempty,max=200"`      // 用户所属组织机构名称
 	Timezone        *string                 `json:"timezone" validate:"omitempty,max=50"`           // 所在时区
 	DefaultLanguage *string                 `json:"default_language" validate:"omitempty,max=10"`   // 默认语言

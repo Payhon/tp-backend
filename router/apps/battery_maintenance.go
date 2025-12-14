@@ -16,4 +16,3 @@ func (*BatteryMaintenance) InitBatteryMaintenance(Router *gin.RouterGroup) {
 		url.GET(":id", api.Controllers.BatteryMaintenanceApi.GetBatteryMaintenanceDetail)
 	}
 }
-

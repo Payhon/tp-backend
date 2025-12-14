@@ -4,14 +4,14 @@ import "time"
 
 // BatteryMaintenanceCreateReq 新增电池维保记录（手动）
 type BatteryMaintenanceCreateReq struct {
-	DeviceNumber    string    `json:"device_number" binding:"required"`
-	FaultType       string    `json:"fault_type" binding:"required"`
-	MaintainAt      time.Time `json:"maintain_at" binding:"required"`
-	Maintainer      string    `json:"maintainer" binding:"required"`
-	Solution        *string   `json:"solution"`
-	Parts           []string  `json:"parts"` // 配件更换清单
-	AffectWarranty  bool      `json:"affect_warranty"`
-	Remark          *string   `json:"remark"`
+	DeviceNumber   string    `json:"device_number" binding:"required"`
+	FaultType      string    `json:"fault_type" binding:"required"`
+	MaintainAt     time.Time `json:"maintain_at" binding:"required"`
+	Maintainer     string    `json:"maintainer" binding:"required"`
+	Solution       *string   `json:"solution"`
+	Parts          []string  `json:"parts"` // 配件更换清单
+	AffectWarranty bool      `json:"affect_warranty"`
+	Remark         *string   `json:"remark"`
 }
 
 // BatteryMaintenanceListReq 电池维保记录列表查询
@@ -46,4 +46,3 @@ type BatteryMaintenanceListResp struct {
 	Page     int                          `json:"page"`
 	PageSize int                          `json:"page_size"`
 }
-

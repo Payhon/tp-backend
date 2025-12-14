@@ -81,18 +81,18 @@ func (*BatteryMaintenance) Create(ctx context.Context, req model.BatteryMaintena
 
 func (*BatteryMaintenance) List(ctx context.Context, req model.BatteryMaintenanceListReq, claims *utils.UserClaims, dealerScopeID string) (*model.BatteryMaintenanceListResp, error) {
 	type row struct {
-		ID             string     `gorm:"column:id"`
-		DeviceID       string     `gorm:"column:device_id"`
-		DeviceNumber   string     `gorm:"column:device_number"`
-		BatteryModel   *string    `gorm:"column:battery_model"`
-		FaultType      string     `gorm:"column:fault_type"`
-		MaintainAt     time.Time  `gorm:"column:maintain_at"`
-		Maintainer     string     `gorm:"column:maintainer"`
-		Solution       *string    `gorm:"column:solution"`
-		Parts          *string    `gorm:"column:parts"`
-		AffectWarranty bool       `gorm:"column:affect_warranty"`
-		Remark         *string    `gorm:"column:remark"`
-		CreatedAt      time.Time  `gorm:"column:created_at"`
+		ID             string    `gorm:"column:id"`
+		DeviceID       string    `gorm:"column:device_id"`
+		DeviceNumber   string    `gorm:"column:device_number"`
+		BatteryModel   *string   `gorm:"column:battery_model"`
+		FaultType      string    `gorm:"column:fault_type"`
+		MaintainAt     time.Time `gorm:"column:maintain_at"`
+		Maintainer     string    `gorm:"column:maintainer"`
+		Solution       *string   `gorm:"column:solution"`
+		Parts          *string   `gorm:"column:parts"`
+		AffectWarranty bool      `gorm:"column:affect_warranty"`
+		Remark         *string   `gorm:"column:remark"`
+		CreatedAt      time.Time `gorm:"column:created_at"`
 	}
 
 	db := global.DB.WithContext(ctx).Table("battery_maintenance_records AS bmr").
@@ -180,18 +180,18 @@ func (*BatteryMaintenance) Detail(ctx context.Context, id string, claims *utils.
 	_ = req
 
 	type row struct {
-		ID             string     `gorm:"column:id"`
-		DeviceID       string     `gorm:"column:device_id"`
-		DeviceNumber   string     `gorm:"column:device_number"`
-		BatteryModel   *string    `gorm:"column:battery_model"`
-		FaultType      string     `gorm:"column:fault_type"`
-		MaintainAt     time.Time  `gorm:"column:maintain_at"`
-		Maintainer     string     `gorm:"column:maintainer"`
-		Solution       *string    `gorm:"column:solution"`
-		Parts          *string    `gorm:"column:parts"`
-		AffectWarranty bool       `gorm:"column:affect_warranty"`
-		Remark         *string    `gorm:"column:remark"`
-		CreatedAt      time.Time  `gorm:"column:created_at"`
+		ID             string    `gorm:"column:id"`
+		DeviceID       string    `gorm:"column:device_id"`
+		DeviceNumber   string    `gorm:"column:device_number"`
+		BatteryModel   *string   `gorm:"column:battery_model"`
+		FaultType      string    `gorm:"column:fault_type"`
+		MaintainAt     time.Time `gorm:"column:maintain_at"`
+		Maintainer     string    `gorm:"column:maintainer"`
+		Solution       *string   `gorm:"column:solution"`
+		Parts          *string   `gorm:"column:parts"`
+		AffectWarranty bool      `gorm:"column:affect_warranty"`
+		Remark         *string   `gorm:"column:remark"`
+		CreatedAt      time.Time `gorm:"column:created_at"`
 	}
 
 	db := global.DB.WithContext(ctx).Table("battery_maintenance_records AS bmr").
@@ -244,4 +244,3 @@ func (*BatteryMaintenance) Detail(ctx context.Context, id string, claims *utils.
 		CreatedAt:      r.CreatedAt.In(time.Local).Format("2006-01-02 15:04:05"),
 	}, nil
 }
-

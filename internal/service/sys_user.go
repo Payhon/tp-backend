@@ -68,17 +68,20 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 	case "SYS_ADMIN": // 系统管理员创建租户管理员
 		user.Authority = StringPtr("TENANT_ADMIN")
 		user.TenantID = StringPtr(strings.Split(uuid.New(), "-")[0])
-	case "TENANT_ADMIN": // 租户管理员创建租户用户
-		user.Authority = StringPtr("TENANT_USER")
-		a, err := u.GetUserById(claims.ID)
-		if err != nil {
-			logrus.Error(err)
-			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-				"error":    err.Error(),
-				"admin_id": claims.ID,
+	case "TENANT_ADMIN": // 租户管理员创建租户用户/租户管理员（BMS：经销商管理员/厂家管理员）
+		desired := "TENANT_USER"
+		if createUserReq.Authority != nil && *createUserReq.Authority != "" {
+			desired = *createUserReq.Authority
+		}
+		if desired != "TENANT_USER" && desired != "TENANT_ADMIN" {
+			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+				"authority": desired,
+				"error":     "invalid authority",
 			})
 		}
-		user.TenantID = a.TenantID
+		user.Authority = StringPtr(desired)
+		// 直接使用 claims 携带的 tenant_id，避免再次查库
+		user.TenantID = &claims.TenantID
 	default:
 		// 权限不足
 		return errcode.WithVars(errcode.CodeNoPermission, map[string]interface{}{
@@ -116,6 +119,22 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 			"error":      err.Error(),
 			"user_email": user.Email,
 		})
+	}
+
+	// 关联经销商（仅租户用户；用于 BMS 经销商管理员）
+	if claims.Authority == "TENANT_ADMIN" && createUserReq.DealerID != nil {
+		// 只有 TENANT_USER 允许绑定经销商
+		if user.Authority != nil && *user.Authority == "TENANT_USER" {
+			if err := global.DB.Table("users").
+				Where("id = ?", user.ID).
+				Update("dealer_id", *createUserReq.DealerID).Error; err != nil {
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "update_user_dealer_id",
+					"user_id":   user.ID,
+					"sql_error": err.Error(),
+				})
+			}
+		}
 	}
 
 	// 如果是创建租户管理员，则给租户新增一个默认的首页看板
@@ -466,6 +485,38 @@ func (*User) UpdateUser(updateUserReq *model.UpdateUserReq, claims *utils.UserCl
 			"error":   err.Error(),
 			"user_id": claims.ID,
 		})
+	}
+
+	// 关联经销商（仅租户用户；传空字符串表示解绑）
+	if updateUserReq.DealerID != nil {
+		if user.Authority != nil && *user.Authority == "TENANT_ADMIN" {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"error": "TENANT_ADMIN cannot bind dealer",
+			})
+		}
+		val := *updateUserReq.DealerID
+		// 兼容“清空”：传空字符串则置 NULL
+		if val == "" {
+			if err := global.DB.Table("users").
+				Where("id = ?", user.ID).
+				Update("dealer_id", nil).Error; err != nil {
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "clear_user_dealer_id",
+					"user_id":   user.ID,
+					"sql_error": err.Error(),
+				})
+			}
+		} else {
+			if err := global.DB.Table("users").
+				Where("id = ?", user.ID).
+				Update("dealer_id", val).Error; err != nil {
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "update_user_dealer_id",
+					"user_id":   user.ID,
+					"sql_error": err.Error(),
+				})
+			}
+		}
 	}
 
 	// 修改角色
