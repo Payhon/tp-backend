@@ -17,7 +17,10 @@ type BatteryListReq struct {
 	// 激活状态：ACTIVE/INACTIVE
 	ActivationStatus *string `form:"activation_status" binding:"omitempty,oneof=ACTIVE INACTIVE"`
 
-	// 经销商
+	// 持有方组织ID（替代 DealerID）
+	OwnerOrgID *string `form:"owner_org_id"`
+
+	// 经销商（已废弃，保留兼容）
 	DealerID *string `form:"dealer_id"`
 
 	// 出厂日期范围（YYYY-MM-DD）
@@ -40,6 +43,12 @@ type BatteryListItemResp struct {
 	ProductionDate     *string `json:"production_date"`
 	WarrantyExpireDate *string `json:"warranty_expire_date"`
 
+	// 组织相关（替代 dealer）
+	OwnerOrgID   *string `json:"owner_org_id"`
+	OwnerOrgName *string `json:"owner_org_name"`
+	OwnerOrgType *string `json:"owner_org_type"`
+
+	// 已废弃，保留兼容
 	DealerID   *string `json:"dealer_id"`
 	DealerName *string `json:"dealer_name"`
 

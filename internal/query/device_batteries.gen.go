@@ -30,6 +30,9 @@ func newDeviceBattery(db *gorm.DB, opts ...gen.DOOption) deviceBattery {
 	_deviceBattery.DeviceID = field.NewString(tableName, "device_id")
 	_deviceBattery.BatteryModelID = field.NewString(tableName, "battery_model_id")
 	_deviceBattery.DealerID = field.NewString(tableName, "dealer_id")
+	_deviceBattery.OwnerOrgID = field.NewString(tableName, "owner_org_id")
+	_deviceBattery.BmsFactoryOrgID = field.NewString(tableName, "bms_factory_org_id")
+	_deviceBattery.PackFactoryOrgID = field.NewString(tableName, "pack_factory_org_id")
 	_deviceBattery.ProductionDate = field.NewTime(tableName, "production_date")
 	_deviceBattery.WarrantyExpireDate = field.NewTime(tableName, "warranty_expire_date")
 	_deviceBattery.ActivationDate = field.NewTime(tableName, "activation_date")
@@ -52,6 +55,9 @@ type deviceBattery struct {
 	DeviceID           field.String
 	BatteryModelID     field.String
 	DealerID           field.String
+	OwnerOrgID         field.String // 当前持有方组织ID
+	BmsFactoryOrgID    field.String // BMS板卡出厂方组织ID
+	PackFactoryOrgID   field.String // PACK组装方组织ID
 	ProductionDate     field.Time
 	WarrantyExpireDate field.Time
 	ActivationDate     field.Time
@@ -80,6 +86,9 @@ func (d *deviceBattery) updateTableName(table string) *deviceBattery {
 	d.DeviceID = field.NewString(table, "device_id")
 	d.BatteryModelID = field.NewString(table, "battery_model_id")
 	d.DealerID = field.NewString(table, "dealer_id")
+	d.OwnerOrgID = field.NewString(table, "owner_org_id")
+	d.BmsFactoryOrgID = field.NewString(table, "bms_factory_org_id")
+	d.PackFactoryOrgID = field.NewString(table, "pack_factory_org_id")
 	d.ProductionDate = field.NewTime(table, "production_date")
 	d.WarrantyExpireDate = field.NewTime(table, "warranty_expire_date")
 	d.ActivationDate = field.NewTime(table, "activation_date")
@@ -105,10 +114,13 @@ func (d *deviceBattery) GetFieldByName(fieldName string) (field.OrderExpr, bool)
 }
 
 func (d *deviceBattery) fillFieldMap() {
-	d.fieldMap = make(map[string]field.Expr, 12)
+	d.fieldMap = make(map[string]field.Expr, 15)
 	d.fieldMap["device_id"] = d.DeviceID
 	d.fieldMap["battery_model_id"] = d.BatteryModelID
 	d.fieldMap["dealer_id"] = d.DealerID
+	d.fieldMap["owner_org_id"] = d.OwnerOrgID
+	d.fieldMap["bms_factory_org_id"] = d.BmsFactoryOrgID
+	d.fieldMap["pack_factory_org_id"] = d.PackFactoryOrgID
 	d.fieldMap["production_date"] = d.ProductionDate
 	d.fieldMap["warranty_expire_date"] = d.WarrantyExpireDate
 	d.fieldMap["activation_date"] = d.ActivationDate

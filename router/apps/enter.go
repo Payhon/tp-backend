@@ -43,6 +43,7 @@ type apps struct {
 	EndUser            // BMS: 终端用户
 	ActivationLog      // BMS: 激活日志
 	BatteryMaintenance // BMS: 电池维保记录
+	Org                // BMS: 组织管理
 }
 
 var Model = new(apps)

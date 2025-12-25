@@ -71,7 +71,7 @@ func (*OfflineCommand) Create(ctx context.Context, req model.OfflineCommandCreat
 	return nil
 }
 
-func (*OfflineCommand) List(ctx context.Context, req model.OfflineCommandListReq, claims *utils.UserClaims, dealerID string) (*model.OfflineCommandListResp, error) {
+func (*OfflineCommand) List(ctx context.Context, req model.OfflineCommandListReq, claims *utils.UserClaims, orgID string) (*model.OfflineCommandListResp, error) {
 	type row struct {
 		ID           string     `gorm:"column:id"`
 		DeviceID     string     `gorm:"column:device_id"`
@@ -88,13 +88,15 @@ func (*OfflineCommand) List(ctx context.Context, req model.OfflineCommandListReq
 
 	db := global.DB.WithContext(ctx)
 
-	// dealer 隔离：只允许查看名下设备的离线指令
+	// 组织隔离：只允许查看名下（子树）设备的离线指令
 	base := db.Table("offline_command_tasks oct").
 		Joins("LEFT JOIN users u ON u.id = oct.created_by").
 		Joins("LEFT JOIN device_batteries dbat ON dbat.device_id = oct.device_id").
 		Where("oct.tenant_id = ?", claims.TenantID)
-	if dealerID != "" {
-		base = base.Where("dbat.dealer_id = ?", dealerID)
+	if orgID != "" {
+		base = base.Where(`dbat.owner_org_id IN (
+			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+		)`, claims.TenantID, orgID)
 	}
 
 	if req.DeviceNumber != nil && strings.TrimSpace(*req.DeviceNumber) != "" {
@@ -160,7 +162,7 @@ COALESCE(u.name, u.phone_number) AS operator_name`).
 	}, nil
 }
 
-func (*OfflineCommand) Detail(ctx context.Context, id string, claims *utils.UserClaims, dealerID string) (*model.OfflineCommandDetailResp, error) {
+func (*OfflineCommand) Detail(ctx context.Context, id string, claims *utils.UserClaims, orgID string) (*model.OfflineCommandDetailResp, error) {
 	type row struct {
 		ID           string     `gorm:"column:id"`
 		DeviceID     string     `gorm:"column:device_id"`
@@ -182,8 +184,10 @@ func (*OfflineCommand) Detail(ctx context.Context, id string, claims *utils.User
 		Joins("LEFT JOIN users u ON u.id = oct.created_by").
 		Joins("LEFT JOIN device_batteries dbat ON dbat.device_id = oct.device_id").
 		Where("oct.tenant_id = ? AND oct.id = ?", claims.TenantID, id)
-	if dealerID != "" {
-		q = q.Where("dbat.dealer_id = ?", dealerID)
+	if orgID != "" {
+		q = q.Where(`dbat.owner_org_id IN (
+			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+		)`, claims.TenantID, orgID)
 	}
 
 	var r row
@@ -237,15 +241,17 @@ COALESCE(u.name, u.phone_number) AS operator_name`).Scan(&r).Error; err != nil {
 	return resp, nil
 }
 
-func (*OfflineCommand) Cancel(ctx context.Context, id string, claims *utils.UserClaims, dealerID string) error {
+func (*OfflineCommand) Cancel(ctx context.Context, id string, claims *utils.UserClaims, orgID string) error {
 	db := global.DB.WithContext(ctx)
 
-	// 经销商隔离：只能取消名下设备的离线指令
+	// 组织隔离：只能取消名下（子树）设备的离线指令
 	q := db.Table("offline_command_tasks oct").
 		Joins("LEFT JOIN device_batteries dbat ON dbat.device_id = oct.device_id").
 		Where("oct.tenant_id = ? AND oct.id = ? AND oct.status = ?", claims.TenantID, id, OfflineCmdStatusPending)
-	if dealerID != "" {
-		q = q.Where("dbat.dealer_id = ?", dealerID)
+	if orgID != "" {
+		q = q.Where(`dbat.owner_org_id IN (
+			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+		)`, claims.TenantID, orgID)
 	}
 
 	res := q.Updates(map[string]interface{}{

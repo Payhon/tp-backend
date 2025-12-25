@@ -16,6 +16,253 @@ import (
 
 type DeviceTransfer struct{}
 
+// TransferDevicesToOrg 批量转移设备到指定组织（新版，基于 org）
+func (*DeviceTransfer) TransferDevicesToOrg(ctx context.Context, req model.DeviceOrgTransferReq, claims *utils.UserClaims, operatorOrgID string) error {
+	if len(req.DeviceIDs) == 0 {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"message": "device_ids cannot be empty",
+		})
+	}
+
+	t := time.Now().UTC()
+
+	// 开启事务
+	err := global.DB.Transaction(func(tx *gorm.DB) error {
+		// 验证目标组织是否存在（如果不为空）
+		var toOrgID *string
+		if req.ToOrgID != nil && *req.ToOrgID != "" {
+			var org model.Org
+			if err := tx.Where("id = ? AND tenant_id = ?", *req.ToOrgID, claims.TenantID).First(&org).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+						"message": "目标组织不存在",
+					})
+				}
+				return err
+			}
+			toOrgID = &org.ID
+		}
+
+		// 批量处理设备转移
+		for _, deviceID := range req.DeviceIDs {
+			// 查询设备是否存在
+			var device model.Device
+			if err := tx.Where("id = ? AND tenant_id = ?", deviceID, claims.TenantID).First(&device).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+						"message": "设备不存在: " + deviceID,
+					})
+				}
+				return err
+			}
+
+			// 检查操作权限：操作者的组织必须能访问该设备
+			if operatorOrgID != "" {
+				var deviceBattery model.DeviceBattery
+				if err := tx.Where("device_id = ?", deviceID).First(&deviceBattery).Error; err == nil {
+					if deviceBattery.OwnerOrgID != nil && *deviceBattery.OwnerOrgID != "" {
+						var count int64
+						tx.Table("org_closure").
+							Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?",
+								claims.TenantID, operatorOrgID, *deviceBattery.OwnerOrgID).
+							Count(&count)
+						if count == 0 {
+							return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+								"message": "无权操作该设备: " + deviceID,
+							})
+						}
+					}
+				}
+			}
+
+			// 查询设备电池信息
+			var deviceBattery model.DeviceBattery
+			err := tx.Where("device_id = ?", deviceID).First(&deviceBattery).Error
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					// 如果设备电池信息不存在，创建一条
+					deviceBattery = model.DeviceBattery{
+						DeviceID:   deviceID,
+						OwnerOrgID: toOrgID,
+						UpdatedAt:  &t,
+					}
+					if err := tx.Create(&deviceBattery).Error; err != nil {
+						return err
+					}
+					// 记录转移日志
+					transferLog := model.DeviceOrgTransfer{
+						ID:           uuid.New(),
+						DeviceID:     deviceID,
+						FromOrgID:    nil,
+						ToOrgID:      toOrgID,
+						OperatorID:   &claims.ID,
+						TransferTime: &t,
+						Remark:       req.Remark,
+						TenantID:     claims.TenantID,
+						CreatedAt:    &t,
+					}
+					return tx.Create(&transferLog).Error
+				}
+				return err
+			}
+
+			// 记录原组织ID
+			fromOrgID := deviceBattery.OwnerOrgID
+
+			// 更新设备归属组织
+			updates := map[string]interface{}{
+				"owner_org_id": toOrgID,
+				"updated_at":   t,
+			}
+
+			if err := tx.Model(&model.DeviceBattery{}).Where("device_id = ?", deviceID).Updates(updates).Error; err != nil {
+				return err
+			}
+
+			// 记录转移日志到新表
+			transferLog := model.DeviceOrgTransfer{
+				ID:           uuid.New(),
+				DeviceID:     deviceID,
+				FromOrgID:    fromOrgID,
+				ToOrgID:      toOrgID,
+				OperatorID:   &claims.ID,
+				TransferTime: &t,
+				Remark:       req.Remark,
+				TenantID:     claims.TenantID,
+				CreatedAt:    &t,
+			}
+
+			if err := tx.Create(&transferLog).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if e, ok := err.(*errcode.Error); ok {
+			return e
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	return nil
+}
+
+// GetOrgTransferHistory 获取组织转移记录（新版）
+func (*DeviceTransfer) GetOrgTransferHistory(ctx context.Context, req model.DeviceOrgTransferListReq, claims *utils.UserClaims) (*model.DeviceOrgTransferListResp, error) {
+	db := global.DB.WithContext(ctx)
+
+	// 构建查询
+	queryBuilder := db.Table("device_org_transfers AS t").
+		Select(`
+			t.id, t.device_id, t.from_org_id, t.to_org_id, t.operator_id, t.transfer_time, t.remark,
+			d.device_number, d.name AS device_name,
+			fo.name AS from_org_name, fo.org_type AS from_org_type,
+			tor.name AS to_org_name, tor.org_type AS to_org_type,
+			u.name AS operator_name
+		`).
+		Joins("LEFT JOIN devices AS d ON d.id = t.device_id").
+		Joins("LEFT JOIN orgs AS fo ON fo.id = t.from_org_id").
+		Joins("LEFT JOIN orgs AS tor ON tor.id = t.to_org_id").
+		Joins("LEFT JOIN users AS u ON u.id = t.operator_id").
+		Where("t.tenant_id = ?", claims.TenantID)
+
+	// 条件筛选
+	if req.DeviceNumber != nil && *req.DeviceNumber != "" {
+		queryBuilder = queryBuilder.Where("d.device_number ILIKE ?", "%"+*req.DeviceNumber+"%")
+	}
+
+	if req.FromOrgID != nil && *req.FromOrgID != "" {
+		queryBuilder = queryBuilder.Where("t.from_org_id = ?", *req.FromOrgID)
+	}
+
+	if req.ToOrgID != nil && *req.ToOrgID != "" {
+		queryBuilder = queryBuilder.Where("t.to_org_id = ?", *req.ToOrgID)
+	}
+
+	if req.StartTime != nil && *req.StartTime != "" {
+		if startTime, err := time.Parse("2006-01-02 15:04:05", *req.StartTime); err == nil {
+			queryBuilder = queryBuilder.Where("t.transfer_time >= ?", startTime)
+		}
+	}
+
+	if req.EndTime != nil && *req.EndTime != "" {
+		if endTime, err := time.Parse("2006-01-02 15:04:05", *req.EndTime); err == nil {
+			queryBuilder = queryBuilder.Where("t.transfer_time <= ?", endTime)
+		}
+	}
+
+	// 统计总数
+	var total int64
+	if err := queryBuilder.Count(&total).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	// 分页查询
+	type transferRow struct {
+		ID           string     `gorm:"column:id"`
+		DeviceID     string     `gorm:"column:device_id"`
+		FromOrgID    *string    `gorm:"column:from_org_id"`
+		ToOrgID      *string    `gorm:"column:to_org_id"`
+		OperatorID   *string    `gorm:"column:operator_id"`
+		TransferTime *time.Time `gorm:"column:transfer_time"`
+		Remark       *string    `gorm:"column:remark"`
+		DeviceNumber string     `gorm:"column:device_number"`
+		DeviceName   *string    `gorm:"column:device_name"`
+		FromOrgName  *string    `gorm:"column:from_org_name"`
+		FromOrgType  *string    `gorm:"column:from_org_type"`
+		ToOrgName    *string    `gorm:"column:to_org_name"`
+		ToOrgType    *string    `gorm:"column:to_org_type"`
+		OperatorName *string    `gorm:"column:operator_name"`
+	}
+
+	offset := (req.Page - 1) * req.PageSize
+	var rows []transferRow
+	if err := queryBuilder.Order("t.transfer_time DESC").Offset(offset).Limit(req.PageSize).Scan(&rows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	// 构建响应
+	list := make([]model.DeviceOrgTransferResp, 0, len(rows))
+	for _, r := range rows {
+		resp := model.DeviceOrgTransferResp{
+			ID:           r.ID,
+			DeviceID:     r.DeviceID,
+			DeviceNumber: r.DeviceNumber,
+			DeviceName:   r.DeviceName,
+			FromOrgID:    r.FromOrgID,
+			FromOrgName:  r.FromOrgName,
+			FromOrgType:  r.FromOrgType,
+			ToOrgID:      r.ToOrgID,
+			ToOrgName:    r.ToOrgName,
+			ToOrgType:    r.ToOrgType,
+			OperatorID:   r.OperatorID,
+			OperatorName: r.OperatorName,
+			Remark:       r.Remark,
+		}
+		if r.TransferTime != nil {
+			s := r.TransferTime.Format("2006-01-02 15:04:05")
+			resp.TransferTime = &s
+		}
+		list = append(list, resp)
+	}
+
+	return &model.DeviceOrgTransferListResp{
+		List:     list,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	}, nil
+}
+
 // TransferDevices 批量转移设备
 func (*DeviceTransfer) TransferDevices(req model.DeviceTransferReq, claims *utils.UserClaims) error {
 	if len(req.DeviceIDs) == 0 {

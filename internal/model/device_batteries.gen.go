@@ -14,7 +14,10 @@ const TableNameDeviceBattery = "device_batteries"
 type DeviceBattery struct {
 	DeviceID           string     `gorm:"column:device_id;primaryKey" json:"device_id"`
 	BatteryModelID     *string    `gorm:"column:battery_model_id" json:"battery_model_id"`
-	DealerID           *string    `gorm:"column:dealer_id" json:"dealer_id"`
+	DealerID           *string    `gorm:"column:dealer_id" json:"dealer_id"`                                         // 已废弃，保留兼容
+	OwnerOrgID         *string    `gorm:"column:owner_org_id;comment:当前持有方组织ID" json:"owner_org_id"`                 // 当前持有方组织ID
+	BmsFactoryOrgID    *string    `gorm:"column:bms_factory_org_id;comment:BMS板卡出厂方组织ID" json:"bms_factory_org_id"`  // BMS板卡出厂方组织ID
+	PackFactoryOrgID   *string    `gorm:"column:pack_factory_org_id;comment:PACK组装方组织ID" json:"pack_factory_org_id"` // PACK组装方组织ID
 	ProductionDate     *time.Time `gorm:"column:production_date" json:"production_date"`
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date" json:"warranty_expire_date"`
 	ActivationDate     *time.Time `gorm:"column:activation_date" json:"activation_date"`

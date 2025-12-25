@@ -91,6 +91,9 @@ var (
 	DeviceTransfer             *deviceTransfer
 	DeviceUserBinding          *deviceUserBinding
 	WarrantyApplication        *warrantyApplication
+	Org                        *org
+	OrgClosure                 *orgClosure
+	DeviceOrgTransfer          *deviceOrgTransfer
 )
 
 func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
@@ -169,6 +172,9 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	DeviceTransfer = &Q.DeviceTransfer
 	DeviceUserBinding = &Q.DeviceUserBinding
 	WarrantyApplication = &Q.WarrantyApplication
+	Org = &Q.Org
+	OrgClosure = &Q.OrgClosure
+	DeviceOrgTransfer = &Q.DeviceOrgTransfer
 }
 
 func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
@@ -248,6 +254,9 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		DeviceTransfer:             newDeviceTransfer(db, opts...),
 		DeviceUserBinding:          newDeviceUserBinding(db, opts...),
 		WarrantyApplication:        newWarrantyApplication(db, opts...),
+		Org:                        newOrg(db, opts...),
+		OrgClosure:                 newOrgClosure(db, opts...),
+		DeviceOrgTransfer:          newDeviceOrgTransfer(db, opts...),
 	}
 }
 
@@ -328,6 +337,9 @@ type Query struct {
 	DeviceTransfer             deviceTransfer
 	DeviceUserBinding          deviceUserBinding
 	WarrantyApplication        warrantyApplication
+	Org                        org
+	OrgClosure                 orgClosure
+	DeviceOrgTransfer          deviceOrgTransfer
 }
 
 func (q *Query) Available() bool { return q.db != nil }
@@ -409,6 +421,9 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		DeviceTransfer:             q.DeviceTransfer.clone(db),
 		DeviceUserBinding:          q.DeviceUserBinding.clone(db),
 		WarrantyApplication:        q.WarrantyApplication.clone(db),
+		Org:                        q.Org.clone(db),
+		OrgClosure:                 q.OrgClosure.clone(db),
+		DeviceOrgTransfer:          q.DeviceOrgTransfer.clone(db),
 	}
 }
 
@@ -497,6 +512,9 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		DeviceTransfer:             q.DeviceTransfer.replaceDB(db),
 		DeviceUserBinding:          q.DeviceUserBinding.replaceDB(db),
 		WarrantyApplication:        q.WarrantyApplication.replaceDB(db),
+		Org:                        q.Org.replaceDB(db),
+		OrgClosure:                 q.OrgClosure.replaceDB(db),
+		DeviceOrgTransfer:          q.DeviceOrgTransfer.replaceDB(db),
 	}
 }
 
@@ -575,6 +593,9 @@ type queryCtx struct {
 	DeviceTransfer             IDeviceTransferDo
 	DeviceUserBinding          IDeviceUserBindingDo
 	WarrantyApplication        IWarrantyApplicationDo
+	Org                        IOrgDo
+	OrgClosure                 IOrgClosureDo
+	DeviceOrgTransfer          IDeviceOrgTransferDo
 }
 
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
@@ -653,6 +674,9 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 		DeviceTransfer:             q.DeviceTransfer.WithContext(ctx),
 		DeviceUserBinding:          q.DeviceUserBinding.WithContext(ctx),
 		WarrantyApplication:        q.WarrantyApplication.WithContext(ctx),
+		Org:                        q.Org.WithContext(ctx),
+		OrgClosure:                 q.OrgClosure.WithContext(ctx),
+		DeviceOrgTransfer:          q.DeviceOrgTransfer.WithContext(ctx),
 	}
 }
 

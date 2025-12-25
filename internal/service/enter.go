@@ -61,6 +61,7 @@ type ServiceGroup struct {
 	BatteryMaintenance // BMS: 电池维保记录（手动）
 	BatteryTag         // BMS: 电池标签
 	OfflineCommand     // BMS: 离线指令
+	OrgService         // BMS: 组织管理（多层级）
 }
 
 var GroupApp = new(ServiceGroup)

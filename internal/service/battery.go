@@ -36,6 +36,12 @@ type batteryListRow struct {
 	ProductionDate     *time.Time `gorm:"column:production_date"`
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
 
+	// 组织相关（替代 dealer）
+	OwnerOrgID   *string `gorm:"column:owner_org_id"`
+	OwnerOrgName *string `gorm:"column:owner_org_name"`
+	OwnerOrgType *string `gorm:"column:owner_org_type"`
+
+	// 保留兼容字段（逐步废弃）
 	DealerID   *string `gorm:"column:dealer_id"`
 	DealerName *string `gorm:"column:dealer_name"`
 
@@ -53,8 +59,47 @@ type batteryListRow struct {
 	TransferStatus *string  `gorm:"column:transfer_status"`
 }
 
-// GetDeviceAttributes BMS：参数远程查看（带租户/经销商隔离）
-func (*Battery) GetDeviceAttributes(ctx context.Context, deviceID string, claims *utils.UserClaims, dealerID string) (interface{}, error) {
+// checkDeviceOrgAccess 检查用户是否有权访问设备（基于组织子树）
+// orgID 为空时表示厂家管理员，可访问所有设备
+func checkDeviceOrgAccess(ctx context.Context, deviceID, tenantID, orgID string) error {
+	if orgID == "" {
+		// 厂家管理员或无组织用户，不做隔离
+		return nil
+	}
+
+	existingBattery, err := query.DeviceBattery.WithContext(ctx).
+		Where(query.DeviceBattery.DeviceID.Eq(deviceID)).
+		First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// 设备没有电池信息，不做隔离
+			return nil
+		}
+		return err
+	}
+
+	if existingBattery.OwnerOrgID == nil || *existingBattery.OwnerOrgID == "" {
+		// 设备未分配给任何组织，不做隔离
+		return nil
+	}
+
+	// 检查设备的 owner_org_id 是否在用户 org_id 的子树内
+	var count int64
+	if err := global.DB.Table("org_closure").
+		Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?",
+			tenantID, orgID, *existingBattery.OwnerOrgID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+
+	if count == 0 {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权访问该设备"})
+	}
+	return nil
+}
+
+// GetDeviceAttributes BMS：参数远程查看（带租户/组织隔离）
+func (*Battery) GetDeviceAttributes(ctx context.Context, deviceID string, claims *utils.UserClaims, orgID string) (interface{}, error) {
 	// 校验设备租户
 	device, err := query.Device.WithContext(ctx).
 		Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
@@ -66,14 +111,9 @@ func (*Battery) GetDeviceAttributes(ctx context.Context, deviceID string, claims
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
-	// 经销商隔离
-	if dealerID != "" {
-		existingBattery, err := query.DeviceBattery.WithContext(ctx).
-			Where(query.DeviceBattery.DeviceID.Eq(deviceID)).
-			First()
-		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
-			return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权查看该设备"})
-		}
+	// 组织隔离（基于子树）
+	if err := checkDeviceOrgAccess(ctx, deviceID, claims.TenantID, orgID); err != nil {
+		return nil, err
 	}
 
 	data, err := dal.GetAttributeDataListWithDeviceName(device.ID)
@@ -107,8 +147,8 @@ func (*Battery) GetDeviceAttributes(ctx context.Context, deviceID string, claims
 	return easyData, nil
 }
 
-// PutDeviceAttributes BMS：参数远程修改（带租户/经销商隔离）
-func (*Battery) PutDeviceAttributes(ctx context.Context, req model.AttributePutMessage, claims *utils.UserClaims, dealerID string) error {
+// PutDeviceAttributes BMS：参数远程修改（带租户/组织隔离）
+func (*Battery) PutDeviceAttributes(ctx context.Context, req model.AttributePutMessage, claims *utils.UserClaims, orgID string) error {
 	// 校验设备租户
 	_, err := query.Device.WithContext(ctx).
 		Where(query.Device.ID.Eq(req.DeviceID), query.Device.TenantID.Eq(claims.TenantID)).
@@ -120,22 +160,17 @@ func (*Battery) PutDeviceAttributes(ctx context.Context, req model.AttributePutM
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
-	// 经销商隔离
-	if dealerID != "" {
-		existingBattery, err := query.DeviceBattery.WithContext(ctx).
-			Where(query.DeviceBattery.DeviceID.Eq(req.DeviceID)).
-			First()
-		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
-			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权操作该设备"})
-		}
+	// 组织隔离（基于子树）
+	if err := checkDeviceOrgAccess(ctx, req.DeviceID, claims.TenantID, orgID); err != nil {
+		return err
 	}
 
 	// 复用现有属性下发逻辑（会写入 attribute_set_logs，并走 downlink）
 	return GroupApp.AttributeData.AttributePutMessage(ctx, claims.ID, &req, strconv.Itoa(constant.Manual))
 }
 
-// RequestDeviceAttributes BMS：请求设备上报参数（带租户/经销商隔离）
-func (*Battery) RequestDeviceAttributes(ctx context.Context, req model.AttributeGetMessageReq, claims *utils.UserClaims, dealerID string) error {
+// RequestDeviceAttributes BMS：请求设备上报参数（带租户/组织隔离）
+func (*Battery) RequestDeviceAttributes(ctx context.Context, req model.AttributeGetMessageReq, claims *utils.UserClaims, orgID string) error {
 	// 校验设备租户
 	_, err := query.Device.WithContext(ctx).
 		Where(query.Device.ID.Eq(req.DeviceID), query.Device.TenantID.Eq(claims.TenantID)).
@@ -147,21 +182,16 @@ func (*Battery) RequestDeviceAttributes(ctx context.Context, req model.Attribute
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
-	// 经销商隔离
-	if dealerID != "" {
-		existingBattery, err := query.DeviceBattery.WithContext(ctx).
-			Where(query.DeviceBattery.DeviceID.Eq(req.DeviceID)).
-			First()
-		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
-			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权操作该设备"})
-		}
+	// 组织隔离（基于子树）
+	if err := checkDeviceOrgAccess(ctx, req.DeviceID, claims.TenantID, orgID); err != nil {
+		return err
 	}
 
 	return GroupApp.AttributeData.AttributeGetMessage(claims, &req)
 }
 
-// GetDeviceAttributeSetLogs BMS：参数下发记录/回执（带租户/经销商隔离）
-func (*Battery) GetDeviceAttributeSetLogs(ctx context.Context, req model.GetAttributeSetLogsListByPageReq, claims *utils.UserClaims, dealerID string) (interface{}, error) {
+// GetDeviceAttributeSetLogs BMS：参数下发记录/回执（带租户/组织隔离）
+func (*Battery) GetDeviceAttributeSetLogs(ctx context.Context, req model.GetAttributeSetLogsListByPageReq, claims *utils.UserClaims, orgID string) (interface{}, error) {
 	// 校验设备租户
 	_, err := query.Device.WithContext(ctx).
 		Where(query.Device.ID.Eq(req.DeviceId), query.Device.TenantID.Eq(claims.TenantID)).
@@ -173,14 +203,9 @@ func (*Battery) GetDeviceAttributeSetLogs(ctx context.Context, req model.GetAttr
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
-	// 经销商隔离
-	if dealerID != "" {
-		existingBattery, err := query.DeviceBattery.WithContext(ctx).
-			Where(query.DeviceBattery.DeviceID.Eq(req.DeviceId)).
-			First()
-		if err == nil && existingBattery.DealerID != nil && *existingBattery.DealerID != dealerID {
-			return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "无权查看该设备"})
-		}
+	// 组织隔离（基于子树）
+	if err := checkDeviceOrgAccess(ctx, req.DeviceId, claims.TenantID, orgID); err != nil {
+		return nil, err
 	}
 
 	count, list, err := dal.GetAttributeSetLogsDataListByPage(req)
@@ -194,8 +219,8 @@ func (*Battery) GetDeviceAttributeSetLogs(ctx context.Context, req model.GetAttr
 	}, nil
 }
 
-// GetBatteryList 获取电池列表（厂家/经销商视角）
-func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, claims *utils.UserClaims, dealerID string) (*model.BatteryListResp, error) {
+// GetBatteryList 获取电池列表（厂家/组织视角）
+func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, claims *utils.UserClaims, orgID string) (*model.BatteryListResp, error) {
 	db := global.DB.WithContext(ctx)
 
 	// 以 devices 作为 tenant 过滤主表
@@ -208,6 +233,9 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			bm.name AS battery_model_name,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
+			dbat.owner_org_id AS owner_org_id,
+			org.name AS owner_org_name,
+			org.org_type AS owner_org_type,
 			dbat.dealer_id AS dealer_id,
 			de.name AS dealer_name,
 			u.id AS user_id,
@@ -223,15 +251,18 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 		`).
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
 		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
-		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`).
+		Joins(`LEFT JOIN orgs AS org ON org.id = dbat.owner_org_id`).
+		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`). // 兼容旧字段
 		// 仅取主用户（is_owner=true），若无则为空
 		Joins(`LEFT JOIN device_user_bindings AS dub ON dub.device_id = d.id AND dub.is_owner = true`).
 		Joins(`LEFT JOIN users AS u ON u.id = dub.user_id`).
 		Where("d.tenant_id = ?", claims.TenantID)
 
-	// 经销商数据隔离：dealerID 不为空时只看名下设备
-	if dealerID != "" {
-		queryBuilder = queryBuilder.Where("dbat.dealer_id = ?", dealerID)
+	// 组织数据隔离：orgID 不为空时只看子树内设备
+	if orgID != "" {
+		queryBuilder = queryBuilder.Where(`dbat.owner_org_id IN (
+			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+		)`, claims.TenantID, orgID)
 	}
 
 	// 条件筛选
@@ -247,9 +278,9 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 	if req.ActivationStatus != nil && *req.ActivationStatus != "" {
 		queryBuilder = queryBuilder.Where("dbat.activation_status = ?", *req.ActivationStatus)
 	}
-	if req.DealerID != nil && *req.DealerID != "" {
-		// 厂家侧可按 dealer_id 过滤；经销商侧该条件与 dealerID 一致/更严
-		queryBuilder = queryBuilder.Where("dbat.dealer_id = ?", *req.DealerID)
+	if req.OwnerOrgID != nil && *req.OwnerOrgID != "" {
+		// 按指定组织筛选（厂家侧可用）
+		queryBuilder = queryBuilder.Where("dbat.owner_org_id = ?", *req.OwnerOrgID)
 	}
 
 	// 出厂日期范围（YYYY-MM-DD）
@@ -306,6 +337,9 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			DeviceName:       r.DeviceName,
 			BatteryModelID:   r.BatteryModelID,
 			BatteryModelName: r.BatteryModelName,
+			OwnerOrgID:       r.OwnerOrgID,
+			OwnerOrgName:     r.OwnerOrgName,
+			OwnerOrgType:     r.OwnerOrgType,
 			DealerID:         r.DealerID,
 			DealerName:       r.DealerName,
 			UserID:           r.UserID,

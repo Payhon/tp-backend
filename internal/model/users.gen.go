@@ -20,6 +20,9 @@ type User struct {
 	Authority           *string    `gorm:"column:authority;comment:权限类型 TENANT_ADMIN-租户管理员 TENANT_USER-租户用户 SYS_ADMIN-系统管理员" json:"authority"` // 权限类型 TENANT_ADMIN-租户管理员 TENANT_USER-租户用户 SYS_ADMIN-系统管理员
 	Password            string     `gorm:"column:password;not null" json:"password"`
 	TenantID            *string    `gorm:"column:tenant_id" json:"tenant_id"`
+	DealerID            *string    `gorm:"column:dealer_id;comment:归属经销商ID（已废弃）" json:"dealer_id"`          // 归属经销商ID（已废弃，保留兼容）
+	OrgID               *string    `gorm:"column:org_id;comment:归属组织ID" json:"org_id"`                      // 归属组织ID（业务账号归属的组织）
+	UserKind            *string    `gorm:"column:user_kind;default:END_USER;comment:用户类型" json:"user_kind"` // 用户类型: ORG_USER-组织用户（业务账号）, END_USER-终端用户
 	Remark              *string    `gorm:"column:remark" json:"remark"`
 	AdditionalInfo      *string    `gorm:"column:additional_info;default:{}" json:"additional_info"`
 	CreatedAt           *time.Time `gorm:"column:created_at" json:"created_at"`
@@ -34,6 +37,12 @@ type User struct {
 	PasswordFailCount   *int32     `gorm:"column:password_fail_count;comment:密码错误次数" json:"password_fail_count"` // 密码错误次数
 	AvatarURL           *string    `gorm:"column:avatar_url;comment:用户头像URL或文件路径" json:"avatar_url"`             // 用户头像URL或文件路径
 }
+
+// UserKind 常量定义
+const (
+	UserKindOrgUser = "ORG_USER" // 组织用户（业务账号）
+	UserKindEndUser = "END_USER" // 终端用户
+)
 
 // TableName User's table name
 func (*User) TableName() string {

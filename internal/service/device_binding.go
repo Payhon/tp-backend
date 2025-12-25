@@ -17,20 +17,20 @@ import (
 // DeviceBinding 设备绑定服务
 type DeviceBinding struct{}
 
-// getUserDealerID 根据当前登录用户获取归属经销商ID（可能为空）
-func getUserDealerID(userID string) (string, error) {
+// getUserOrgID 根据当前登录用户获取归属组织ID（可能为空）
+func getUserOrgID(userID string) (string, error) {
 	if userID == "" {
 		return "", nil
 	}
 
-	var dealerID string
+	var orgID string
 	if err := global.DB.Table("users").
-		Select("dealer_id").
+		Select("org_id").
 		Where("id = ?", userID).
-		Scan(&dealerID).Error; err != nil {
+		Scan(&orgID).Error; err != nil {
 		return "", err
 	}
-	return dealerID, nil
+	return orgID, nil
 }
 
 // BindDevice APP端设备绑定
@@ -69,8 +69,8 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 		}
 	}
 
-	// 获取用户归属经销商（用于经销商级别的数据校验）
-	userDealerID, err := getUserDealerID(claims.ID)
+	// 获取用户归属组织（用于组织级别的数据校验）
+	userOrgID, err := getUserOrgID(claims.ID)
 	if err != nil {
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 			"sql_error": err.Error(),
@@ -119,13 +119,13 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 	}
 	isFirstBinding := len(existBindings) == 0
 
-	// 处理 device_batteries 信息：经销商校验 + 激活状态更新
+	// 处理 device_batteries 信息：组织校验 + 激活状态更新
 	deviceBattery, err := tx.DeviceBattery.WithContext(ctx).
 		Where(tx.DeviceBattery.DeviceID.Eq(device.ID)).
 		First()
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// 未找到记录时，如果用户有经销商，则自动写入 dealer_id
+			// 未找到记录时，如果用户有组织归属，则自动写入 owner_org_id
 			newBattery := &model.DeviceBattery{
 				DeviceID:         device.ID,
 				ActivationStatus: StringPtr("ACTIVE"),
@@ -133,8 +133,8 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 				ActivationDate:   &t,
 				UpdatedAt:        &t,
 			}
-			if userDealerID != "" {
-				newBattery.DealerID = &userDealerID
+			if userOrgID != "" {
+				newBattery.OwnerOrgID = &userOrgID
 			}
 
 			if err := tx.DeviceBattery.Create(newBattery); err != nil {
@@ -150,12 +150,20 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 			})
 		}
 	} else {
-		// 校验设备归属经销商与当前用户是否匹配（如果用户有经销商信息）
-		if userDealerID != "" && deviceBattery.DealerID != nil && *deviceBattery.DealerID != userDealerID {
-			tx.Rollback()
-			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-				"message": "device does not belong to current dealer",
-			})
+		// 校验设备归属组织与当前用户是否匹配（如果用户有组织信息）
+		// 基于组织子树校验：用户的组织必须是设备所属组织的祖先
+		if userOrgID != "" && deviceBattery.OwnerOrgID != nil && *deviceBattery.OwnerOrgID != "" {
+			var count int64
+			global.DB.Table("org_closure").
+				Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?",
+					claims.TenantID, userOrgID, *deviceBattery.OwnerOrgID).
+				Count(&count)
+			if count == 0 {
+				tx.Rollback()
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"message": "device does not belong to current organization",
+				})
+			}
 		}
 
 		updates := map[string]interface{}{
@@ -164,9 +172,9 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 			"activation_date":   t,
 			"updated_at":        t,
 		}
-		// 如果设备当前没有经销商归属而用户有归属，则补充 dealer_id
-		if deviceBattery.DealerID == nil && userDealerID != "" {
-			updates["dealer_id"] = userDealerID
+		// 如果设备当前没有组织归属而用户有归属，则补充 owner_org_id
+		if deviceBattery.OwnerOrgID == nil && userOrgID != "" {
+			updates["owner_org_id"] = userOrgID
 		}
 
 		if _, err := tx.DeviceBattery.WithContext(ctx).
@@ -279,8 +287,8 @@ func (*DeviceBinding) UnbindDevice(req model.DeviceUnbindReq, claims *utils.User
 				"activation_date":   nil,
 				"updated_at":        t,
 			}
-			// 若存在经销商归属，则流转状态回退为 DEALER，否则为 FACTORY
-			if deviceBattery.DealerID != nil && *deviceBattery.DealerID != "" {
+			// 若存在组织归属，则流转状态回退为 DEALER，否则为 FACTORY
+			if deviceBattery.OwnerOrgID != nil && *deviceBattery.OwnerOrgID != "" {
 				updates["transfer_status"] = "DEALER"
 			} else {
 				updates["transfer_status"] = "FACTORY"
@@ -464,4 +472,3 @@ func (*DeviceBinding) GetUserDevices(req model.DeviceUserBindingListReq, claims 
 		PageSize: req.PageSize,
 	}, nil
 }
-

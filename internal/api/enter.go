@@ -62,6 +62,7 @@ type Controller struct {
 	BatteryMaintenanceApi // BMS: 电池维保记录
 	BatteryTagApi         // BMS: 电池标签
 	OfflineCommandApi     // BMS: 离线指令
+	OrgApi                // BMS: 组织管理（多层级）
 }
 
 var (
