@@ -276,7 +276,7 @@ func (*UserApi) EmailRegister(c *gin.Context) {
 	if !BindAndValidate(c, &req) {
 		return
 	}
-	loginRsp, err := service.GroupApp.EmailRegister(c, &req)
+	loginRsp, err := service.GroupApp.User.EmailRegister(c, &req)
 	if err != nil {
 		c.Error(err)
 		return

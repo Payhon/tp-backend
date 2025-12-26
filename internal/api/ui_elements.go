@@ -84,7 +84,7 @@ func (*UiElementsApi) ServeUiElementsListByPage(c *gin.Context) {
 func (*UiElementsApi) ServeUiElementsListByAuthority(c *gin.Context) {
 	var userClaims = c.MustGet("claims").(*utils.UserClaims)
 
-	uiElementsList, err := service.GroupApp.UiElements.ServeUiElementsListByAuthority(userClaims)
+	uiElementsList, err := service.GroupApp.UiElements.ServeUiElementsListByAuthority(c.Request.Context(), userClaims)
 	if err != nil {
 		c.Error(err)
 		return

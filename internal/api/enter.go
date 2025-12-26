@@ -13,6 +13,8 @@ import (
 
 type Controller struct {
 	UserApi                       // 用户管理
+	AppAuthApi                    // APP/小程序认证
+	AppAuthConfigApi              // APP/小程序认证配置（模板/微信配置）
 	DictApi                       // 字典管理
 	ProductApi                    // 产品管理
 	OTAApi                        // ota管理
@@ -63,6 +65,7 @@ type Controller struct {
 	BatteryTagApi         // BMS: 电池标签
 	OfflineCommandApi     // BMS: 离线指令
 	OrgApi                // BMS: 组织管理（多层级）
+	OrgTypePermissionApi  // WEB: 机构类型权限配置（菜单权限/设备参数权限）
 }
 
 var (

@@ -9,6 +9,8 @@ import (
 
 type ServiceGroup struct {
 	User
+	AppAuth
+	AppAuthConfig
 	Role
 	Dict
 	Product
@@ -62,6 +64,7 @@ type ServiceGroup struct {
 	BatteryTag         // BMS: 电池标签
 	OfflineCommand     // BMS: 离线指令
 	OrgService         // BMS: 组织管理（多层级）
+	OrgTypePermission  // WEB: 机构类型权限配置（菜单权限/设备参数权限）
 }
 
 var GroupApp = new(ServiceGroup)

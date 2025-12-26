@@ -19,7 +19,7 @@ type UpdateUiElementsReq struct {
 	Id           string  `json:"id" validate:"required,max=36"`
 	ParentID     *string `json:"parent_id" form:"parent_id" validate:"required,max=36"`         // 父元素id
 	ElementCode  *string `json:"element_code" form:"element_code" validate:"required,max=100"`  // 元素标识符
-	ElementType  *int16  `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-按钮 4-路由
+	ElementType  *int16  `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-路由 4-按钮
 	Orders       *int16  `json:"orders" form:"orders" validate:"omitempty,max=10000"`           // 排序
 	Param1       *string `json:"param1" form:"param1" validate:"omitempty,max=255"`
 	Param2       *string `json:"param2" form:"param2" validate:"omitempty,max=255"`
@@ -35,7 +35,7 @@ type UiElementsListReq struct {
 	Id           string  `json:"id" form:"id" validate:"required,max=36"`
 	ParentID     string  `json:"parent_id" form:"parent_id" validate:"required,max=36"`         // 父元素id
 	ElementCode  string  `json:"element_code" form:"element_code" validate:"required,max=100"`  // 元素标识符
-	ElementType  *int16  `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-按钮 4-路由
+	ElementType  *int16  `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-路由 4-按钮
 	Orders       *int16  `json:"orders" form:"orders" validate:"omitempty,max=10000"`           // 排序
 	Param1       *string `json:"param1" form:"param1" validate:"omitempty,max=255"`
 	Param2       *string `json:"param2" form:"param2" validate:"omitempty,max=255"`
@@ -50,7 +50,7 @@ type UiElementsListRsp struct {
 	ID           string               `json:"id" form:"id" validate:"required,max=36"`                       //主键
 	ParentID     string               `json:"parent_id" form:"parent_id" validate:"required,max=36"`         // 父元素id
 	ElementCode  string               `json:"element_code" form:"element_code" validate:"required,max=100"`  // 元素标识符
-	ElementType  *int16               `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-按钮 4-路由
+	ElementType  *int16               `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-路由 4-按钮
 	Orders       *int16               `json:"orders" form:"orders" validate:"omitempty,max=10000"`           // 排序
 	Param1       *string              `json:"param1" form:"param1" validate:"omitempty,max=255"`
 	Param2       *string              `json:"param2" form:"param2" validate:"omitempty,max=255"`
@@ -66,7 +66,7 @@ type UiElementsListRsp1 struct {
 	ID          string                `json:"id" form:"id" validate:"required,max=36"`                       //主键
 	ParentID    string                `json:"parent_id" form:"parent_id" validate:"required,max=36"`         // 父元素id
 	ElementCode string                `json:"element_code" form:"element_code" validate:"required,max=100"`  // 元素标识符
-	ElementType *int16                `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-按钮 4-路由
+	ElementType *int16                `json:"element_type" form:"element_type"  validate:"omitempty,max=10"` // 元素类型1-菜单 2-目录 3-路由 4-按钮
 	Description *string               `json:"description" form:"description" validate:"omitempty,max=36"`    // 描述
 	Children    []*UiElementsListRsp1 `json:"children" form:"children"`
 }

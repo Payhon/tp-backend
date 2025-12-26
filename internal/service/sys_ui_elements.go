@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"strings"
 	"time"
 
 	dal "project/internal/dal"
@@ -101,7 +103,28 @@ func (*UiElements) ServeUiElementsListByPage(Params *model.ServeUiElementsListBy
 	return UiElementsListRsp, err
 }
 
-func (*UiElements) ServeUiElementsListByAuthority(u *utils.UserClaims) (map[string]interface{}, error) {
+func filterMenuTreeByAllowedCodes(nodes []*model.UiElementsListRsp, allowed map[string]struct{}) []*model.UiElementsListRsp {
+	if len(nodes) == 0 {
+		return nodes
+	}
+	out := make([]*model.UiElementsListRsp, 0, len(nodes))
+	for _, n := range nodes {
+		if n == nil {
+			continue
+		}
+		if len(n.Children) > 0 {
+			n.Children = filterMenuTreeByAllowedCodes(n.Children, allowed)
+		}
+
+		_, ok := allowed[n.ElementCode]
+		if ok || len(n.Children) > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func (*UiElements) ServeUiElementsListByAuthority(ctx context.Context, u *utils.UserClaims) (map[string]interface{}, error) {
 	total, list, err := dal.ServeUiElementsListByAuthority(u)
 	if err != nil {
 		logrus.Error("[ServeUiElementsListByAuthority] query failed:", err)
@@ -111,6 +134,32 @@ func (*UiElements) ServeUiElementsListByAuthority(u *utils.UserClaims) (map[stri
 			"error":     err.Error(),
 		})
 	}
+
+	// 机构类型菜单权限：仅对归属 PACK/经销商/门店 的业务账号生效
+	// - 菜单来源仍然是用户原有菜单（casbin/authority）
+		// - 在返回前按 org_type_permissions.ui_codes 做一次裁剪，保证不同机构类型看到的菜单一致
+	if u.Authority != "SYS_ADMIN" && u.Authority != "TENANT_ADMIN" && strings.TrimSpace(u.TenantID) != "" && strings.TrimSpace(u.ID) != "" {
+		orgType, ok, err := GroupApp.OrgTypePermission.GetUserOrgType(ctx, u.TenantID, u.ID)
+		if err == nil && ok {
+			switch orgType {
+			case model.OrgTypePACKFactory, model.OrgTypeDealer, model.OrgTypeStore:
+					allowed, exists, err := GroupApp.OrgTypePermission.GetAllowedUICodes(ctx, u.TenantID, orgType)
+					if err == nil && exists {
+						if typed, ok := list.([]*model.UiElementsListRsp); ok {
+							allowedSet := make(map[string]struct{}, len(allowed))
+							for _, code := range allowed {
+								code = strings.TrimSpace(code)
+								if code == "" {
+									continue
+								}
+								allowedSet[code] = struct{}{}
+							}
+							list = filterMenuTreeByAllowedCodes(typed, allowedSet)
+						}
+					}
+				}
+			}
+		}
 
 	return map[string]interface{}{
 		"total": total,

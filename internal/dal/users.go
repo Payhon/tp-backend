@@ -355,6 +355,19 @@ func GetUserListByPageWithAddress(userListReq *model.UserListReq, claims *utils.
 		return count, nil, fmt.Errorf("authority exception")
 	}
 
+	// 用户类型过滤：默认仅展示组织用户(ORG_USER)，避免 APP 终端用户影响 WEB 端用户列表
+	// - all_user_kinds=true：不限制 user_kind
+	// - user_kind=END_USER：可用于显式查询终端用户
+	if userListReq != nil && userListReq.AllUserKinds != nil && *userListReq.AllUserKinds {
+		// no-op
+	} else if userListReq != nil && userListReq.UserKind != nil && *userListReq.UserKind != "" {
+		uk := field.NewString("users", "user_kind")
+		queryBuilder = queryBuilder.Where(uk.Eq(*userListReq.UserKind))
+	} else {
+		uk := field.NewString("users", "user_kind")
+		queryBuilder = queryBuilder.Where(field.Or(uk.IsNull(), uk.Eq(model.UserKindOrgUser)))
+	}
+
 	// 用户基本信息过滤
 	if userListReq.Email != nil && *userListReq.Email != "" {
 		queryBuilder = queryBuilder.Where(q.Email.Like(fmt.Sprintf("%%%s%%", *userListReq.Email)))

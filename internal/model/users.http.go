@@ -41,6 +41,8 @@ type UserListReq struct {
 	Organization   *string `json:"organization" form:"organization" validate:"omitempty,max=200"`                  // 组织机构名称
 	Authority      *string `json:"authority" form:"authority" validate:"omitempty,oneof=TENANT_ADMIN TENANT_USER"` // 账号类型筛选
 	AllAuthorities *bool   `json:"all_authorities" form:"all_authorities" validate:"omitempty"`                    // 是否查询全部账号类型（默认保持原逻辑）
+	UserKind       *string `json:"user_kind" form:"user_kind" validate:"omitempty,oneof=ORG_USER END_USER"`         // 用户类型筛选
+	AllUserKinds   *bool   `json:"all_user_kinds" form:"all_user_kinds" validate:"omitempty"`                       // 是否查询全部用户类型（默认仅组织用户）
 	DealerID       *string `json:"dealer_id" form:"dealer_id" validate:"omitempty,max=36"`                         // 关联经销商筛选（当前仅用于前端展示/后处理）
 	// 地址相关查询字段
 	Country  *string `json:"country" form:"country" validate:"omitempty,max=50"`   // 国家

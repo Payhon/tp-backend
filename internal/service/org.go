@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
+	dal "project/internal/dal"
 	"project/internal/model"
 	"project/internal/query"
 	"project/pkg/errcode"
@@ -40,6 +44,8 @@ func (*OrgService) CreateOrg(ctx context.Context, req *model.OrgCreateReq, claim
 		UpdatedAt:     &now,
 		Remark:        req.Remark,
 	}
+
+	var createdUserID string
 
 	// 开启事务
 	err := global.DB.Transaction(func(tx *gorm.DB) error {
@@ -83,16 +89,177 @@ func (*OrgService) CreateOrg(ctx context.Context, req *model.OrgCreateReq, claim
 			}
 		}
 
+		// 3. 创建组织账号（可选）
+		if req.Account != nil {
+			account := req.Account
+			username := strings.TrimSpace(account.Username)
+			password := strings.TrimSpace(account.Password)
+			if username == "" || password == "" {
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"error": "account.username and account.password are required",
+				})
+			}
+			if err := utils.ValidatePassword(password); err != nil {
+				return err
+			}
+
+			userID := uuid.New()
+			validate := utils.ValidateInput(username)
+			if !validate.IsValid {
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"error": validate.Message,
+				})
+			}
+
+			email := ""
+			phone := ""
+			switch validate.Type {
+			case utils.Phone:
+				phone = username
+				email = fmt.Sprintf("org_%s@app.local", strings.ReplaceAll(userID, "-", ""))
+			case utils.Email:
+				email = username
+				phone = "AUTO_" + strings.ReplaceAll(uuid.New(), "-", "")[:18]
+			default:
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"error": "account.username must be a valid phone or email",
+				})
+			}
+
+			// 校验手机号/邮箱不重复
+			if exists, err := dal.CheckPhoneNumberExists(phone); err != nil {
+				return err
+			} else if exists {
+				return errcode.New(errcode.CodePhoneDuplicated)
+			}
+			if _, err := dal.GetUsersByEmail(email); err == nil {
+				return errcode.New(200008) // 用户邮箱已注册
+			} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "query_user",
+					"email":     email,
+					"error":     err.Error(),
+				})
+			}
+
+			hashedPassword := utils.BcryptHash(password)
+			if hashedPassword == "" {
+				return errcode.WithData(errcode.CodeDecryptError, map[string]interface{}{
+					"error": "Failed to hash password",
+				})
+			}
+
+			u := &model.User{
+				ID:                  userID,
+				Name:                req.ContactPerson,
+				PhoneNumber:         phone,
+				Email:               email,
+				Status:              StringPtr("N"),
+				Authority:           StringPtr("TENANT_USER"),
+				Password:            hashedPassword,
+				TenantID:            &claims.TenantID,
+				OrgID:               &orgID,
+				UserKind:            StringPtr(model.UserKindOrgUser),
+				Organization:        &org.Name,
+				AdditionalInfo:      StringPtr("{}"),
+				CreatedAt:           &now,
+				UpdatedAt:           &now,
+				PasswordLastUpdated: &now,
+			}
+
+			if err := tx.Create(u).Error; err != nil {
+				if strings.Contains(err.Error(), "users_un") {
+					return errcode.New(200008) // 用户邮箱已注册
+				}
+				return err
+			}
+
+			createdUserID = userID
+
+			// 给组织账号绑定机构类型默认角色（用于菜单/接口权限）
+			roleName := fmt.Sprintf("TENANT_%s_ORGTYPE_%s", claims.TenantID, req.OrgType)
+			if ok, err := global.CasbinEnforcer.AddNamedGroupingPolicy("g", createdUserID, roleName); err != nil || !ok {
+				if err != nil {
+					return err
+				}
+				return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+					"error": "failed to bind default role for org user",
+				})
+			}
+		}
+
 		return nil
 	})
 
 	if err != nil {
+		var e *errcode.Error
+		if errors.As(err, &e) {
+			return nil, e
+		}
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 			"sql_error": err.Error(),
 		})
 	}
 
 	return org, nil
+}
+
+// ResetOrgAccountPassword 重置组织账号密码（仅修改归属该组织的业务账号）
+func (*OrgService) ResetOrgAccountPassword(ctx context.Context, orgID string, req *model.OrgResetAccountPasswordReq, claims *utils.UserClaims) error {
+	if err := utils.ValidatePassword(req.Password); err != nil {
+		return err
+	}
+
+	// 确认组织存在且属于当前租户
+	if _, err := query.Org.WithContext(ctx).
+		Where(query.Org.ID.Eq(orgID), query.Org.TenantID.Eq(claims.TenantID)).
+		First(); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(errcode.CodeNotFound)
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_org",
+			"org_id":    orgID,
+			"error":     err.Error(),
+		})
+	}
+
+	// 找到该组织下的业务账号（默认取第一条）
+	var u model.User
+	if err := global.DB.WithContext(ctx).
+		Where("tenant_id = ? AND org_id = ? AND user_kind = ?", claims.TenantID, orgID, model.UserKindOrgUser).
+		First(&u).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(errcode.CodeNotFound)
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user",
+			"org_id":    orgID,
+			"error":     err.Error(),
+		})
+	}
+
+	now := time.Now().UTC()
+	hashed := utils.BcryptHash(req.Password)
+	u.Password = hashed
+	u.PasswordLastUpdated = &now
+	u.UpdatedAt = &now
+
+	if err := global.DB.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ? AND tenant_id = ?", u.ID, claims.TenantID).
+		Updates(map[string]interface{}{
+			"password":              u.Password,
+			"password_last_updated": u.PasswordLastUpdated,
+			"updated_at":            u.UpdatedAt,
+		}).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "update_password",
+			"user_id":   u.ID,
+			"error":     err.Error(),
+		})
+	}
+	return nil
 }
 
 // UpdateOrg 更新组织信息（不支持修改 parent_id，需要单独的移动操作）

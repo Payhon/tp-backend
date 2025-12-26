@@ -29,5 +29,8 @@ func (*Org) InitOrg(Router *gin.RouterGroup) {
 
 		// 树结构查询
 		orgApi.GET("tree", api.Controllers.OrgApi.GetOrgTree)
+
+		// 重置组织账号密码
+		orgApi.PUT(":id/account/password", api.Controllers.OrgApi.ResetOrgAccountPassword)
 	}
 }

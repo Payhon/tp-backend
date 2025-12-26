@@ -1,4 +1,50 @@
 definitions:
+  dal.AuthMessageTemplate:
+    properties:
+      channel:
+        type: string
+      content:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: string
+      provider:
+        type: string
+      providerTemplateCode:
+        type: string
+      remark:
+        type: string
+      scene:
+        type: string
+      status:
+        type: string
+      subject:
+        type: string
+      tenantID:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  dal.WxMpApp:
+    properties:
+      appID:
+        type: string
+      appSecret:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: string
+      remark:
+        type: string
+      status:
+        type: string
+      tenantID:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   errcode.Error:
     properties:
       code:
@@ -12,6 +58,440 @@ definitions:
     properties:
       alarm_device_total:
         description: 告警设备数量
+        type: integer
+    type: object
+  model.AppAuthBindingItem:
+    properties:
+      id:
+        type: string
+      identifier:
+        type: string
+      identity_type:
+        type: string
+      is_primary:
+        type: boolean
+      status:
+        type: string
+      verified_at:
+        description: RFC3339 string
+        type: string
+    type: object
+  model.AppAuthBindingsResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.AppAuthBindingItem'
+        type: array
+      user_id:
+        type: string
+    type: object
+  model.AppBindEmailReq:
+    properties:
+      email:
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - email
+    - verify_code
+    type: object
+  model.AppBindPhoneReq:
+    properties:
+      phone_number:
+        maxLength: 50
+        minLength: 5
+        type: string
+      phone_prefix:
+        maxLength: 10
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - phone_number
+    - verify_code
+    type: object
+  model.AppEmailLoginByCodeReq:
+    properties:
+      email:
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - email
+    - verify_code
+    type: object
+  model.AppEmailRegisterReq:
+    properties:
+      email:
+        type: string
+      password:
+        maxLength: 255
+        minLength: 6
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - email
+    - verify_code
+    type: object
+  model.AppEmailResetPasswordReq:
+    properties:
+      email:
+        type: string
+      password:
+        maxLength: 255
+        minLength: 6
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - email
+    - password
+    - verify_code
+    type: object
+  model.AppPhoneLoginByCodeReq:
+    properties:
+      phone_number:
+        maxLength: 50
+        minLength: 5
+        type: string
+      phone_prefix:
+        maxLength: 10
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - phone_number
+    - verify_code
+    type: object
+  model.AppPhoneRegisterReq:
+    properties:
+      password:
+        maxLength: 255
+        minLength: 6
+        type: string
+      phone_number:
+        maxLength: 50
+        minLength: 5
+        type: string
+      phone_prefix:
+        maxLength: 10
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - phone_number
+    - verify_code
+    type: object
+  model.AppPhoneResetPasswordReq:
+    properties:
+      password:
+        maxLength: 255
+        minLength: 6
+        type: string
+      phone_number:
+        maxLength: 50
+        minLength: 5
+        type: string
+      phone_prefix:
+        maxLength: 10
+        type: string
+      verify_code:
+        maxLength: 10
+        minLength: 4
+        type: string
+    required:
+    - password
+    - phone_number
+    - verify_code
+    type: object
+  model.AppSendEmailCodeReq:
+    properties:
+      email:
+        type: string
+      scene:
+        description: LOGIN/REGISTER/RESET_PASSWORD/BIND
+        maxLength: 32
+        type: string
+    required:
+    - email
+    - scene
+    type: object
+  model.AppSendPhoneCodeReq:
+    properties:
+      phone_number:
+        description: "13100000000"
+        maxLength: 50
+        minLength: 5
+        type: string
+      phone_prefix:
+        description: "+86"
+        maxLength: 10
+        type: string
+      scene:
+        description: LOGIN/REGISTER/RESET_PASSWORD/BIND
+        maxLength: 32
+        type: string
+    required:
+    - phone_number
+    - scene
+    type: object
+  model.AppUnbindReq:
+    properties:
+      identity_type:
+        enum:
+        - PHONE
+        - EMAIL
+        maxLength: 32
+        type: string
+    required:
+    - identity_type
+    type: object
+  model.AppWxmpBindPhoneReq:
+    properties:
+      phone_code:
+        description: wx.getPhoneNumber 返回的 code
+        type: string
+    required:
+    - phone_code
+    type: object
+  model.AppWxmpLoginReq:
+    properties:
+      code:
+        type: string
+    required:
+    - code
+    type: object
+  model.AppWxmpProfileReq:
+    properties:
+      avatar_url:
+        maxLength: 500
+        type: string
+      city:
+        maxLength: 50
+        type: string
+      country:
+        maxLength: 50
+        type: string
+      gender:
+        description: 0未知 1男 2女
+        enum:
+        - 0
+        - 1
+        - 2
+        type: integer
+      language:
+        maxLength: 20
+        type: string
+      nick_name:
+        maxLength: 50
+        type: string
+      province:
+        maxLength: 50
+        type: string
+    type: object
+  model.BatteryBatchAssignDealerReq:
+    properties:
+      dealer_id:
+        type: string
+      device_ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - dealer_id
+    - device_ids
+    type: object
+  model.BatteryBatchCommandFailure:
+    properties:
+      device_id:
+        type: string
+      device_number:
+        type: string
+      message:
+        type: string
+    type: object
+  model.BatteryBatchCommandReq:
+    properties:
+      command_type:
+        description: 展示用
+        maxLength: 64
+        type: string
+      device_ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+      identify:
+        maxLength: 255
+        type: string
+      value:
+        description: JSON 字符串
+        maxLength: 9999
+        type: string
+    required:
+    - command_type
+    - device_ids
+    - identify
+    type: object
+  model.BatteryBatchCommandResp:
+    properties:
+      failed:
+        type: integer
+      failures:
+        items:
+          $ref: '#/definitions/model.BatteryBatchCommandFailure'
+        type: array
+      success:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.BatteryBatchOtaPushFailure:
+    properties:
+      device_id:
+        type: string
+      device_number:
+        type: string
+      message:
+        type: string
+    type: object
+  model.BatteryBatchOtaPushReq:
+    properties:
+      description:
+        maxLength: 500
+        type: string
+      device_ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+      name:
+        description: 可选：任务名称
+        maxLength: 200
+        type: string
+      ota_upgrade_package_id:
+        maxLength: 36
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+    required:
+    - device_ids
+    - ota_upgrade_package_id
+    type: object
+  model.BatteryBatchOtaPushResp:
+    properties:
+      accepted:
+        type: integer
+      failures:
+        items:
+          $ref: '#/definitions/model.BatteryBatchOtaPushFailure'
+        type: array
+      rejected:
+        type: integer
+      task_id:
+        type: string
+      total:
+        type: integer
+    type: object
+  model.BatteryImportFailure:
+    properties:
+      device_number:
+        type: string
+      message:
+        type: string
+      row:
+        type: integer
+    type: object
+  model.BatteryImportResp:
+    properties:
+      failed:
+        type: integer
+      failures:
+        items:
+          $ref: '#/definitions/model.BatteryImportFailure'
+        type: array
+      success:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.BatteryListItemResp:
+    properties:
+      activation_date:
+        type: string
+      activation_status:
+        type: string
+      battery_model_id:
+        type: string
+      battery_model_name:
+        type: string
+      current_version:
+        type: string
+      dealer_id:
+        description: 已废弃，保留兼容
+        type: string
+      dealer_name:
+        type: string
+      device_id:
+        type: string
+      device_name:
+        type: string
+      device_number:
+        type: string
+      is_online:
+        type: integer
+      owner_org_id:
+        description: 组织相关（替代 dealer）
+        type: string
+      owner_org_name:
+        type: string
+      owner_org_type:
+        type: string
+      production_date:
+        type: string
+      soc:
+        type: number
+      soh:
+        type: number
+      transfer_status:
+        type: string
+      user_id:
+        type: string
+      user_name:
+        type: string
+      user_phone:
+        type: string
+      warranty_expire_date:
+        type: string
+    type: object
+  model.BatteryListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.BatteryListItemResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
         type: integer
     type: object
   model.BatteryModel:
@@ -112,6 +592,74 @@ definitions:
       warranty_months:
         type: integer
     type: object
+  model.BmsDashboardAlarmOverviewResp:
+    properties:
+      status_counts:
+        items:
+          $ref: '#/definitions/model.BmsDashboardAlarmStatusCount'
+        type: array
+      top:
+        items:
+          $ref: '#/definitions/model.BmsDashboardAlarmTopItem'
+        type: array
+      trend:
+        items:
+          $ref: '#/definitions/model.BmsDashboardAlarmTrendPoint'
+        type: array
+    type: object
+  model.BmsDashboardAlarmStatusCount:
+    properties:
+      count:
+        type: integer
+      status:
+        description: H/M/L/N
+        type: string
+    type: object
+  model.BmsDashboardAlarmTopItem:
+    properties:
+      count:
+        type: integer
+      name:
+        type: string
+    type: object
+  model.BmsDashboardAlarmTrendPoint:
+    properties:
+      count:
+        type: integer
+      date:
+        description: YYYY-MM-DD
+        type: string
+    type: object
+  model.BmsDashboardKpiResp:
+    properties:
+      alarm_active:
+        description: latest_device_alarms 中非 N 的数量
+        type: integer
+      device_activated:
+        type: integer
+      device_online:
+        type: integer
+      device_total:
+        type: integer
+    type: object
+  model.BmsDashboardOnlineTrendPoint:
+    properties:
+      device_offline:
+        type: integer
+      device_online:
+        type: integer
+      device_total:
+        type: integer
+      timestamp:
+        type: string
+    type: object
+  model.BmsDashboardOnlineTrendResp:
+    properties:
+      points:
+        items:
+          $ref: '#/definitions/model.BmsDashboardOnlineTrendPoint'
+        type: array
+    type: object
   model.Dealer:
     properties:
       address:
@@ -182,6 +730,54 @@ definitions:
       page_size:
         type: integer
       total:
+        type: integer
+    type: object
+  model.DealerOverviewResp:
+    properties:
+      active_count:
+        type: integer
+      dealer_id:
+        type: string
+      dealer_name:
+        type: string
+      device_count:
+        type: integer
+      end_user_count:
+        type: integer
+      warranty_approved:
+        type: integer
+      warranty_completed:
+        type: integer
+      warranty_pending:
+        type: integer
+      warranty_processing:
+        type: integer
+      warranty_rejected:
+        type: integer
+      warranty_total:
+        type: integer
+    type: object
+  model.DealerPermissionTemplateReq:
+    properties:
+      template:
+        enum:
+        - BASIC
+        - ADVANCED
+        type: string
+    required:
+    - template
+    type: object
+  model.DealerPermissionTemplateResp:
+    properties:
+      dealer_id:
+        type: string
+      role_name:
+        description: 对应 casbin 角色名
+        type: string
+      template:
+        description: BASIC/ADVANCED/NONE
+        type: string
+      user_count:
         type: integer
     type: object
   model.DealerResp:
@@ -384,6 +980,77 @@ definitions:
       user_phone:
         type: string
     type: object
+  model.EndUserDeviceItemResp:
+    properties:
+      binding_id:
+        type: string
+      binding_time:
+        type: string
+      device_id:
+        type: string
+      device_name:
+        type: string
+      device_number:
+        type: string
+      is_owner:
+        type: boolean
+    type: object
+  model.EndUserDeviceListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.EndUserDeviceItemResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.EndUserForceUnbindReq:
+    properties:
+      binding_id:
+        type: string
+    required:
+    - binding_id
+    type: object
+  model.EndUserListItemResp:
+    properties:
+      dealer_id:
+        description: 已废弃，保留兼容
+        type: string
+      dealer_name:
+        type: string
+      device_count:
+        type: integer
+      last_bind_at:
+        type: string
+      owner_org_id:
+        description: 组织相关
+        type: string
+      owner_org_name:
+        type: string
+      user_id:
+        type: string
+      user_name:
+        type: string
+      user_phone:
+        type: string
+    type: object
+  model.EndUserListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.EndUserListItemResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
   model.LoginReq:
     properties:
       email:
@@ -411,6 +1078,197 @@ definitions:
         type: integer
       token:
         description: 登录凭证
+        type: string
+    type: object
+  model.Org:
+    properties:
+      address:
+        description: 详细地址
+        type: string
+      city:
+        description: 城市
+        type: string
+      contact_person:
+        description: 联系人
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      district:
+        description: 区县
+        type: string
+      email:
+        description: 邮箱
+        type: string
+      id:
+        description: 组织ID
+        type: string
+      name:
+        description: 组织名称
+        type: string
+      org_type:
+        description: 组织类型
+        type: string
+      parent_id:
+        description: 上级组织ID
+        type: string
+      phone:
+        description: 电话
+        type: string
+      province:
+        description: 省份
+        type: string
+      remark:
+        description: 备注
+        type: string
+      status:
+        description: 状态
+        type: string
+      tenant_id:
+        description: 租户ID
+        type: string
+      updated_at:
+        description: 更新时间
+        type: string
+    type: object
+  model.OrgCreateReq:
+    properties:
+      address:
+        description: 详细地址
+        type: string
+      city:
+        description: 城市
+        type: string
+      contact_person:
+        description: 联系人
+        type: string
+      district:
+        description: 区县
+        type: string
+      email:
+        description: 邮箱
+        type: string
+      name:
+        description: 组织名称
+        type: string
+      org_type:
+        description: '组织类型: BMS_FACTORY, PACK_FACTORY, DEALER, STORE'
+        type: string
+      parent_id:
+        description: 上级组织ID
+        type: string
+      phone:
+        description: 电话
+        type: string
+      province:
+        description: 省份
+        type: string
+      remark:
+        description: 备注
+        type: string
+    required:
+    - name
+    - org_type
+    type: object
+  model.OrgListResp:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/model.Org'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.OrgTreeNode:
+    properties:
+      address:
+        description: 详细地址
+        type: string
+      children:
+        items:
+          $ref: '#/definitions/model.OrgTreeNode'
+        type: array
+      city:
+        description: 城市
+        type: string
+      contact_person:
+        description: 联系人
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      district:
+        description: 区县
+        type: string
+      email:
+        description: 邮箱
+        type: string
+      id:
+        description: 组织ID
+        type: string
+      name:
+        description: 组织名称
+        type: string
+      org_type:
+        description: 组织类型
+        type: string
+      parent_id:
+        description: 上级组织ID
+        type: string
+      phone:
+        description: 电话
+        type: string
+      province:
+        description: 省份
+        type: string
+      remark:
+        description: 备注
+        type: string
+      status:
+        description: 状态
+        type: string
+      tenant_id:
+        description: 租户ID
+        type: string
+      updated_at:
+        description: 更新时间
+        type: string
+    type: object
+  model.OrgUpdateReq:
+    properties:
+      address:
+        description: 详细地址
+        type: string
+      city:
+        description: 城市
+        type: string
+      contact_person:
+        description: 联系人
+        type: string
+      district:
+        description: 区县
+        type: string
+      email:
+        description: 邮箱
+        type: string
+      name:
+        description: 组织名称
+        type: string
+      phone:
+        description: 电话
+        type: string
+      province:
+        description: 省份
+        type: string
+      remark:
+        description: 备注
+        type: string
+      status:
+        description: '状态: N-正常, F-禁用'
         type: string
     type: object
   model.Response:
@@ -472,6 +1330,70 @@ definitions:
         description: 街道/乡镇
         maxLength: 100
         type: string
+    type: object
+  model.UpsertAuthMessageTemplateReq:
+    properties:
+      channel:
+        enum:
+        - EMAIL
+        - SMS
+        maxLength: 16
+        type: string
+      content:
+        maxLength: 10000
+        type: string
+      provider:
+        maxLength: 36
+        type: string
+      provider_template_code:
+        maxLength: 64
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      scene:
+        enum:
+        - LOGIN
+        - REGISTER
+        - RESET_PASSWORD
+        - BIND
+        maxLength: 32
+        type: string
+      status:
+        enum:
+        - OPEN
+        - CLOSE
+        maxLength: 16
+        type: string
+      subject:
+        maxLength: 200
+        type: string
+    required:
+    - channel
+    - scene
+    - status
+    type: object
+  model.UpsertWxMpAppReq:
+    properties:
+      app_secret:
+        maxLength: 128
+        type: string
+      appid:
+        maxLength: 64
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      status:
+        enum:
+        - OPEN
+        - CLOSE
+        maxLength: 16
+        type: string
+    required:
+    - app_secret
+    - appid
+    - status
     type: object
   model.WarrantyApplicationCreateReq:
     properties:
@@ -576,6 +1498,9 @@ info:
   title: ThingsPanel API
   version: "1.0"
 paths:
+  /api/v1/activation_logs:
+    get:
+      responses: {}
   /api/v1/alarm/device/counts:
     get:
       consumes:
@@ -591,6 +1516,468 @@ paths:
       summary: 获取租户下告警状态的设备数量
       tags:
       - 告警管理
+  /api/v1/app/auth/bind/email:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppBindEmailReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 绑定邮箱
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/bind/phone:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppBindPhoneReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 绑定手机号
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/bindings:
+    get:
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.AppAuthBindingsResp'
+      summary: 当前账号绑定信息
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/config/templates:
+    get:
+      parameters:
+      - description: SYS_ADMIN指定租户
+        in: query
+        name: tenant_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dal.AuthMessageTemplate'
+            type: array
+      tags:
+      - APP-Auth-Config
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: SYS_ADMIN指定租户
+        in: query
+        name: tenant_id
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpsertAuthMessageTemplateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      tags:
+      - APP-Auth-Config
+  /api/v1/app/auth/config/wxmp:
+    get:
+      parameters:
+      - description: SYS_ADMIN指定租户
+        in: query
+        name: tenant_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dal.WxMpApp'
+      tags:
+      - APP-Auth-Config
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: SYS_ADMIN指定租户
+        in: query
+        name: tenant_id
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpsertWxMpAppReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      tags:
+      - APP-Auth-Config
+  /api/v1/app/auth/email/code:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppSendEmailCodeReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: APP发送邮箱验证码
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/email/login_by_code:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppEmailLoginByCodeReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.LoginRsp'
+      summary: 邮箱验证码登录
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/email/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppEmailRegisterReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.LoginRsp'
+      summary: 邮箱注册
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/email/reset_password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppEmailResetPasswordReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 邮箱重置密码
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/phone/code:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppSendPhoneCodeReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: APP发送手机号验证码
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/phone/login_by_code:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppPhoneLoginByCodeReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.LoginRsp'
+      summary: 手机号验证码登录
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/phone/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppPhoneRegisterReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.LoginRsp'
+      summary: 手机号注册
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/phone/reset_password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppPhoneResetPasswordReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 手机号重置密码
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/unbind:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppUnbindReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 解绑账号（手机/邮箱）
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/wxmp/bind_phone:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppWxmpBindPhoneReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 微信小程序一键绑定手机号
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/wxmp/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppWxmpLoginReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.LoginRsp'
+      summary: 微信小程序一键登录
+      tags:
+      - APP-Auth
+  /api/v1/app/auth/wxmp/profile:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 租户ID
+        in: header
+        name: X-TenantID
+        required: true
+        type: string
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AppWxmpProfileReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 微信小程序用户信息解析/保存
+      tags:
+      - APP-Auth
   /api/v1/app/device/bind:
     post:
       consumes:
@@ -677,6 +2064,215 @@ paths:
   /api/v1/attribute/datas/set/logs:
     get:
       responses: {}
+  /api/v1/battery:
+    get:
+      consumes:
+      - application/json
+      description: BMS 电池管理-电池列表（支持厂家/经销商视角数据隔离）
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 设备编号(序列号)
+        in: query
+        name: device_number
+        type: string
+      - description: 电池型号ID
+        in: query
+        name: battery_model_id
+        type: string
+      - description: 在线状态(1在线/0离线)
+        in: query
+        name: is_online
+        type: integer
+      - description: 激活状态(ACTIVE/INACTIVE)
+        in: query
+        name: activation_status
+        type: string
+      - description: 经销商ID
+        in: query
+        name: dealer_id
+        type: string
+      - description: 出厂日期开始(YYYY-MM-DD)
+        in: query
+        name: production_date_start
+        type: string
+      - description: 出厂日期结束(YYYY-MM-DD)
+        in: query
+        name: production_date_end
+        type: string
+      - description: 质保状态(IN在保/OVER过保)
+        in: query
+        name: warranty_status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryListResp'
+      summary: 获取电池列表
+      tags:
+      - 电池管理
+  /api/v1/battery/batch-assign-dealer:
+    post:
+      consumes:
+      - application/json
+      description: BMS 电池管理-批量分配经销商
+      parameters:
+      - description: 请求参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.BatteryBatchAssignDealerReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 批量分配经销商
+      tags:
+      - 电池管理
+  /api/v1/battery/batch-command:
+    post:
+      consumes:
+      - application/json
+      description: BMS 电池管理-批量下发指令（仅在线设备）
+      parameters:
+      - description: 请求参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.BatteryBatchCommandReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryBatchCommandResp'
+      summary: 批量下发指令
+      tags:
+      - 电池管理
+  /api/v1/battery/batch-ota:
+    post:
+      consumes:
+      - application/json
+      description: BMS 电池管理-批量 OTA 推送（创建升级任务并触发推送）
+      parameters:
+      - description: 请求参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.BatteryBatchOtaPushReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryBatchOtaPushResp'
+      summary: 批量 OTA 推送
+      tags:
+      - 电池管理
+  /api/v1/battery/export:
+    get:
+      consumes:
+      - application/json
+      description: BMS 电池管理-导出电池列表（Excel）
+      parameters:
+      - description: 设备编号(序列号)
+        in: query
+        name: device_number
+        type: string
+      - description: 电池型号ID
+        in: query
+        name: battery_model_id
+        type: string
+      - description: 在线状态(1在线/0离线)
+        in: query
+        name: is_online
+        type: integer
+      - description: 激活状态(ACTIVE/INACTIVE)
+        in: query
+        name: activation_status
+        type: string
+      - description: 经销商ID
+        in: query
+        name: dealer_id
+        type: string
+      - description: 出厂日期开始(YYYY-MM-DD)
+        in: query
+        name: production_date_start
+        type: string
+      - description: 出厂日期结束(YYYY-MM-DD)
+        in: query
+        name: production_date_end
+        type: string
+      - description: 质保状态(IN在保/OVER过保)
+        in: query
+        name: warranty_status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 导出电池列表
+      tags:
+      - 电池管理
+  /api/v1/battery/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: BMS 电池管理-导入电池列表（Excel）
+      parameters:
+      - description: Excel文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BatteryImportResp'
+      summary: 导入电池列表
+      tags:
+      - 电池管理
+  /api/v1/battery/import/template:
+    get:
+      consumes:
+      - application/json
+      description: BMS 电池管理-获取导入模板（Excel）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 获取导入模板
+      tags:
+      - 电池管理
   /api/v1/battery/model:
     get:
       consumes:
@@ -795,6 +2391,49 @@ paths:
       summary: 更新电池型号
       tags:
       - 电池型号管理
+  /api/v1/battery/offline-commands:
+    get:
+      responses: {}
+    post:
+      responses: {}
+  /api/v1/battery/offline-commands/{id}:
+    delete:
+      responses: {}
+    get:
+      responses: {}
+  /api/v1/battery/params/{id}:
+    get:
+      responses: {}
+  /api/v1/battery/params/get:
+    post:
+      responses: {}
+  /api/v1/battery/params/pub:
+    post:
+      responses: {}
+  /api/v1/battery/params/set/logs:
+    get:
+      responses: {}
+  /api/v1/battery/tags:
+    get:
+      responses: {}
+    post:
+      responses: {}
+  /api/v1/battery/tags/{id}:
+    delete:
+      responses: {}
+    put:
+      responses: {}
+  /api/v1/battery/tags/assign:
+    post:
+      responses: {}
+  /api/v1/battery_maintenance:
+    get:
+      responses: {}
+    post:
+      responses: {}
+  /api/v1/battery_maintenance/{id}:
+    get:
+      responses: {}
   /api/v1/board:
     get:
       responses: {}
@@ -860,6 +2499,47 @@ paths:
   /api/v1/command/datas/set/logs:
     get:
       responses: {}
+  /api/v1/dashboard/alarm/overview:
+    get:
+      parameters:
+      - description: 近N天(默认7)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BmsDashboardAlarmOverviewResp'
+      summary: BMS Dashboard 告警概览
+      tags:
+      - BMS-Dashboard
+  /api/v1/dashboard/kpi:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BmsDashboardKpiResp'
+      summary: BMS Dashboard 指标卡
+      tags:
+      - BMS-Dashboard
+  /api/v1/dashboard/trend/online:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.BmsDashboardOnlineTrendResp'
+      summary: BMS Dashboard 在线趋势
+      tags:
+      - BMS-Dashboard
   /api/v1/data_script:
     get:
       responses: {}
@@ -1003,6 +2683,70 @@ paths:
           schema:
             $ref: '#/definitions/model.Dealer'
       summary: 更新经销商
+      tags:
+      - 经销商管理
+  /api/v1/dealer/{id}/overview:
+    get:
+      consumes:
+      - application/json
+      description: 经销商详情聚合数字（设备/终端用户/维保）
+      parameters:
+      - description: 经销商ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DealerOverviewResp'
+      summary: 获取经销商穿透概览
+      tags:
+      - 经销商管理
+  /api/v1/dealer/{id}/permission_template:
+    get:
+      parameters:
+      - description: 经销商ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DealerPermissionTemplateResp'
+      summary: 获取经销商权限模板
+      tags:
+      - 经销商管理
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 经销商ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 模板
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.DealerPermissionTemplateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DealerPermissionTemplateResp'
+      summary: 设置经销商权限模板
       tags:
       - 经销商管理
   /api/v1/device:
@@ -1236,6 +2980,90 @@ paths:
       responses: {}
     get:
       responses: {}
+  /api/v1/end_user:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 经销商ID（厂家侧可选）
+        in: query
+        name: dealer_id
+        type: string
+      - description: 手机号
+        in: query
+        name: phone
+        type: string
+      - description: 设备编号
+        in: query
+        name: device_number
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.EndUserListResp'
+      summary: 终端用户列表
+      tags:
+      - BMS-EndUser
+  /api/v1/end_user/devices:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: 用户ID
+        in: query
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.EndUserDeviceListResp'
+      summary: 用户绑定设备列表
+      tags:
+      - BMS-EndUser
+  /api/v1/end_user/force_unbind:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 解绑请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.EndUserForceUnbindReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 强制解绑
+      tags:
+      - BMS-EndUser
   /api/v1/event/datas:
     get:
       responses: {}
@@ -1313,6 +3141,158 @@ paths:
   /api/v1/operation_logs:
     get:
       responses: {}
+  /api/v1/org:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询组织列表，支持按类型筛选
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        required: true
+        type: integer
+      - description: '组织类型: BMS_FACTORY, PACK_FACTORY, DEALER, STORE'
+        in: query
+        name: org_type
+        type: string
+      - description: 组织名称
+        in: query
+        name: name
+        type: string
+      - description: '状态: N-正常, F-禁用'
+        in: query
+        name: status
+        type: string
+      - description: 父组织ID
+        in: query
+        name: parent_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.OrgListResp'
+      summary: 获取组织列表
+      tags:
+      - 组织管理
+    post:
+      consumes:
+      - application/json
+      description: 创建新的组织（BMS厂家/PACK厂家/经销商/门店）
+      parameters:
+      - description: 组织信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.OrgCreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Org'
+      summary: 创建组织
+      tags:
+      - 组织管理
+  /api/v1/org/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除组织（需确保无子组织和关联设备）
+      parameters:
+      - description: 组织ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 删除组织
+      tags:
+      - 组织管理
+    get:
+      consumes:
+      - application/json
+      description: 根据ID获取组织详细信息
+      parameters:
+      - description: 组织ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Org'
+      summary: 获取组织详情
+      tags:
+      - 组织管理
+    put:
+      consumes:
+      - application/json
+      description: 更新组织信息（不支持修改上级组织）
+      parameters:
+      - description: 组织ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 组织信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.OrgUpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 更新组织
+      tags:
+      - 组织管理
+  /api/v1/org/tree:
+    get:
+      consumes:
+      - application/json
+      description: 获取组织树结构，可按类型筛选
+      parameters:
+      - description: 组织类型筛选
+        in: query
+        name: org_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.OrgTreeNode'
+            type: array
+      summary: 获取组织树
+      tags:
+      - 组织管理
   /api/v1/ota/package:
     get:
       responses: {}
@@ -1485,7 +3465,8 @@ paths:
       responses:
         "200":
           description: 成功
-          schema: {}
+          schema:
+            type: object
         "400":
           description: 错误响应
           schema:

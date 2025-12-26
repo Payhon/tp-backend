@@ -15,7 +15,7 @@ type SysUIElement struct {
 	ID           string    `gorm:"column:id;primaryKey;comment:主键ID" json:"id"`                                      // 主键ID
 	ParentID     string    `gorm:"column:parent_id;not null;comment:父元素id" json:"parent_id"`                         // 父元素id
 	ElementCode  string    `gorm:"column:element_code;not null;comment:元素标识符" json:"element_code"`                   // 元素标识符
-	ElementType  int16     `gorm:"column:element_type;not null;comment:元素类型1-菜单 2-目录 3-按钮 4-路由" json:"element_type"` // 元素类型1-菜单 2-目录 3-按钮 4-路由
+	ElementType  int16     `gorm:"column:element_type;not null;comment:元素类型1-菜单 2-目录 3-路由 4-按钮" json:"element_type"` // 元素类型1-菜单 2-目录 3-路由 4-按钮
 	Order_       *int16    `gorm:"column:orders;comment:排序" json:"orders"`                                           // 排序
 	Param1       *string   `gorm:"column:param1" json:"param1"`
 	Param2       *string   `gorm:"column:param2" json:"param2"`

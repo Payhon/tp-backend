@@ -1,0 +1,6 @@
+[
+  { "label": "遥测(TEL)", "value": "TEL" },
+  { "label": "属性(ATTR)", "value": "ATTR" },
+  { "label": "命令(CMD)", "value": "CMD" }
+]
+

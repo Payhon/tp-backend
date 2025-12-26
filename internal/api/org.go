@@ -162,3 +162,28 @@ func (*OrgApi) GetOrgTree(c *gin.Context) {
 
 	c.Set("data", data)
 }
+
+// ResetOrgAccountPassword 重置组织账号密码
+// @Summary 重置组织账号密码
+// @Description 重置指定组织下的业务账号密码（组织创建时绑定的账号）
+// @Tags 组织管理
+// @Accept json
+// @Produce json
+// @Param id path string true "组织ID"
+// @Param body body model.OrgResetAccountPasswordReq true "新密码"
+// @Success 200 {object} model.Response
+// @Router /api/v1/org/{id}/account/password [put]
+func (*OrgApi) ResetOrgAccountPassword(c *gin.Context) {
+	id := c.Param("id")
+	var req model.OrgResetAccountPasswordReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	if err := service.GroupApp.OrgService.ResetOrgAccountPassword(c.Request.Context(), id, &req, userClaims); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}

@@ -1,5 +1,11 @@
 package model
 
+// OrgAccountReq 创建组织时的账号信息
+type OrgAccountReq struct {
+	Username string `json:"username" binding:"required"`               // 登录账号（手机号/邮箱）
+	Password string `json:"password" binding:"required,min=6,max=255"` // 登录密码
+}
+
 // OrgCreateReq 创建组织请求
 type OrgCreateReq struct {
 	Name          string  `json:"name" binding:"required"`     // 组织名称
@@ -13,6 +19,7 @@ type OrgCreateReq struct {
 	District      *string `json:"district"`                    // 区县
 	Address       *string `json:"address"`                     // 详细地址
 	Remark        *string `json:"remark"`                      // 备注
+	Account       *OrgAccountReq `json:"account"`              // 账号信息（可选：不传则仅创建组织）
 }
 
 // OrgUpdateReq 更新组织请求
@@ -56,6 +63,11 @@ type OrgTreeNode struct {
 // OrgTreeReq 获取组织树请求
 type OrgTreeReq struct {
 	OrgType *string `form:"org_type"` // 按类型筛选（可选）
+}
+
+// OrgResetAccountPasswordReq 重置组织账号密码请求
+type OrgResetAccountPasswordReq struct {
+	Password string `json:"password" binding:"required,min=6,max=255"` // 新密码
 }
 
 // OrgDetailResp 组织详情响应（可扩展统计信息）

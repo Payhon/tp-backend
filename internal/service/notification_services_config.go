@@ -14,6 +14,9 @@ import (
 	utils "project/pkg/utils"
 	"project/third_party/others/http_client"
 
+	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	dysmsapi "github.com/alibabacloud-go/dysmsapi-20170525/v4/client"
+	"github.com/alibabacloud-go/tea/tea"
 	"github.com/go-basic/uuid"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/gomail.v2"
@@ -223,6 +226,107 @@ func (*NotificationServicesConfig) SendTestEmail(req *model.SendTestEmailReq) er
 		})
 	}
 
+	return nil
+}
+
+// SendSMSByTemplate 发送短信（目前仅支持阿里云）
+// - templateCode 为空时，回退使用 notification_services_config(SME_CODE) 中的默认 template_code
+// - params 为短信模板参数（会被序列化为 JSON 字符串）
+func (*NotificationServicesConfig) SendSMSByTemplate(ctx context.Context, tenantID, phone, templateCode string, params map[string]string) error {
+	c, err := dal.GetNotificationServicesConfigByType(model.NoticeType_SME_CODE)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"notice_type": model.NoticeType_SME_CODE,
+			"error":       err.Error(),
+		})
+	}
+	if c == nil || c.Config == nil {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"error": "短信服务配置不存在",
+		})
+	}
+	if c.Status != model.OPEN {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"error": "短信服务未开启",
+		})
+	}
+
+	var smeConf model.SMEConfig
+	if err := json.Unmarshal([]byte(*c.Config), &smeConf); err != nil {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+	if strings.ToUpper(strings.TrimSpace(smeConf.Provider)) != "ALIYUN" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"error":    "unsupported sms provider",
+			"provider": smeConf.Provider,
+		})
+	}
+	if smeConf.AliyunSMSConfig == nil {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"error": "aliyun sms config is empty",
+		})
+	}
+
+	ali := smeConf.AliyunSMSConfig
+	if strings.TrimSpace(templateCode) == "" {
+		templateCode = ali.TemplateCode
+	}
+	if strings.TrimSpace(templateCode) == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"error": "sms template_code is empty",
+		})
+	}
+
+	paramJSON, _ := json.Marshal(params)
+
+	openapiConf := &openapi.Config{
+		AccessKeyId:     tea.String(ali.AccessKeyID),
+		AccessKeySecret: tea.String(ali.AccessKeySecret),
+		Endpoint:        tea.String(ali.Endpoint),
+	}
+	client, err := dysmsapi.NewClient(openapiConf)
+	if err != nil {
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+
+	req := &dysmsapi.SendSmsRequest{
+		PhoneNumbers:  tea.String(phone),
+		SignName:      tea.String(ali.SignName),
+		TemplateCode:  tea.String(templateCode),
+		TemplateParam: tea.String(string(paramJSON)),
+	}
+	resp, err := client.SendSms(req)
+	if err != nil {
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+	if resp == nil || resp.Body == nil || resp.Body.Code == nil || *resp.Body.Code != "OK" {
+		code := ""
+		msg := ""
+		if resp != nil && resp.Body != nil {
+			if resp.Body.Code != nil {
+				code = *resp.Body.Code
+			}
+			if resp.Body.Message != nil {
+				msg = *resp.Body.Message
+			}
+		}
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+			"error":      "sms send failed",
+			"provider":   "ALIYUN",
+			"code":       code,
+			"message":    msg,
+			"tenant_id":  tenantID,
+			"phone":      phone,
+			"template":   templateCode,
+			"request_id": "",
+		})
+	}
 	return nil
 }
 

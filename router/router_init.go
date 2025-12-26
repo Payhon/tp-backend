@@ -91,6 +91,22 @@ func RouterInit() *gin.Engine {
 			v1.GET("verification/code", controllers.HandleVerificationCode)
 			v1.POST("reset/password", controllers.ResetPassword)
 			v1.GET("logo", controllers.HandleLogoList)
+
+			// APP/小程序认证（无需登录）
+			appAuth := v1.Group("app/auth")
+			appAuth.Use(middleware.RequireTenantHeader())
+			{
+				appAuth.POST("email/code", controllers.AppAuthApi.SendEmailCode)
+				appAuth.POST("phone/code", controllers.AppAuthApi.SendPhoneCode)
+				appAuth.POST("phone/login_by_code", controllers.AppAuthApi.PhoneLoginByCode)
+				appAuth.POST("email/login_by_code", controllers.AppAuthApi.EmailLoginByCode)
+				appAuth.POST("phone/register", controllers.AppAuthApi.PhoneRegister)
+				appAuth.POST("email/register", controllers.AppAuthApi.EmailRegister)
+				appAuth.POST("phone/reset_password", controllers.AppAuthApi.PhoneResetPassword)
+				appAuth.POST("email/reset_password", controllers.AppAuthApi.EmailResetPassword)
+				appAuth.POST("wxmp/login", controllers.AppAuthApi.WxmpLogin)
+			}
+
 			// 设备遥测（ws）
 			v1.GET("telemetry/datas/current/ws", controllers.TelemetryDataApi.ServeCurrentDataByWS)
 			// 设备在线离线状态（ws）
@@ -125,6 +141,27 @@ func RouterInit() *gin.Engine {
 		SSERouter(v1)
 
 		{
+			// APP/小程序认证（登录后）
+			appAuthAuthed := v1.Group("app/auth")
+			appAuthAuthed.Use(middleware.RequireTenantHeaderMatchClaims())
+			{
+				appAuthAuthed.GET("bindings", controllers.AppAuthApi.Bindings)
+				appAuthAuthed.POST("wxmp/bind_phone", controllers.AppAuthApi.WxmpBindPhone)
+				appAuthAuthed.POST("wxmp/profile", controllers.AppAuthApi.WxmpProfile)
+				appAuthAuthed.POST("bind/phone", controllers.AppAuthApi.BindPhone)
+				appAuthAuthed.POST("bind/email", controllers.AppAuthApi.BindEmail)
+				appAuthAuthed.POST("unbind", controllers.AppAuthApi.Unbind)
+			}
+
+			// APP/小程序认证配置（WEB端可配置：模板/微信配置）
+			appAuthConfig := v1.Group("app/auth/config")
+			{
+				appAuthConfig.GET("templates", controllers.AppAuthConfigApi.ListTemplates)
+				appAuthConfig.POST("templates", controllers.AppAuthConfigApi.UpsertTemplate)
+				appAuthConfig.GET("wxmp", controllers.AppAuthConfigApi.GetWxMpConfig)
+				appAuthConfig.POST("wxmp", controllers.AppAuthConfigApi.UpsertWxMpConfig)
+			}
+
 			apps.Model.User.InitUser(v1) // 用户模块
 
 			apps.Model.Role.Init(v1) // 角色管理
@@ -187,6 +224,9 @@ func RouterInit() *gin.Engine {
 
 			// 初始化系统监控路由
 			apps.Model.SystemMonitor.InitSystemMonitor(v1, m)
+
+			// 机构类型权限配置（菜单/设备参数）
+			apps.Model.OrgTypePermission.InitOrgTypePermission(v1)
 
 			// BMS 模块路由（附加组织数据权限中间件）
 			bmsRouter := v1.Group("")

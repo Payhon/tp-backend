@@ -647,7 +647,7 @@ CREATE TABLE public.sys_ui_elements (
 	id varchar(36) NOT NULL, -- 主键ID
 	parent_id varchar(36) NOT NULL, -- 父元素id
 	element_code varchar(100) NOT NULL, -- 元素标识符
-	element_type int2 NOT NULL, -- 元素类型1-菜单 2-目录 3-按钮 4-路由
+	element_type int2 NOT NULL, -- 元素类型1-菜单 2-目录 3-路由 4-按钮
 	orders int2 NULL, -- 排序
 	param1 varchar(255) NULL,
 	param2 varchar(255) NULL,
@@ -667,7 +667,7 @@ COMMENT ON TABLE public.sys_ui_elements IS 'UI元素表';
 COMMENT ON COLUMN public.sys_ui_elements.id IS '主键ID';
 COMMENT ON COLUMN public.sys_ui_elements.parent_id IS '父元素id';
 COMMENT ON COLUMN public.sys_ui_elements.element_code IS '元素标识符';
-COMMENT ON COLUMN public.sys_ui_elements.element_type IS '元素类型1-菜单 2-目录 3-按钮 4-路由';
+COMMENT ON COLUMN public.sys_ui_elements.element_type IS '元素类型1-菜单 2-目录 3-路由 4-按钮';
 COMMENT ON COLUMN public.sys_ui_elements.orders IS '排序';
 COMMENT ON COLUMN public.sys_ui_elements.authority IS '权限(多选)1-系统管理员 2-租户 例如[1,2]';
 COMMENT ON COLUMN public.sys_ui_elements.description IS '描述';
@@ -1699,6 +1699,7 @@ INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, o
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('36c4f5ce-3279-55f2-ede2-81b4a0bae24b', 'e1ebd134-53df-3105-35f4-489fc674d173', 'management_user', 3, 41, '/management/user', 'ic:round-manage-accounts', 'self', '["SYS_ADMIN"]'::json, '租户管理 ', '2024-02-18 17:50:48.999', '', 'route.management_user', 'view.management_user');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('c4dff952-3bf4-8102-6882-e9d3f3cffbda', '5373a6a2-1861-af35-eb4c-adfd5ca55ecd', 'device_manage', 3, 1121, '/device/manage', 'icon-park-outline:analysis', '0', '["TENANT_ADMIN"]'::json, '设备管理', '2024-03-05 17:55:08.170', '', 'route.device_manage', 'view.device_manage');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('fec91838-d30d-7d66-6715-0912f1b171d8', 'e1ebd134-53df-3105-35f4-489fc674d173', 'management_notification', 3, 44, '/management/notification', 'mdi:alert', 'self', '["SYS_ADMIN"]'::json, '通知配置', '2024-03-15 19:50:07.495', '', 'route.management_notification', 'view.management_notification');
+INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('1f3c5159-1c5a-4580-8a56-10a0c9f8e82a', 'e1ebd134-53df-3105-35f4-489fc674d173', 'management_app-auth-config', 3, 45, '/management/app-auth-config', 'mdi:account-key', 'self', '["SYS_ADMIN","TENANT_ADMIN"]'::json, 'APP认证配置', '2025-12-25 00:00:00.000', '', 'route.management_app-auth-config', 'view.management_app-auth-config');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('82c46beb-9ec4-8a3d-c6e4-04ba426e525a', '650bc444-7672-1123-1e41-7e37365b0186', 'alarm_notification-group', 3, 1, '/alarm/notification-group', 'ic:round-supervisor-account', 'basic', '["TENANT_ADMIN"]'::json, '通知组', '2024-03-20 10:03:19.955', '', 'route.alarm_notification-group', 'view.alarm_notification-group');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('650bc444-7672-1123-1e41-7e37365b0186', '0', 'alarm', 1, 115, '/alarm', 'mdi:alert', 'self', '["TENANT_ADMIN"]'::json, '告警', '2024-03-17 09:01:52.183', '', 'route.alarm', 'layout.base');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('64f684f1-390c-b5f2-9994-36895025df8a', '676e8f33-875a-0473-e9ca-c82fd09fef57', 'automation_space-management', 3, 10, 'automation/space-management', 'ic:baseline-security', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json, '场景管理', '2024-03-22 13:25:38.820', '', 'default', 'view.automation space-management');
@@ -1722,3 +1723,66 @@ INSERT INTO public.logo (id, system_name, logo_cache, logo_background, logo_load
 
 ALTER TABLE "public"."scene_action_info"
 ALTER COLUMN "action_param" TYPE varchar(50) COLLATE "pg_catalog"."default";
+
+-- ============================================================================
+-- APP账号体系（多身份登录、模板配置、微信小程序配置）
+-- ============================================================================
+
+-- public.user_identities definition
+CREATE TABLE IF NOT EXISTS public.user_identities (
+	id varchar(36) NOT NULL,
+	user_id varchar(36) NOT NULL,
+	tenant_id varchar(36) NOT NULL,
+	identity_type varchar(32) NOT NULL,      -- PHONE / EMAIL / WXMP_OPENID
+	identifier varchar(255) NOT NULL,        -- 账号标识（手机号/邮箱/openid）
+	credential_type varchar(32) NOT NULL,    -- PASSWORD / CODE
+	password_hash varchar(255) NULL,         -- 密码hash（credential_type=PASSWORD）
+	verified_at timestamptz NULL,            -- 验证通过时间
+	is_primary bool NOT NULL DEFAULT false,  -- 是否主账号
+	status varchar(16) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / DISABLED
+	extra json NULL DEFAULT '{}'::json,
+	created_at timestamptz NOT NULL DEFAULT NOW(),
+	updated_at timestamptz NOT NULL DEFAULT NOW(),
+	CONSTRAINT user_identities_pkey PRIMARY KEY (id)
+);
+COMMENT ON TABLE public.user_identities IS '用户多身份账号表（APP/小程序登录体系）';
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_identities_tenant_type_identifier
+	ON public.user_identities (tenant_id, identity_type, identifier);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user_id
+	ON public.user_identities (user_id);
+
+-- public.wx_mp_apps definition
+CREATE TABLE IF NOT EXISTS public.wx_mp_apps (
+	id varchar(36) NOT NULL,
+	tenant_id varchar(36) NOT NULL,
+	appid varchar(64) NOT NULL,
+	app_secret varchar(128) NOT NULL,
+	status varchar(16) NOT NULL DEFAULT 'OPEN', -- OPEN / CLOSE
+	remark varchar(255) NULL,
+	created_at timestamptz NOT NULL DEFAULT NOW(),
+	updated_at timestamptz NOT NULL DEFAULT NOW(),
+	CONSTRAINT wx_mp_apps_pkey PRIMARY KEY (id)
+);
+COMMENT ON TABLE public.wx_mp_apps IS '微信小程序配置（按租户）';
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wx_mp_apps_tenant_id
+	ON public.wx_mp_apps (tenant_id);
+
+-- public.auth_message_templates definition
+CREATE TABLE IF NOT EXISTS public.auth_message_templates (
+	id varchar(36) NOT NULL,
+	tenant_id varchar(36) NOT NULL,
+	channel varchar(16) NOT NULL,  -- EMAIL / SMS
+	scene varchar(32) NOT NULL,    -- LOGIN / REGISTER / RESET_PASSWORD / BIND
+	subject varchar(200) NULL,
+	content text NULL,
+	provider varchar(36) NULL,     -- 供应商（例如 ALIYUN）
+	provider_template_code varchar(64) NULL,
+	status varchar(16) NOT NULL DEFAULT 'OPEN', -- OPEN / CLOSE
+	remark varchar(255) NULL,
+	created_at timestamptz NOT NULL DEFAULT NOW(),
+	updated_at timestamptz NOT NULL DEFAULT NOW(),
+	CONSTRAINT auth_message_templates_pkey PRIMARY KEY (id)
+);
+COMMENT ON TABLE public.auth_message_templates IS 'APP认证相关消息模板（验证码等，按租户/场景）';
+CREATE UNIQUE INDEX IF NOT EXISTS uk_auth_message_templates_tenant_channel_scene
+	ON public.auth_message_templates (tenant_id, channel, scene);

@@ -54,7 +54,7 @@ type sysUIElement struct {
 	ID           field.String // 主键ID
 	ParentID     field.String // 父元素id
 	ElementCode  field.String // 元素标识符
-	ElementType  field.Int16  // 元素类型1-菜单 2-目录 3-按钮 4-路由
+	ElementType  field.Int16  // 元素类型1-菜单 2-目录 3-路由 4-按钮
 	Order_       field.Int16  // 排序
 	Param1       field.String
 	Param2       field.String

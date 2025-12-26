@@ -46,6 +46,9 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 	user.Status = StringPtr("N")
 	user.Remark = createUserReq.Remark
 
+	// WEB/后台创建的账号统一归类为组织用户（业务账号）
+	user.UserKind = StringPtr(model.UserKindOrgUser)
+
 	// 新增扩展字段
 	user.Organization = createUserReq.Organization
 	user.Timezone = createUserReq.Timezone
@@ -820,6 +823,7 @@ func (u *User) EmailRegister(ctx context.Context, req *model.EmailRegisterReq) (
 		Email:               req.Email,
 		Status:              StringPtr("N"),
 		Authority:           StringPtr("TENANT_ADMIN"),
+		UserKind:            StringPtr(model.UserKindOrgUser),
 		Password:            req.Password,
 		TenantID:            StringPtr(tenantID),
 		Remark:              StringPtr(now.Add(365 * 24 * time.Hour).String()),
