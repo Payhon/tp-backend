@@ -71,7 +71,7 @@ Containerized deployment is the fastest way to set up ThingsPanel.
 3. Login:
     ```text
     URL: http://server-ip:8080
-    Account: super@super.cn
+    Account: root@system.cn
     Password: 123456
     ```
 

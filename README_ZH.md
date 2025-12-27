@@ -69,7 +69,7 @@ ThingsPanel的插件主要有如下几类，分别是：
 1. 登录
     ```text
     输入网址:服务器ip:8080
-    输入账户:super@super.cn
+    输入账户:root@system.cn
     输入密码:123456
     ```
 ## 产品用途
