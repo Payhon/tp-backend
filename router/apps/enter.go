@@ -7,6 +7,8 @@ type apps struct {
 	Dict                       // 字典模块
 	OTA                        // OTA
 	UpLoad                     // 文件上传
+	AppManage                  // APP管理：应用管理/升级中心
+	AppContent                 // APP内容管理：单页/FAQ/用户反馈
 	ProtocolPlugin             // 协议插件
 	Device                     // 设备
 	UiElements                 // ui元素控制

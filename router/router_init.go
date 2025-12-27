@@ -107,6 +107,13 @@ func RouterInit() *gin.Engine {
 				appAuth.POST("wxmp/login", controllers.AppAuthApi.WxmpLogin)
 			}
 
+			// APP内容（无需登录）：单页内容/FAQ
+			appContentPublic := v1.Group("app/content")
+			{
+				appContentPublic.GET("pages/:content_key", controllers.AppContentApi.GetPageForApp)
+				appContentPublic.GET("faqs", controllers.AppContentApi.ListFaqsForApp)
+			}
+
 			// 设备遥测（ws）
 			v1.GET("telemetry/datas/current/ws", controllers.TelemetryDataApi.ServeCurrentDataByWS)
 			// 设备在线离线状态（ws）
@@ -173,6 +180,12 @@ func RouterInit() *gin.Engine {
 			apps.Model.OTA.InitOTA(v1) // OTA模块
 
 			apps.Model.UpLoad.Init(v1) // 文件上传
+
+			// APP管理：应用管理/升级中心
+			apps.Model.AppManage.InitAppManage(v1)
+
+			// APP内容管理（管理端 + APP登录后反馈）
+			apps.Model.AppContent.Init(v1)
 
 			apps.Model.ProtocolPlugin.InitProtocolPlugin(v1) // 协议插件模块
 

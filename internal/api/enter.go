@@ -13,6 +13,8 @@ import (
 
 type Controller struct {
 	UserApi                       // 用户管理
+	AppManageApi                  // APP管理：应用管理/升级中心
+	AppContentApi                 // APP内容管理（单页/FAQ/用户反馈）
 	AppAuthApi                    // APP/小程序认证
 	AppAuthConfigApi              // APP/小程序认证配置（模板/微信配置）
 	DictApi                       // 字典管理
