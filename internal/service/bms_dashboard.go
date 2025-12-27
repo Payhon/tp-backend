@@ -16,6 +16,24 @@ import (
 // BmsDashboard BMS: 首页看板（指标/告警概览/趋势）
 type BmsDashboard struct{}
 
+func buildLatestDeviceAlarmsBase(db *gorm.DB, tenantID string, orgID string, start time.Time) *gorm.DB {
+	q := db.Table("latest_device_alarms AS lda").
+		Where("lda.tenant_id = ?", tenantID).
+		Where("lda.create_at >= ?", start)
+
+	// 组织隔离：使用 distinct device_id 子查询，避免 device_batteries 多行导致统计被放大
+	if orgID != "" {
+		orgDeviceSubQ := db.Table("device_batteries AS dbat").
+			Select("DISTINCT dbat.device_id").
+			Where(`dbat.owner_org_id IN (
+				SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+			)`, tenantID, orgID)
+		q = q.Joins("JOIN (?) AS org_dev ON org_dev.device_id = lda.device_id", orgDeviceSubQ)
+	}
+
+	return q
+}
+
 // GetKpi 指标卡（按厂家/组织隔离）
 func (*BmsDashboard) GetKpi(ctx context.Context, claims *utils.UserClaims, orgID string) (*model.BmsDashboardKpiResp, error) {
 	db := global.DB.WithContext(ctx)
@@ -48,14 +66,15 @@ func (*BmsDashboard) GetKpi(ctx context.Context, claims *utils.UserClaims, orgID
 
 	// 活跃告警：latest_device_alarms 中非 N（按设备范围过滤）
 	alarmQ := db.Table("latest_device_alarms AS lda").
-		Joins("LEFT JOIN devices AS d ON d.id = lda.device_id").
-		Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
-		Where("d.tenant_id = ?", claims.TenantID).
+		Where("lda.tenant_id = ?", claims.TenantID).
 		Where("lda.alarm_status IS NOT NULL AND lda.alarm_status <> ?", "N")
 	if orgID != "" {
-		alarmQ = alarmQ.Where(`dbat.owner_org_id IN (
-			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
-		)`, claims.TenantID, orgID)
+		orgDeviceSubQ := db.Table("device_batteries AS dbat").
+			Select("DISTINCT dbat.device_id").
+			Where(`dbat.owner_org_id IN (
+				SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+			)`, claims.TenantID, orgID)
+		alarmQ = alarmQ.Joins("JOIN (?) AS org_dev ON org_dev.device_id = lda.device_id", orgDeviceSubQ)
 	}
 	var alarmActive int64
 	if err := alarmQ.Count(&alarmActive).Error; err != nil {
@@ -78,16 +97,7 @@ func (*BmsDashboard) GetAlarmOverview(ctx context.Context, claims *utils.UserCla
 	db := global.DB.WithContext(ctx)
 	start := time.Now().AddDate(0, 0, -days)
 
-	base := db.Table("latest_device_alarms AS lda").
-		Joins("LEFT JOIN devices AS d ON d.id = lda.device_id").
-		Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
-		Where("d.tenant_id = ?", claims.TenantID).
-		Where("lda.create_at >= ?", start)
-	if orgID != "" {
-		base = base.Where(`dbat.owner_org_id IN (
-			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
-		)`, claims.TenantID, orgID)
-	}
+	base := buildLatestDeviceAlarmsBase(db, claims.TenantID, orgID, start)
 
 	// 状态分布（H/M/L/N）
 	type statusRow struct {
@@ -133,8 +143,8 @@ func (*BmsDashboard) GetAlarmOverview(ctx context.Context, claims *utils.UserCla
 		Cnt int64  `gorm:"column:cnt"`
 	}
 	var trendRows []trendRow
-	if err := base.Select("to_char(lda.create_at, 'YYYY-MM-DD') AS day, COUNT(1) AS cnt").
-		Group("day").
+	if err := base.Select("to_char(lda.create_at::date, 'YYYY-MM-DD') AS day, COUNT(1) AS cnt").
+		Group("lda.create_at::date").
 		Order("day ASC").
 		Scan(&trendRows).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})

@@ -31,7 +31,7 @@ type DealerUpdateReq struct {
 // DealerListReq 经销商列表查询请求
 type DealerListReq struct {
 	Page     int     `form:"page" binding:"required,min=1"`
-	PageSize int     `form:"page_size" binding:"required,min=1,max=100"`
+	PageSize int     `form:"page_size" binding:"required,min=1,max=1000"`
 	Name     *string `form:"name"`
 	Phone    *string `form:"phone"`
 	Province *string `form:"province"`
@@ -50,16 +50,16 @@ type DealerResp struct {
 	District      *string `json:"district"`
 	Address       *string `json:"address"`
 	ParentID      *string `json:"parent_id"`
-	DeviceCount   int64   `json:"device_count"`   // 设备总数
-	ActiveCount   int64   `json:"active_count"`   // 激活设备数
+	DeviceCount   int64   `json:"device_count"` // 设备总数
+	ActiveCount   int64   `json:"active_count"` // 激活设备数
 	CreatedAt     string  `json:"created_at"`
 	Remark        *string `json:"remark"`
 }
 
 // DealerListResp 经销商列表响应
 type DealerListResp struct {
-	List  []DealerResp `json:"list"`
-	Total int64        `json:"total"`
-	Page  int          `json:"page"`
-	PageSize int       `json:"page_size"`
+	List     []DealerResp `json:"list"`
+	Total    int64        `json:"total"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"page_size"`
 }

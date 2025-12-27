@@ -22,7 +22,7 @@ type GetOTAUpgradeTaskDetailReq struct {
 
 type GetOTAUpgradeTaskListByPageReq struct {
 	PageReq
-	OTAUpgradePackageId string `json:"ota_upgrade_package_id" form:"ota_upgrade_package_id" validate:"required,max=36"` // 升级包ID
+	OTAUpgradePackageId string `json:"ota_upgrade_package_id" form:"ota_upgrade_package_id" validate:"omitempty,max=36"` // 升级包ID（列表筛选条件，可为空）
 }
 
 type UpdateOTAUpgradeTaskStatusReq struct {

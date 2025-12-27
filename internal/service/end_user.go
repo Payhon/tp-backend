@@ -16,6 +16,21 @@ import (
 // EndUser BMS: 终端用户（穿透/强制解绑）
 type EndUser struct{}
 
+func endUserListSelectSQL(orgScopeID string) (string, []interface{}) {
+	selectSQL := `
+		u.id AS user_id,
+		u.name AS user_name,
+		u.phone_number AS user_phone,
+		COUNT(DISTINCT d.id) AS device_count,
+		MAX(dub.binding_time) AS last_bind_at,
+		dbat.owner_org_id AS owner_org_id,
+		org.name AS owner_org_name,
+		CASE WHEN ? <> '' THEN dbat.owner_org_id ELSE NULL END AS dealer_id,
+		CASE WHEN ? <> '' THEN org.name ELSE NULL END AS dealer_name
+	`
+	return selectSQL, []interface{}{orgScopeID, orgScopeID}
+}
+
 // GetEndUserList 终端用户列表（从绑定关系聚合）
 func (*EndUser) GetEndUserList(ctx context.Context, req model.EndUserListReq, claims *utils.UserClaims, orgScopeID string) (*model.EndUserListResp, error) {
 	db := global.DB.WithContext(ctx)
@@ -59,6 +74,8 @@ func (*EndUser) GetEndUserList(ctx context.Context, req model.EndUserListReq, cl
 		UserPhone    string     `gorm:"column:user_phone"`
 		DeviceCount  int64      `gorm:"column:device_count"`
 		LastBindAt   *time.Time `gorm:"column:last_bind_at"`
+		DealerID     *string    `gorm:"column:dealer_id"`
+		DealerName   *string    `gorm:"column:dealer_name"`
 		OwnerOrgID   *string    `gorm:"column:owner_org_id"`
 		OwnerOrgName *string    `gorm:"column:owner_org_name"`
 	}
@@ -66,19 +83,9 @@ func (*EndUser) GetEndUserList(ctx context.Context, req model.EndUserListReq, cl
 	offset := (req.Page - 1) * req.PageSize
 	rows := make([]row, 0, req.PageSize)
 
-	// 当没有指定 dealer 时，用户可能跨多个 dealer；此处仅返回 NULL dealer_name（前端展示为“—”）
-	// 当指定 dealer 时，返回该 dealer 信息
-	selectSQL := `
-		u.id AS user_id,
-		u.name AS user_name,
-		u.phone_number AS user_phone,
-		COUNT(DISTINCT d.id) AS device_count,
-		MAX(dub.binding_time) AS last_bind_at,
-		CASE WHEN ? <> '' THEN de.id ELSE NULL END AS dealer_id,
-		CASE WHEN ? <> '' THEN de.name ELSE NULL END AS dealer_name
-	`
+	selectSQL, selectArgs := endUserListSelectSQL(effectiveOrgID)
 
-	if err := base.Select(selectSQL, effectiveOrgID, effectiveOrgID).
+	if err := base.Select(selectSQL, selectArgs...).
 		Group("u.id, u.name, u.phone_number, owner_org_id, owner_org_name").
 		Order("last_bind_at DESC").
 		Offset(offset).
@@ -102,6 +109,8 @@ func (*EndUser) GetEndUserList(ctx context.Context, req model.EndUserListReq, cl
 			LastBindAt:   lastBindAt,
 			OwnerOrgID:   r.OwnerOrgID,
 			OwnerOrgName: r.OwnerOrgName,
+			DealerID:     r.DealerID,
+			DealerName:   r.DealerName,
 		})
 	}
 

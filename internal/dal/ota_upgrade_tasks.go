@@ -69,8 +69,12 @@ func DeleteOTAUpgradeTask(id string) error {
 
 func GetOtaUpgradeTaskListByPage(p *model.GetOTAUpgradeTaskListByPageReq) (int64, []map[string]interface{}, error) {
 	// 初始化SQL WHERE子句和参数
-	whereClause := "WHERE t.ota_upgrade_package_id = ?"
-	params := []interface{}{p.OTAUpgradePackageId}
+	whereClause := ""
+	params := make([]interface{}, 0, 3)
+	if p.OTAUpgradePackageId != "" {
+		whereClause = "WHERE t.ota_upgrade_package_id = ?"
+		params = append(params, p.OTAUpgradePackageId)
+	}
 
 	// 构建查询总数的SQL
 	countSQL := `SELECT COUNT(*) FROM ota_upgrade_tasks t ` + whereClause
