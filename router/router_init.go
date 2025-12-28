@@ -73,6 +73,10 @@ func RouterInit() *gin.Engine {
 	router.Use(handler.Middleware())
 
 	controllers := new(api.Controller)
+
+	// 云存储文件访问：通过本服务 302 跳转到云存储 URL（用于兼容历史以 ./files/... 保存的字段）
+	router.GET("/files-cloud/:id", controllers.FileApi.ServeFilesCloudRedirect)
+
 	// 健康检查
 	router.GET("/health", controllers.SystemApi.HealthCheck)
 

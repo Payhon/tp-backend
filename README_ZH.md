@@ -72,6 +72,20 @@ ThingsPanel的插件主要有如下几类，分别是：
     输入账户:root@system.cn
     输入密码:123456
     ```
+
+## 数据库安装
+```shell
+docker run --name timescaledb -d \
+  --restart always \
+  -p 5432:5432 \
+  -e TZ=Asia/Shanghai \
+  -e POSTGRES_DB=fjbms \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=pgRootPwd@2025 \
+  -v /panel/project/fjiacloud/database:/var/lib/postgresql/data \
+  registry.cn-hangzhou.aliyuncs.com/thingspanel/timescaledb:14
+```
+
 ## 产品用途
 - 设备统一管理
 - 物联网中台

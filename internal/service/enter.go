@@ -13,6 +13,7 @@ type ServiceGroup struct {
 	AppContent
 	AppAuth
 	AppAuthConfig
+	File
 	Role
 	Dict
 	Product
