@@ -1,6 +1,6 @@
 # 设备接入 MQTT 指南
 
-本文档详细说明如何将物联网设备接入 ThingsPanel 平台的 MQTT Broker，包括认证、数据上报、命令接收等完整流程。
+本文档详细说明如何将物联网设备接入 Fjia Cloud平台的 MQTT Broker，包括认证、数据上报、命令接收等完整流程。
 
 ## 目录
 
@@ -18,12 +18,13 @@
 
 ### 1.1 基本概念
 
-ThingsPanel 平台支持通过 MQTT 协议接入物联网设备，支持以下四种数据类型：
+Fjia Cloud平台支持通过 MQTT 协议接入物联网设备，支持以下四种数据类型：
 
 - **遥测 (Telemetry)**: 设备实时上报的测量数据，如温度、湿度等
 - **属性 (Attributes)**: 设备的静态或较少变化的特征，如 IP 地址、MAC 地址、固件版本等
 - **事件 (Events)**: 设备中发生的特定事件或状态变化，如告警、故障等
 - **命令 (Commands)**: 平台向设备下发的控制指令
+- **透传 (Sokect)**: 使用 Socket Topic 进行 16 进制数据透传转发
 
 ### 1.2 连接信息获取
 
@@ -1004,7 +1005,7 @@ except KeyboardInterrupt:
 cmake_minimum_required(VERSION 3.5)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(thingspanel_mqtt_device)
+project(fjiacloud_mqtt_device)
 ```
 
 **main/CMakeLists.txt**:
@@ -1036,7 +1037,7 @@ idf_component_register(
 #include "mqtt_client.h"
 #include "cJSON.h"
 
-static const char *TAG = "THINGSPANEL_DEVICE";
+static const char *TAG = "FJIACLOUD_DEVICE";
 
 // 设备配置
 #define DEVICE_ID           "abc123-def456-ghi789-jkl012"
@@ -1463,7 +1464,7 @@ void app_main(void)
     // 创建数据上报任务
     xTaskCreate(&data_report_task, "data_report", 4096, NULL, 5, NULL);
     
-    ESP_LOGI(TAG, "ThingsPanel MQTT 设备初始化完成");
+    ESP_LOGI(TAG, "Fjia CloudMQTT 设备初始化完成");
 }
 ```
 
@@ -1507,7 +1508,7 @@ idf.py -p /dev/ttyUSB0 monitor
 **前提条件**：
 - EMQX 已安装并运行
 - PostgreSQL 数据库已配置，包含 `devices` 表
-- ThingsPanel 后端已配置好数据库连接
+- Fjia Cloud后端已配置好数据库连接
 
 **快速配置步骤**（EMQX 5.x Dashboard）：
 
@@ -1516,7 +1517,7 @@ idf.py -p /dev/ttyUSB0 monitor
 3. 选择 **PostgreSQL**
 4. 填写配置信息：
    - **服务器**：`127.0.0.1:5432`
-   - **数据库**：`ThingsPanel`
+   - **数据库**：`fjbms`
    - **用户名**：`postgres`
    - **密码**：`postgres`（根据实际配置修改）
    - **认证查询**：见下方 SQL
@@ -1566,7 +1567,7 @@ CREATE TABLE public.devices (
 ```yaml
 # PostgreSQL 连接配置
 auth.postgresql.server: "127.0.0.1:5432"
-auth.postgresql.database: "ThingsPanel"
+auth.postgresql.database: "fjbms"
 auth.postgresql.username: "postgres"
 auth.postgresql.password: "postgres"
 auth.postgresql.pool_size: 8
@@ -1713,7 +1714,7 @@ authentication = [
     
     # 数据库连接配置
     server = "127.0.0.1:5432"
-    database = "ThingsPanel"
+    database = "fjbms"
     username = "postgres"
     password = "postgres"
     pool_size = 8
@@ -1735,7 +1736,7 @@ authorization = {
       type = "postgresql"
       enable = true
       server = "127.0.0.1:5432"
-      database = "ThingsPanel"
+      database = "fjbms"
       username = "postgres"
       password = "postgres"
       pool_size = 8
@@ -1751,7 +1752,7 @@ authorization = {
 
 ```hocon
 auth.pgsql.server = "127.0.0.1:5432"
-auth.pgsql.database = "ThingsPanel"
+auth.pgsql.database = "fjbms"
 auth.pgsql.username = "postgres"
 auth.pgsql.password = "postgres"
 auth.pgsql.pool = 8
@@ -1951,18 +1952,3 @@ client.on_disconnect = on_disconnect
 
 - [MQTT 协议规范](https://mqtt.org/)
 - [Paho MQTT Python 客户端](https://www.eclipse.org/paho/clients/python/)
-- [ThingsPanel 平台文档](../README.md)
-
----
-
-## 9. 更新日志
-
-| 日期 | 版本 | 说明 |
-|------|------|------|
-| 2025-01-XX | 1.0.0 | 初始版本 |
-
----
-
-**文档维护**: ThingsPanel 开发团队  
-**最后更新**: 2025-01-XX
-
