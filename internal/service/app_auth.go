@@ -696,6 +696,110 @@ func (a *AppAuth) UnbindIdentity(ctx context.Context, tenantID, userID, identity
 	})
 }
 
+// UpdateProfile APP/小程序更新个人资料（昵称/头像）
+func (a *AppAuth) UpdateProfile(ctx context.Context, tenantID, userID string, req *model.AppProfileUpdateReq) error {
+	if tenantID == "" || userID == "" || req == nil {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/user_id/req is empty"})
+	}
+	user, err := dal.GetUsersById(userID)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user",
+			"error":     err.Error(),
+		})
+	}
+	if user.TenantID == nil || *user.TenantID != tenantID {
+		return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+			"error": "tenant mismatch",
+		})
+	}
+	// 仅允许终端用户更新（避免误修改 WEB/业务账号资料）
+	if user.UserKind != nil && *user.UserKind != model.UserKindEndUser {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"error": "only END_USER can update profile",
+		})
+	}
+
+	now := time.Now().UTC()
+	updates := map[string]interface{}{
+		"updated_at": now,
+	}
+	if req.NickName != nil {
+		n := strings.TrimSpace(*req.NickName)
+		if n != "" {
+			updates["name"] = n
+		}
+	}
+	if req.AvatarURL != nil {
+		av := strings.TrimSpace(*req.AvatarURL)
+		if av != "" {
+			updates["avatar_url"] = av
+		}
+	}
+	if len(updates) == 1 {
+		return nil
+	}
+	return global.DB.WithContext(ctx).Table("users").Where("id = ?", userID).Updates(updates).Error
+}
+
+// SetUsername 设置用户名（仅允许设置一次），并校验租户内唯一
+func (a *AppAuth) SetUsername(ctx context.Context, tenantID, userID, name string) error {
+	name = strings.TrimSpace(name)
+	if tenantID == "" || userID == "" || name == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/user_id/name is empty"})
+	}
+	if len([]rune(name)) < 2 || len([]rune(name)) > 50 {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"field": "name", "error": "name length must be 2-50"})
+	}
+
+	user, err := dal.GetUsersById(userID)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user",
+			"error":     err.Error(),
+		})
+	}
+	if user.TenantID == nil || *user.TenantID != tenantID {
+		return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+			"error": "tenant mismatch",
+		})
+	}
+	// 仅允许终端用户设置（避免误修改 WEB/业务账号资料）
+	if user.UserKind != nil && *user.UserKind != model.UserKindEndUser {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"error": "only END_USER can set username",
+		})
+	}
+
+	// 已设置则不可修改
+	if user.Name != nil && strings.TrimSpace(*user.Name) != "" {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"error": "username already set",
+		})
+	}
+
+	// 校验租户内唯一（不区分大小写）
+	var cnt int64
+	if err := global.DB.WithContext(ctx).
+		Table("users").
+		Where("tenant_id = ? AND LOWER(name) = LOWER(?) AND id <> ? AND name IS NOT NULL AND name <> ''", tenantID, name, userID).
+		Count(&cnt).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if cnt > 0 {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"field": "name",
+			"error": "name already exists",
+		})
+	}
+
+	now := time.Now().UTC()
+	return global.DB.WithContext(ctx).Table("users").Where("id = ?", userID).Updates(map[string]interface{}{
+		"name":       name,
+		"updated_at": now,
+	}).Error
+}
+
 // WxmpLogin 微信小程序一键登录：通过 code2session 获取 openid，然后按租户查/建身份并登录
 func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code string) (*model.LoginRsp, error) {
 	code = strings.TrimSpace(code)
@@ -785,6 +889,90 @@ func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code string) (*model.
 	}
 
 	return GroupApp.User.UserLoginAfter(u)
+}
+
+// WxmpBindOpenID 微信小程序绑定微信身份（openid），用于“账号绑定：微信绑定”
+func (a *AppAuth) WxmpBindOpenID(ctx context.Context, tenantID, userID, code string) error {
+	code = strings.TrimSpace(code)
+	if tenantID == "" || userID == "" || code == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/user_id/code is empty"})
+	}
+
+	user, err := dal.GetUsersById(userID)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user",
+			"error":     err.Error(),
+		})
+	}
+	if user.TenantID == nil || *user.TenantID != tenantID {
+		return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+			"error": "tenant mismatch",
+		})
+	}
+	if user.UserKind != nil && *user.UserKind != model.UserKindEndUser {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"error": "only END_USER can bind wxmp",
+		})
+	}
+
+	wxConf, err := dal.GetWxMpAppByTenant(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "wx miniapp not configured"})
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if strings.ToUpper(wxConf.Status) != "OPEN" {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})
+	}
+
+	openid, err := a.wxCode2Session(ctx, wxConf.AppID, wxConf.AppSecret, code)
+	if err != nil {
+		return err
+	}
+
+	// openid 不允许跨账号复用
+	if idt, err := dal.GetUserIdentity(ctx, tenantID, dal.IdentityTypeWxmpOpenID, openid); err == nil {
+		if idt.UserID == userID {
+			return nil
+		}
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx openid already bound"})
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+
+	now := time.Now().UTC()
+	return global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		list, err := dal.ListUserIdentitiesByUser(ctx, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		// 已绑定过其它 openid 则拒绝（避免替换造成账号混淆）
+		for _, it := range list {
+			if it.IdentityType == dal.IdentityTypeWxmpOpenID {
+				return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx already bound"})
+			}
+		}
+		isPrimary := len(list) == 0
+
+		identity := &dal.UserIdentity{
+			ID:             uuid.New(),
+			UserID:         userID,
+			TenantID:       tenantID,
+			IdentityType:   dal.IdentityTypeWxmpOpenID,
+			Identifier:     openid,
+			CredentialType: dal.CredentialTypeCode,
+			PasswordHash:   nil,
+			VerifiedAt:     &now,
+			IsPrimary:      isPrimary,
+			Status:         "ACTIVE",
+			Extra:          StringPtr("{}"),
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+		return dal.CreateUserIdentity(ctx, tx, identity)
+	})
 }
 
 type wxCode2SessionResp struct {
@@ -1022,10 +1210,6 @@ func (a *AppAuth) WxmpUpdateProfile(ctx context.Context, tenantID, userID string
 
 	updates := map[string]interface{}{
 		"updated_at": now,
-	}
-	if req.NickName != nil && strings.TrimSpace(*req.NickName) != "" {
-		n := strings.TrimSpace(*req.NickName)
-		updates["name"] = n
 	}
 	if req.AvatarURL != nil && strings.TrimSpace(*req.AvatarURL) != "" {
 		updates["avatar_url"] = strings.TrimSpace(*req.AvatarURL)

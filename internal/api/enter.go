@@ -61,6 +61,7 @@ type Controller struct {
 	BatteryModelApi       // BMS: 电池型号管理
 	DeviceTransferApi     // BMS: 设备转移
 	DeviceBindingApi      // BMS: 设备绑定(APP)
+	AppBatteryApi         // BMS: APP电池设备详情/透传
 	WarrantyApi           // BMS: 维保管理
 	EndUserApi            // BMS: 终端用户
 	ActivationLogApi      // BMS: 激活日志

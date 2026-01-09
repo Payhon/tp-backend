@@ -58,6 +58,22 @@ type AppWxmpBindPhoneReq struct {
 	PhoneCode string `json:"phone_code" validate:"required"` // wx.getPhoneNumber 返回的 code
 }
 
+// AppProfileUpdateReq APP/小程序用户资料更新（昵称/头像）
+type AppProfileUpdateReq struct {
+	NickName  *string `json:"nick_name" validate:"omitempty,max=50"`
+	AvatarURL *string `json:"avatar_url" validate:"omitempty,max=500"`
+}
+
+// AppSetUsernameReq 设置用户名（仅允许设置一次）
+type AppSetUsernameReq struct {
+	Name string `json:"name" validate:"required,min=2,max=50"`
+}
+
+// AppWxmpBindReq 微信小程序绑定微信身份（openid）
+type AppWxmpBindReq struct {
+	Code string `json:"code" validate:"required"`
+}
+
 type AppWxmpProfileReq struct {
 	NickName  *string `json:"nick_name" validate:"omitempty,max=50"`
 	AvatarURL *string `json:"avatar_url" validate:"omitempty,max=500"`

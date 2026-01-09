@@ -124,6 +124,8 @@ func RouterInit() *gin.Engine {
 			v1.GET("device/online/status/ws", controllers.TelemetryDataApi.ServeDeviceStatusByWS)
 			// 设备遥测keys（ws）
 			v1.GET("telemetry/datas/current/keys/ws", controllers.TelemetryDataApi.ServeCurrentDataByKey)
+			// APP端电池设备：MQTT透传（ws桥接）
+			v1.GET("app/battery/socket/ws", controllers.AppBatteryApi.ServeBatterySocketByWS)
 			v1.GET("ota/download/files/upgradePackage/:path/:file", controllers.OTAApi.DownloadOTAUpgradePackage)
 			// 获取系统时间
 			v1.GET("systime", controllers.SystemApi.HandleSystime)
@@ -157,6 +159,9 @@ func RouterInit() *gin.Engine {
 			appAuthAuthed.Use(middleware.RequireTenantHeaderMatchClaims())
 			{
 				appAuthAuthed.GET("bindings", controllers.AppAuthApi.Bindings)
+				appAuthAuthed.POST("profile", controllers.AppAuthApi.Profile)
+				appAuthAuthed.POST("username", controllers.AppAuthApi.SetUsername)
+				appAuthAuthed.POST("wxmp/bind", controllers.AppAuthApi.WxmpBind)
 				appAuthAuthed.POST("wxmp/bind_phone", controllers.AppAuthApi.WxmpBindPhone)
 				appAuthAuthed.POST("wxmp/profile", controllers.AppAuthApi.WxmpProfile)
 				appAuthAuthed.POST("bind/phone", controllers.AppAuthApi.BindPhone)
@@ -256,6 +261,7 @@ func RouterInit() *gin.Engine {
 			apps.Model.BatteryModel.InitBatteryModel(bmsRouter)             // 电池型号管理
 			apps.Model.DeviceTransfer.InitDeviceTransfer(bmsRouter)         // 设备转移
 			apps.Model.DeviceBinding.InitDeviceBinding(bmsRouter)           // APP设备绑定
+			apps.Model.AppBattery.InitAppBattery(bmsRouter)                 // APP电池设备详情
 			apps.Model.Warranty.InitWarranty(bmsRouter)                     // 维保管理
 			apps.Model.EndUser.InitEndUser(bmsRouter)                       // 终端用户（穿透/强制解绑）
 			apps.Model.ActivationLog.InitActivationLog(bmsRouter)           // 激活日志（从操作日志派生）

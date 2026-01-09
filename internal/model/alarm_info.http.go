@@ -27,12 +27,19 @@ type GetAlarmHisttoryListByPage struct {
 	StartTime   *time.Time `json:"start_time" form:"start_time" validate:"omitempty"`     // 告警时间
 	EndTime     *time.Time `json:"end_time" form:"end_time" validate:"omitempty"`         // 告警时间
 	AlarmStatus *string    `json:"alarm_status" form:"alarm_status" validate:"omitempty"` // 告警状态
+	Handled     *bool      `json:"handled" form:"handled" validate:"omitempty"`           // 是否已处理（true: alarm_status=N, false: alarm_status!=N）
+	AlarmLevel  *string    `json:"alarm_level" form:"alarm_level" validate:"omitempty"`   // 告警级别（来自配置）
 	DeviceId    *string    `json:"device_id" form:"device_id" validate:"omitempty"`       // 设备id
 }
 
 type AlarmHistoryDescUpdateReq struct {
 	AlarmHistoryId string `json:"id"  validate:"required"`         // 告警历史id
 	Description    string `json:"description" validate:"required"` // 告警描述
+}
+
+type AlarmHistoryHandleReq struct {
+	Id               string  `json:"id" validate:"required,max=36"`
+	ProcessingRemark *string `json:"processing_remark" validate:"omitempty,max=200"`
 }
 type GetDeviceAlarmStatusReq struct {
 	DeviceId string `json:"device_id" form:"device_id" validate:"required"` // 设备id

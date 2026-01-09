@@ -8,11 +8,13 @@ import (
 	model "project/internal/model"
 	query "project/internal/query"
 	"project/pkg/global"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"gorm.io/datatypes"
 	"gorm.io/gen"
+	"gorm.io/gen/field"
 	"gorm.io/gorm"
 )
 
@@ -54,7 +56,17 @@ func GetAlarmByID(id string) (*model.AlarmConfig, error) {
 // 根据告警信息ID获取告警信息
 func GetAlarmInfoHistoryByID(id string) (map[string]interface{}, error) {
 	var result map[string]interface{}
-	err := query.AlarmHistory.Where(query.AlarmHistory.ID.Eq(id)).Select(query.AlarmHistory.ALL).Scan(&result)
+	processingSuggestions := field.NewString("alarm_config", "processing_suggestions")
+	err := query.AlarmHistory.WithContext(context.Background()).
+		LeftJoin(query.AlarmConfig, query.AlarmHistory.AlarmConfigID.EqCol(query.AlarmConfig.ID)).
+		Where(query.AlarmHistory.ID.Eq(id)).
+		Select(
+			query.AlarmHistory.ALL,
+			query.AlarmConfig.Name.As("alarm_config_name"),
+			query.AlarmConfig.AlarmLevel.As("alarm_level"),
+			processingSuggestions.As("processing_suggestions"),
+		).
+		Scan(&result)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +212,8 @@ func GetAlarmHistoryListByPage(d *model.GetAlarmHisttoryListByPage, tenantID str
 	var count int64
 	queryBuilder := q.WithContext(context.Background())
 	queryBuilder = queryBuilder.Where(q.TenantID.Eq(tenantID))
+	queryBuilder = queryBuilder.LeftJoin(
+		query.AlarmConfig, q.AlarmConfigID.EqCol(query.AlarmConfig.ID))
 
 	if d.StartTime != nil && d.EndTime != nil && !d.StartTime.IsZero() && !d.EndTime.IsZero() {
 		queryBuilder = queryBuilder.Where(q.CreateAt.Between(*d.StartTime, *d.EndTime))
@@ -207,6 +221,16 @@ func GetAlarmHistoryListByPage(d *model.GetAlarmHisttoryListByPage, tenantID str
 
 	if d.AlarmStatus != nil && *d.AlarmStatus != "" {
 		queryBuilder = queryBuilder.Where(q.AlarmStatus.Eq(*d.AlarmStatus))
+	} else if d.Handled != nil {
+		if *d.Handled {
+			queryBuilder = queryBuilder.Where(q.AlarmStatus.Eq("N"))
+		} else {
+			queryBuilder = queryBuilder.Where(q.AlarmStatus.Neq("N"))
+		}
+	}
+
+	if d.AlarmLevel != nil && *d.AlarmLevel != "" {
+		queryBuilder = queryBuilder.Where(query.AlarmConfig.AlarmLevel.Eq(*d.AlarmLevel))
 	}
 
 	if d.DeviceId != nil && *d.DeviceId != "" {
@@ -219,9 +243,6 @@ func GetAlarmHistoryListByPage(d *model.GetAlarmHisttoryListByPage, tenantID str
 		logrus.Error(err)
 		return count, nil, err
 	}
-
-	queryBuilder = queryBuilder.LeftJoin(
-		query.AlarmConfig, q.AlarmConfigID.EqCol(query.AlarmConfig.ID))
 
 	queryBuilder = queryBuilder.Order(q.CreateAt.Desc())
 
@@ -252,6 +273,28 @@ func GetAlarmHistoryListByPage(d *model.GetAlarmHisttoryListByPage, tenantID str
 func AlarmHistorySave(history *model.AlarmHistory) error {
 
 	return query.AlarmHistory.Save(history)
+}
+
+func HandleAlarmHistory(req *model.AlarmHistoryHandleReq, tenantID string, userID string) error {
+	updates := map[string]interface{}{
+		"alarm_status": "N",
+		"processed_at": time.Now().UTC(),
+		"processed_by": userID,
+	}
+	if req.ProcessingRemark != nil {
+		updates["processing_remark"] = strings.TrimSpace(*req.ProcessingRemark)
+	}
+	result, err := query.AlarmHistory.Where(
+		query.AlarmHistory.ID.Eq(req.Id),
+		query.AlarmHistory.TenantID.Eq(tenantID),
+	).Updates(updates)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("处理告警失败")
+	}
+	return nil
 }
 func AlarmHistoryDescUpdate(req *model.AlarmHistoryDescUpdateReq, tenantID string) error {
 	result, err := query.AlarmHistory.Where(query.AlarmHistory.ID.Eq(req.AlarmHistoryId), query.AlarmHistory.TenantID.Eq(tenantID)).UpdateColumn(query.AlarmHistory.Description, req.Description)

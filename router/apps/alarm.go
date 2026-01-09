@@ -50,6 +50,8 @@ func alarminfo(Router *gin.RouterGroup) {
 
 		url.PUT("history", api.Controllers.AlarmApi.AlarmHistoryDescUpdate)
 
+		url.PUT("history/handle", api.Controllers.AlarmApi.HandleAlarmHistoryHandle)
+
 		url.GET("history/device", api.Controllers.AlarmApi.HandleDeviceAlarmStatus)
 
 		url.GET("config/device", api.Controllers.AlarmApi.HandleConfigByDevice)

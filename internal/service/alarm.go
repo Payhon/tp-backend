@@ -25,6 +25,7 @@ func (*Alarm) CreateAlarmConfig(req *model.CreateAlarmConfigReq) (data *model.Al
 	data.ID = uuid.New()
 	data.Name = req.Name
 	data.Description = req.Description
+	data.ProcessingSuggestions = req.ProcessingSuggestions
 	data.AlarmLevel = req.AlarmLevel
 	data.NotificationGroupID = req.NotificationGroupID
 	data.CreatedAt = t
@@ -62,6 +63,9 @@ func (*Alarm) UpdateAlarmConfig(req *model.UpdateAlarmConfigReq) (data *model.Al
 	}
 	if req.Description != nil {
 		data.Description = req.Description
+	}
+	if req.ProcessingSuggestions != nil {
+		data.ProcessingSuggestions = req.ProcessingSuggestions
 	}
 	if req.AlarmLevel != nil {
 		data.AlarmLevel = *req.AlarmLevel
@@ -178,6 +182,16 @@ func (*Alarm) AlarmHistoryDescUpdate(req *model.AlarmHistoryDescUpdateReq, tenan
 		})
 	}
 	return
+}
+
+func (*Alarm) HandleAlarmHistory(req *model.AlarmHistoryHandleReq, tenantID string, userID string) (err error) {
+	err = dal.HandleAlarmHistory(req, tenantID, userID)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+	return nil
 }
 
 func (*Alarm) GetDeviceAlarmStatus(req *model.GetDeviceAlarmStatusReq) bool {

@@ -25,6 +25,7 @@ type AppContent struct{}
 const (
 	contentKeyUserPolicy    = "user_policy"
 	contentKeyPrivacyPolicy = "privacy_policy"
+	contentKeyAboutUs       = "about_us"
 
 	langZhCN = "zh-CN"
 	langEnUS = "en-US"
@@ -51,12 +52,12 @@ func markdownToHTML(markdownText string) string {
 
 func validateContentKey(k string) error {
 	switch strings.TrimSpace(k) {
-	case contentKeyUserPolicy, contentKeyPrivacyPolicy:
+	case contentKeyUserPolicy, contentKeyPrivacyPolicy, contentKeyAboutUs:
 		return nil
 	default:
 		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"field": "content_key",
-			"allow": []string{contentKeyUserPolicy, contentKeyPrivacyPolicy},
+			"allow": []string{contentKeyUserPolicy, contentKeyPrivacyPolicy, contentKeyAboutUs},
 		})
 	}
 }

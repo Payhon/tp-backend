@@ -41,6 +41,7 @@ type apps struct {
 	BatteryModel       // BMS: 电池型号管理
 	DeviceTransfer     // BMS: 设备转移
 	DeviceBinding      // BMS: APP设备绑定
+	AppBattery         // BMS: APP电池设备（详情/透传）
 	Warranty           // BMS: 维保管理
 	EndUser            // BMS: 终端用户
 	ActivationLog      // BMS: 激活日志

@@ -18,12 +18,12 @@ type AppContentApi struct{}
 // APP端（无需登录）
 // ---------------------------------------------------------------------------
 
-// GetPageForApp 获取单页内容（用户政策/隐私政策）
+// GetPageForApp 获取单页内容（用户协议/隐私政策/关于我们）
 // @Summary 获取单页内容
 // @Tags APP-Content
 // @Produce json
 // @Param X-TenantID header string false "租户ID（可选；缺省使用第一个租户）"
-// @Param content_key path string true "内容Key(user_policy/privacy_policy)"
+// @Param content_key path string true "内容Key(user_policy/privacy_policy/about_us)"
 // @Param appid query string true "应用AppID"
 // @Param lang query string false "语言(zh-CN/en-US)"
 // @Success 200 {object} model.AppContentPageResp

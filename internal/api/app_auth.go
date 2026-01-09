@@ -260,6 +260,75 @@ func (*AppAuthApi) WxmpProfile(c *gin.Context) {
 	c.Set("data", nil)
 }
 
+// WxmpBind 微信小程序绑定微信身份（openid）
+// @Summary 微信小程序绑定微信身份
+// @Tags APP-Auth
+// @Accept json
+// @Produce json
+// @Param X-TenantID header string true "租户ID"
+// @Param body body model.AppWxmpBindReq true "请求"
+// @Success 200 {object} model.Response
+// @Router /api/v1/app/auth/wxmp/bind [post]
+func (*AppAuthApi) WxmpBind(c *gin.Context) {
+	var req model.AppWxmpBindReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	tenantID := middleware.GetTenantIDFromHeader(c)
+	if err := service.GroupApp.AppAuth.WxmpBindOpenID(c.Request.Context(), tenantID, userClaims.ID, req.Code); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}
+
+// Profile 更新个人资料（昵称/头像）
+// @Summary 更新个人资料
+// @Tags APP-Auth
+// @Accept json
+// @Produce json
+// @Param X-TenantID header string true "租户ID"
+// @Param body body model.AppProfileUpdateReq true "请求"
+// @Success 200 {object} model.Response
+// @Router /api/v1/app/auth/profile [post]
+func (*AppAuthApi) Profile(c *gin.Context) {
+	var req model.AppProfileUpdateReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	tenantID := middleware.GetTenantIDFromHeader(c)
+	if err := service.GroupApp.AppAuth.UpdateProfile(c.Request.Context(), tenantID, userClaims.ID, &req); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}
+
+// SetUsername 设置用户名（仅允许设置一次）
+// @Summary 设置用户名
+// @Tags APP-Auth
+// @Accept json
+// @Produce json
+// @Param X-TenantID header string true "租户ID"
+// @Param body body model.AppSetUsernameReq true "请求"
+// @Success 200 {object} model.Response
+// @Router /api/v1/app/auth/username [post]
+func (*AppAuthApi) SetUsername(c *gin.Context) {
+	var req model.AppSetUsernameReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	tenantID := middleware.GetTenantIDFromHeader(c)
+	if err := service.GroupApp.AppAuth.SetUsername(c.Request.Context(), tenantID, userClaims.ID, req.Name); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}
+
 // Bindings 当前账号绑定信息
 // @Summary 当前账号绑定信息
 // @Tags APP-Auth

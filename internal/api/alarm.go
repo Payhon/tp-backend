@@ -164,6 +164,22 @@ func (*AlarmApi) AlarmHistoryDescUpdate(c *gin.Context) {
 	c.Set("data", nil)
 }
 
+// /api/v1/alarm/info/history/handle [put]
+func (*AlarmApi) HandleAlarmHistoryHandle(c *gin.Context) {
+	var req model.AlarmHistoryHandleReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	err := service.GroupApp.Alarm.HandleAlarmHistory(&req, userClaims.TenantID, userClaims.ID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}
+
 func (*AlarmApi) HandleDeviceAlarmStatus(c *gin.Context) {
 	//
 	var req model.GetDeviceAlarmStatusReq
