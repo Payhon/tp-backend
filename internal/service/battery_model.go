@@ -1,11 +1,13 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	"project/internal/model"
 	"project/internal/query"
 	"project/pkg/errcode"
+	global "project/pkg/global"
 	"project/pkg/utils"
 
 	"github.com/go-basic/uuid"
@@ -18,14 +20,26 @@ type BatteryModel struct{}
 func (*BatteryModel) CreateBatteryModel(req model.BatteryModelCreateReq, claims *utils.UserClaims) (*model.BatteryModel, error) {
 	t := time.Now().UTC()
 
+	// 校验关联设备模板
+	if _, err := query.DeviceConfig.WithContext(context.Background()).Where(
+		query.DeviceConfig.ID.Eq(req.DeviceConfigID),
+		query.DeviceConfig.TenantID.Eq(claims.TenantID),
+	).First(); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "关联设备模板不存在"})
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
 	batteryModel := &model.BatteryModel{
 		ID:             uuid.New(),
 		Name:           req.Name,
+		DeviceConfigID: StringPtr(req.DeviceConfigID),
 		VoltageRated:   req.VoltageRated,
 		CapacityRated:  req.CapacityRated,
 		CellCount:      req.CellCount,
 		NominalPower:   req.NominalPower,
-		WarrantyMonth: req.WarrantyMonths,
+		WarrantyMonth:  req.WarrantyMonths,
 		Description:    req.Description,
 		TenantID:       claims.TenantID,
 		CreatedAt:      &t,
@@ -64,6 +78,19 @@ func (*BatteryModel) UpdateBatteryModel(id string, req model.BatteryModelUpdateR
 	updates := make(map[string]interface{})
 	if req.Name != nil {
 		updates["name"] = *req.Name
+	}
+	if req.DeviceConfigID != nil {
+		// 校验关联设备模板
+		if _, err := query.DeviceConfig.WithContext(context.Background()).Where(
+			query.DeviceConfig.ID.Eq(*req.DeviceConfigID),
+			query.DeviceConfig.TenantID.Eq(claims.TenantID),
+		).First(); err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "关联设备模板不存在"})
+			}
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		updates["device_config_id"] = *req.DeviceConfigID
 	}
 	if req.VoltageRated != nil {
 		updates["voltage_rated"] = *req.VoltageRated
@@ -160,17 +187,36 @@ func (*BatteryModel) GetBatteryModelByID(id string, claims *utils.UserClaims) (*
 	// 统计设备数量
 	deviceCount, _ := query.DeviceBattery.Where(query.DeviceBattery.BatteryModelID.Eq(id)).Count()
 
+	// 关联设备模板名称
+	var deviceConfigName *string
+	if batteryModel.DeviceConfigID != nil && *batteryModel.DeviceConfigID != "" {
+		var name string
+		if err := global.DB.Table("device_configs").
+			Select("name").
+			Where("id = ? AND tenant_id = ?", *batteryModel.DeviceConfigID, claims.TenantID).
+			Scan(&name).Error; err == nil && name != "" {
+			deviceConfigName = &name
+		}
+	}
+
+	createdAt := ""
+	if batteryModel.CreatedAt != nil {
+		createdAt = batteryModel.CreatedAt.Format("2006-01-02 15:04:05")
+	}
+
 	resp := &model.BatteryModelResp{
-		ID:             batteryModel.ID,
-		Name:           batteryModel.Name,
-		VoltageRated:   batteryModel.VoltageRated,
-		CapacityRated:  batteryModel.CapacityRated,
-		CellCount:      batteryModel.CellCount,
-		NominalPower:   batteryModel.NominalPower,
-		WarrantyMonths: batteryModel.WarrantyMonth,
-		Description:    batteryModel.Description,
-		DeviceCount:    deviceCount,
-		CreatedAt:      batteryModel.CreatedAt.Format("2006-01-02 15:04:05"),
+		ID:               batteryModel.ID,
+		Name:             batteryModel.Name,
+		DeviceConfigID:   batteryModel.DeviceConfigID,
+		DeviceConfigName: deviceConfigName,
+		VoltageRated:     batteryModel.VoltageRated,
+		CapacityRated:    batteryModel.CapacityRated,
+		CellCount:        batteryModel.CellCount,
+		NominalPower:     batteryModel.NominalPower,
+		WarrantyMonths:   batteryModel.WarrantyMonth,
+		Description:      batteryModel.Description,
+		DeviceCount:      deviceCount,
+		CreatedAt:        createdAt,
 	}
 
 	return resp, nil
@@ -204,22 +250,62 @@ func (*BatteryModel) GetBatteryModelList(req model.BatteryModelListReq, claims *
 	}
 
 	// 构建响应
+	// 批量加载 device_config 名称
+	deviceConfigIDSet := make(map[string]struct{})
+	for _, bm := range batteryModels {
+		if bm.DeviceConfigID != nil && *bm.DeviceConfigID != "" {
+			deviceConfigIDSet[*bm.DeviceConfigID] = struct{}{}
+		}
+	}
+	deviceConfigNameMap := make(map[string]string)
+	if len(deviceConfigIDSet) > 0 {
+		ids := make([]string, 0, len(deviceConfigIDSet))
+		for id := range deviceConfigIDSet {
+			ids = append(ids, id)
+		}
+		var rows []struct {
+			ID   string `gorm:"column:id"`
+			Name string `gorm:"column:name"`
+		}
+		_ = global.DB.Table("device_configs").
+			Select("id, name").
+			Where("tenant_id = ? AND id IN ?", claims.TenantID, ids).
+			Scan(&rows).Error
+		for _, r := range rows {
+			deviceConfigNameMap[r.ID] = r.Name
+		}
+	}
+
 	list := make([]model.BatteryModelResp, 0, len(batteryModels))
 	for _, bm := range batteryModels {
 		// 统计设备数量
 		deviceCount, _ := query.DeviceBattery.Where(query.DeviceBattery.BatteryModelID.Eq(bm.ID)).Count()
 
+		var deviceConfigName *string
+		if bm.DeviceConfigID != nil && *bm.DeviceConfigID != "" {
+			if name, ok := deviceConfigNameMap[*bm.DeviceConfigID]; ok && name != "" {
+				deviceConfigName = &name
+			}
+		}
+
+		createdAt := ""
+		if bm.CreatedAt != nil {
+			createdAt = bm.CreatedAt.Format("2006-01-02 15:04:05")
+		}
+
 		list = append(list, model.BatteryModelResp{
-			ID:             bm.ID,
-			Name:           bm.Name,
-			VoltageRated:   bm.VoltageRated,
-			CapacityRated:  bm.CapacityRated,
-			CellCount:      bm.CellCount,
-			NominalPower:   bm.NominalPower,
-			WarrantyMonths: bm.WarrantyMonth,
-			Description:    bm.Description,
-			DeviceCount:    deviceCount,
-			CreatedAt:      bm.CreatedAt.Format("2006-01-02 15:04:05"),
+			ID:               bm.ID,
+			Name:             bm.Name,
+			DeviceConfigID:   bm.DeviceConfigID,
+			DeviceConfigName: deviceConfigName,
+			VoltageRated:     bm.VoltageRated,
+			CapacityRated:    bm.CapacityRated,
+			CellCount:        bm.CellCount,
+			NominalPower:     bm.NominalPower,
+			WarrantyMonths:   bm.WarrantyMonth,
+			Description:      bm.Description,
+			DeviceCount:      deviceCount,
+			CreatedAt:        createdAt,
 		})
 	}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	middleware "project/internal/middleware"
 	"project/internal/model"
@@ -17,6 +18,33 @@ import (
 
 // BatteryApi BMS: 电池管理
 type BatteryApi struct{}
+
+// CreateSingleBattery 添加单个电池
+// @Summary 添加单个电池
+// @Description BMS 电池管理-添加单个电池（item_uuid 对应 devices.device_number）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryCreateReq true "电池信息"
+// @Success 200 {object} model.BatteryCreateResp
+// @Router /api/v1/battery/single [post]
+func (*BatteryApi) CreateSingleBattery(c *gin.Context) {
+	var req model.BatteryCreateReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgIDVal, _ := c.Get(middleware.DealerIDContextKey)
+	orgID, _ := orgIDVal.(string)
+
+	data, err := service.GroupApp.Battery.CreateSingleBattery(context.Background(), req, userClaims, orgID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
 
 // GetBatteryList 获取电池列表
 // @Summary 获取电池列表
@@ -113,12 +141,12 @@ func (*BatteryApi) GetBatteryImportTemplate(c *gin.Context) {
 
 // ImportBatteryList 导入电池列表
 // @Summary 导入电池列表
-// @Description BMS 电池管理-导入电池列表（Excel）
+// @Description BMS 电池管理-导入电池列表（Excel，异步任务：返回 job_id 用于查询进度/日志）
 // @Tags 电池管理
 // @Accept multipart/form-data
 // @Produce json
 // @Param file formData file true "Excel文件"
-// @Success 200 {object} model.BatteryImportResp
+// @Success 200 {object} model.BatteryImportJobCreateResp
 // @Router /api/v1/battery/import [post]
 func (*BatteryApi) ImportBatteryList(c *gin.Context) {
 	file, err := c.FormFile("file")
@@ -156,20 +184,97 @@ func (*BatteryApi) ImportBatteryList(c *gin.Context) {
 
 	// 处理导入
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
-	dealerIDVal, _ := c.Get(middleware.DealerIDContextKey)
-	dealerID, _ := dealerIDVal.(string)
-
-	data, err := service.GroupApp.Battery.ImportBatteryList(context.Background(), filePath, userClaims, dealerID)
+	data, err := service.GroupApp.Battery.CreateBatteryImportJob(context.Background(), filePath, userClaims)
 	if err != nil {
-		// 清理上传的文件
-		os.Remove(filePath)
+		_ = os.Remove(filePath)
 		c.Error(err)
 		return
 	}
 
-	// 清理上传的文件
-	defer os.Remove(filePath)
+	c.Set("data", data)
+}
 
+// GetBatteryImportJobStatus 获取导入任务状态
+// @Summary 获取导入任务状态
+// @Description BMS 电池管理-导入任务状态
+// @Tags 电池管理
+// @Produce json
+// @Param id path string true "任务ID"
+// @Success 200 {object} model.BatteryImportJobStatusResp
+// @Router /api/v1/battery/import/jobs/{id} [get]
+func (*BatteryApi) GetBatteryImportJobStatus(c *gin.Context) {
+	jobID := c.Param("id")
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.Battery.GetBatteryImportJobStatus(context.Background(), jobID, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// GetBatteryImportJobLogs 获取导入任务日志
+// @Summary 获取导入任务日志
+// @Description BMS 电池管理-导入任务日志（增量拉取）
+// @Tags 电池管理
+// @Produce json
+// @Param id path string true "任务ID"
+// @Param after_id query int false "从该日志ID之后开始拉取"
+// @Param limit query int false "单次拉取条数(<=500)"
+// @Success 200 {object} model.BatteryImportJobLogListResp
+// @Router /api/v1/battery/import/jobs/{id}/logs [get]
+func (*BatteryApi) GetBatteryImportJobLogs(c *gin.Context) {
+	jobID := c.Param("id")
+	afterIDStr := c.Query("after_id")
+	limitStr := c.Query("limit")
+	var afterID int64
+	if afterIDStr != "" {
+		if v, err := strconv.ParseInt(afterIDStr, 10, 64); err == nil {
+			afterID = v
+		}
+	}
+	limit := 200
+	if limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil {
+			limit = v
+		}
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.Battery.GetBatteryImportJobLogs(context.Background(), jobID, afterID, limit, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// GetBatteryOperationLogList 运营日志列表
+// @Summary 运营日志列表
+// @Description BMS 运营管理-运营日志（按电池编号查询）
+// @Tags 运营管理
+// @Produce json
+// @Param page query int true "页码"
+// @Param page_size query int true "每页数量"
+// @Param device_number query string false "电池编号(模糊)"
+// @Param operation_type query string false "操作类型"
+// @Param start_time query string false "开始时间(RFC3339 或 YYYY-MM-DD)"
+// @Param end_time query string false "结束时间(RFC3339 或 YYYY-MM-DD)"
+// @Success 200 {object} model.BatteryOperationLogListResp
+// @Router /api/v1/battery/operation_logs [get]
+func (*BatteryApi) GetBatteryOperationLogList(c *gin.Context) {
+	var req model.BatteryOperationLogListReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgIDVal, _ := c.Get(middleware.DealerIDContextKey)
+	orgID, _ := orgIDVal.(string)
+	data, err := service.GroupApp.Battery.GetBatteryOperationLogList(context.Background(), req, userClaims, orgID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	c.Set("data", data)
 }
 

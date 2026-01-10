@@ -40,6 +40,12 @@ type BatteryListItemResp struct {
 	BatteryModelID   *string `json:"battery_model_id"`
 	BatteryModelName *string `json:"battery_model_name"`
 
+	// 业务字段
+	ItemUUID    *string `json:"item_uuid"`
+	BatchNumber *string `json:"batch_number"`
+	BleMac      *string `json:"ble_mac"`
+	CommChipID  *string `json:"comm_chip_id"`
+
 	ProductionDate     *string `json:"production_date"`
 	WarrantyExpireDate *string `json:"warranty_expire_date"`
 

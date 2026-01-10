@@ -29,6 +29,7 @@ func newBatteryModel(db *gorm.DB, opts ...gen.DOOption) batteryModel {
 	_batteryModel.ALL = field.NewAsterisk(tableName)
 	_batteryModel.ID = field.NewString(tableName, "id")
 	_batteryModel.Name = field.NewString(tableName, "name")
+	_batteryModel.DeviceConfigID = field.NewString(tableName, "device_config_id")
 	_batteryModel.VoltageRated = field.NewFloat64(tableName, "voltage_rated")
 	_batteryModel.CapacityRated = field.NewFloat64(tableName, "capacity_rated")
 	_batteryModel.CellCount = field.NewInt32(tableName, "cell_count")
@@ -47,18 +48,19 @@ func newBatteryModel(db *gorm.DB, opts ...gen.DOOption) batteryModel {
 type batteryModel struct {
 	batteryModelDo
 
-	ALL           field.Asterisk
-	ID            field.String
-	Name          field.String
-	VoltageRated  field.Float64
-	CapacityRated field.Float64
-	CellCount     field.Int32
-	NominalPower  field.Float64
-	WarrantyMonth field.Int32
-	Description   field.String
-	TenantID      field.String
-	CreatedAt     field.Time
-	UpdatedAt     field.Time
+	ALL            field.Asterisk
+	ID             field.String
+	Name           field.String
+	DeviceConfigID field.String
+	VoltageRated   field.Float64
+	CapacityRated  field.Float64
+	CellCount      field.Int32
+	NominalPower   field.Float64
+	WarrantyMonth  field.Int32
+	Description    field.String
+	TenantID       field.String
+	CreatedAt      field.Time
+	UpdatedAt      field.Time
 
 	fieldMap map[string]field.Expr
 }
@@ -77,6 +79,7 @@ func (b *batteryModel) updateTableName(table string) *batteryModel {
 	b.ALL = field.NewAsterisk(table)
 	b.ID = field.NewString(table, "id")
 	b.Name = field.NewString(table, "name")
+	b.DeviceConfigID = field.NewString(table, "device_config_id")
 	b.VoltageRated = field.NewFloat64(table, "voltage_rated")
 	b.CapacityRated = field.NewFloat64(table, "capacity_rated")
 	b.CellCount = field.NewInt32(table, "cell_count")
@@ -102,9 +105,10 @@ func (b *batteryModel) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (b *batteryModel) fillFieldMap() {
-	b.fieldMap = make(map[string]field.Expr, 11)
+	b.fieldMap = make(map[string]field.Expr, 12)
 	b.fieldMap["id"] = b.ID
 	b.fieldMap["name"] = b.Name
+	b.fieldMap["device_config_id"] = b.DeviceConfigID
 	b.fieldMap["voltage_rated"] = b.VoltageRated
 	b.fieldMap["capacity_rated"] = b.CapacityRated
 	b.fieldMap["cell_count"] = b.CellCount

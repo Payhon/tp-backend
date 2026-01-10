@@ -76,6 +76,13 @@ func (*BatteryMaintenance) Create(ctx context.Context, req model.BatteryMaintena
 	if err := global.DB.WithContext(ctx).Create(rec).Error; err != nil {
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
+
+	// 运营日志：维保提交（手动）
+	desc := "维保提交（手动）：故障类型=" + req.FaultType
+	_ = CreateBatteryOperationLog(ctx, claims.TenantID, device.ID, device.DeviceNumber, BatteryOpTypeMaintenanceSubmit, &claims.ID, &desc, map[string]any{
+		"maintenance_id": rec.ID,
+		"fault_type":     req.FaultType,
+	})
 	return nil
 }
 

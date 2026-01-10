@@ -3,6 +3,7 @@ package model
 // BatteryModelCreateReq 创建电池型号请求
 type BatteryModelCreateReq struct {
 	Name           string   `json:"name" binding:"required"`
+	DeviceConfigID string   `json:"device_config_id" binding:"required"`
 	VoltageRated   *float64 `json:"voltage_rated"`
 	CapacityRated  *float64 `json:"capacity_rated"`
 	CellCount      *int32   `json:"cell_count"`
@@ -14,6 +15,7 @@ type BatteryModelCreateReq struct {
 // BatteryModelUpdateReq 更新电池型号请求
 type BatteryModelUpdateReq struct {
 	Name           *string  `json:"name"`
+	DeviceConfigID *string  `json:"device_config_id"`
 	VoltageRated   *float64 `json:"voltage_rated"`
 	CapacityRated  *float64 `json:"capacity_rated"`
 	CellCount      *int32   `json:"cell_count"`
@@ -31,16 +33,18 @@ type BatteryModelListReq struct {
 
 // BatteryModelResp 电池型号响应
 type BatteryModelResp struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	VoltageRated   *float64 `json:"voltage_rated"`
-	CapacityRated  *float64 `json:"capacity_rated"`
-	CellCount      *int32   `json:"cell_count"`
-	NominalPower   *float64 `json:"nominal_power"`
-	WarrantyMonths *int32   `json:"warranty_months"`
-	Description    *string  `json:"description"`
-	DeviceCount    int64    `json:"device_count"` // 关联设备数
-	CreatedAt      string   `json:"created_at"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	DeviceConfigID   *string  `json:"device_config_id"`
+	DeviceConfigName *string  `json:"device_config_name"`
+	VoltageRated     *float64 `json:"voltage_rated"`
+	CapacityRated    *float64 `json:"capacity_rated"`
+	CellCount        *int32   `json:"cell_count"`
+	NominalPower     *float64 `json:"nominal_power"`
+	WarrantyMonths   *int32   `json:"warranty_months"`
+	Description      *string  `json:"description"`
+	DeviceCount      int64    `json:"device_count"` // 关联设备数
+	CreatedAt        string   `json:"created_at"`
 }
 
 // BatteryModelListResp 电池型号列表响应

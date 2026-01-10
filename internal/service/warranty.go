@@ -74,6 +74,13 @@ func (*Warranty) CreateWarrantyApplication(req model.WarrantyApplicationCreateRe
 		})
 	}
 
+	// 运营日志：维保提交
+	desc := "维保提交"
+	_ = CreateBatteryOperationLog(ctx, claims.TenantID, device.ID, device.DeviceNumber, BatteryOpTypeWarrantySubmit, &claims.ID, &desc, map[string]any{
+		"warranty_id": app.ID,
+		"type":        req.Type,
+	})
+
 	// 构建详情响应
 	resp, err := buildWarrantyResp(ctx, app, device, claims.TenantID)
 	if err != nil {
@@ -145,6 +152,20 @@ func (*Warranty) UpdateWarrantyStatus(id string, req model.WarrantyApplicationUp
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 			"sql_error": err.Error(),
 		})
+	}
+
+	// 运营日志：维保处理/状态变更
+	if req.Status != nil && *req.Status != "" {
+		if device, err := query.Device.WithContext(ctx).Where(
+			query.Device.ID.Eq(app.DeviceID),
+			query.Device.TenantID.Eq(claims.TenantID),
+		).First(); err == nil {
+			desc := "维保处理：状态更新为 " + *req.Status
+			_ = CreateBatteryOperationLog(ctx, claims.TenantID, device.ID, device.DeviceNumber, BatteryOpTypeWarrantyHandle, &claims.ID, &desc, map[string]any{
+				"warranty_id": id,
+				"status":      *req.Status,
+			})
+		}
 	}
 
 	return nil

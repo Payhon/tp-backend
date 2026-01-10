@@ -33,6 +33,11 @@ type batteryListRow struct {
 	BatteryModelID   *string `gorm:"column:battery_model_id"`
 	BatteryModelName *string `gorm:"column:battery_model_name"`
 
+	ItemUUID    *string `gorm:"column:item_uuid"`
+	BatchNumber *string `gorm:"column:batch_number"`
+	BleMac      *string `gorm:"column:ble_mac"`
+	CommChipID  *string `gorm:"column:comm_chip_id"`
+
 	ProductionDate     *time.Time `gorm:"column:production_date"`
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
 
@@ -231,6 +236,10 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			d.name AS device_name,
 			dbat.battery_model_id AS battery_model_id,
 			bm.name AS battery_model_name,
+			dbat.item_uuid AS item_uuid,
+			dbat.batch_number AS batch_number,
+			dbat.ble_mac AS ble_mac,
+			dbat.comm_chip_id AS comm_chip_id,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
 			dbat.owner_org_id AS owner_org_id,
@@ -337,6 +346,10 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			DeviceName:       r.DeviceName,
 			BatteryModelID:   r.BatteryModelID,
 			BatteryModelName: r.BatteryModelName,
+			ItemUUID:         r.ItemUUID,
+			BatchNumber:      r.BatchNumber,
+			BleMac:           r.BleMac,
+			CommChipID:       r.CommChipID,
 			OwnerOrgID:       r.OwnerOrgID,
 			OwnerOrgName:     r.OwnerOrgName,
 			OwnerOrgType:     r.OwnerOrgType,
@@ -607,14 +620,22 @@ func (*Battery) GetBatteryImportTemplate() (string, error) {
 	f.SetActiveSheet(index)
 
 	// 设置表头
-	headers := []string{"序列号*", "电池型号ID", "出厂日期(YYYY-MM-DD)", "质保到期(YYYY-MM-DD)", "批次号", "经销商ID"}
+	headers := []string{
+		"电池序列号ID*",
+		"批号*",
+		"电池型号",
+		"蓝牙Mac",
+		"4G通讯卡ID",
+		"出厂日期(YYYY-MM-DD)",
+		"质保到期(YYYY-MM-DD)",
+	}
 	for i, h := range headers {
 		cell := fmt.Sprintf("%c1", 'A'+i)
 		f.SetCellValue(sheetName, cell, h)
 	}
 
 	// 添加示例数据（第2行）
-	example := []string{"DEVICE001", "", "2024-01-01", "2027-01-01", "BATCH001", ""}
+	example := []string{"DEVICE001", "BATCH001", "BM-100", "AA:BB:CC:DD:EE:FF", "4G-CHIP-001", "2024-01-01", "2027-01-01"}
 	for i, val := range example {
 		cell := fmt.Sprintf("%c2", 'A'+i)
 		f.SetCellValue(sheetName, cell, val)

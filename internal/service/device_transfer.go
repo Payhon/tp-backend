@@ -101,7 +101,16 @@ func (*DeviceTransfer) TransferDevicesToOrg(ctx context.Context, req model.Devic
 						TenantID:     claims.TenantID,
 						CreatedAt:    &t,
 					}
-					return tx.Create(&transferLog).Error
+					if err := tx.Create(&transferLog).Error; err != nil {
+						return err
+					}
+					desc := "组织转移：厂家 -> " + safeString(toOrgID)
+					_ = CreateBatteryOperationLogTx(tx, claims.TenantID, deviceID, device.DeviceNumber, BatteryOpTypeTransfer, &claims.ID, &desc, map[string]any{
+						"from_org_id": nil,
+						"to_org_id":   toOrgID,
+						"remark":      req.Remark,
+					})
+					continue
 				}
 				return err
 			}
@@ -135,6 +144,13 @@ func (*DeviceTransfer) TransferDevicesToOrg(ctx context.Context, req model.Devic
 			if err := tx.Create(&transferLog).Error; err != nil {
 				return err
 			}
+
+			desc := "组织转移：" + safeString(fromOrgID) + " -> " + safeString(toOrgID)
+			_ = CreateBatteryOperationLogTx(tx, claims.TenantID, deviceID, device.DeviceNumber, BatteryOpTypeTransfer, &claims.ID, &desc, map[string]any{
+				"from_org_id": fromOrgID,
+				"to_org_id":   toOrgID,
+				"remark":      req.Remark,
+			})
 		}
 
 		return nil
@@ -150,6 +166,13 @@ func (*DeviceTransfer) TransferDevicesToOrg(ctx context.Context, req model.Devic
 	}
 
 	return nil
+}
+
+func safeString(v *string) string {
+	if v == nil || *v == "" {
+		return "（空）"
+	}
+	return *v
 }
 
 // GetOrgTransferHistory 获取组织转移记录（新版）

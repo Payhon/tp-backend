@@ -14,12 +14,19 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 	{
 		// 电池列表（设备电池）
 		batteryApi.GET("", api.Controllers.BatteryApi.GetBatteryList)
+		// 添加单个电池
+		batteryApi.POST("/single", api.Controllers.BatteryApi.CreateSingleBattery)
 		// 导出电池列表
 		batteryApi.GET("/export", api.Controllers.BatteryApi.ExportBatteryList)
 		// 获取导入模板
 		batteryApi.GET("/import/template", api.Controllers.BatteryApi.GetBatteryImportTemplate)
 		// 导入电池列表
 		batteryApi.POST("/import", api.Controllers.BatteryApi.ImportBatteryList)
+		// 导入任务状态/日志
+		batteryApi.GET("/import/jobs/:id", api.Controllers.BatteryApi.GetBatteryImportJobStatus)
+		batteryApi.GET("/import/jobs/:id/logs", api.Controllers.BatteryApi.GetBatteryImportJobLogs)
+		// 运营日志
+		batteryApi.GET("/operation_logs", api.Controllers.BatteryApi.GetBatteryOperationLogList)
 		// 批量分配经销商
 		batteryApi.POST("/batch-assign-dealer", api.Controllers.BatteryApi.BatchAssignDealer)
 		// 批量下发指令（在线）
