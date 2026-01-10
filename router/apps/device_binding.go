@@ -15,6 +15,13 @@ func (*DeviceBinding) InitDeviceBinding(Router *gin.RouterGroup) {
 		appDeviceApi.POST("bind", api.Controllers.DeviceBindingApi.BindDevice)
 		appDeviceApi.POST("unbind", api.Controllers.DeviceBindingApi.UnbindDevice)
 		appDeviceApi.GET("list", api.Controllers.DeviceBindingApi.GetUserDevices)
+
+		// 移动端：扫码/蓝牙开通绑定（item_uuid -> bind）
+		provision := appDeviceApi.Group("provision")
+		{
+			provision.GET("config", api.Controllers.DeviceProvisionApi.GetProvisionConfig)
+			provision.GET("info", api.Controllers.DeviceProvisionApi.GetProvisionInfo)
+			provision.POST("bind", api.Controllers.DeviceProvisionApi.BindByItemUUID)
+		}
 	}
 }
-

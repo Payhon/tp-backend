@@ -1,0 +1,164 @@
+package service
+
+import (
+	"context"
+	"strings"
+	"unicode"
+
+	"project/internal/model"
+	"project/pkg/errcode"
+	global "project/pkg/global"
+	"project/pkg/utils"
+
+	"github.com/spf13/viper"
+)
+
+// DeviceProvision 移动端设备开通（扫码/蓝牙绑定）
+type DeviceProvision struct{}
+
+type deviceProvisionRow struct {
+	DeviceID     string  `gorm:"column:device_id"`
+	DeviceNumber string  `gorm:"column:device_number"`
+	DeviceName   *string `gorm:"column:device_name"`
+	BleMac       *string `gorm:"column:ble_mac"`
+	CommChipID   *string `gorm:"column:comm_chip_id"`
+}
+
+func normalizeMac12(input string) (string, error) {
+	s := strings.TrimSpace(input)
+	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
+		s = s[2:]
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.IsDigit(r) || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') {
+			b.WriteRune(unicode.ToUpper(r))
+		}
+	}
+	out := b.String()
+	if len(out) != 12 {
+		return "", errcode.NewWithMessage(errcode.CodeParamError, "invalid ble_mac, expected 12 hex chars")
+	}
+	return out, nil
+}
+
+func getDTUDomainPortFromConfig() string {
+	// 兼容两种命名，避免后续改配置造成老版本不可用
+	if v := strings.TrimSpace(viper.GetString("bms.provision.dtu_domain_port")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(viper.GetString("bms.dtu_domain_port")); v != "" {
+		return v
+	}
+	return ""
+}
+
+// GetProvisionConfig 获取移动端开通配置
+func (*DeviceProvision) GetProvisionConfig(_ context.Context, _ string) (*model.DeviceProvisionConfigResp, error) {
+	dtu := getDTUDomainPortFromConfig()
+	if dtu == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeNotFound, "dtu_domain_port not configured")
+	}
+	return &model.DeviceProvisionConfigResp{DTUDomainPort: dtu}, nil
+}
+
+func (*DeviceProvision) findDeviceByItemUUID(ctx context.Context, itemUUID string, claims *utils.UserClaims) (*deviceProvisionRow, error) {
+	itemUUID = strings.TrimSpace(itemUUID)
+	if itemUUID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "item_uuid is required")
+	}
+	if claims == nil || claims.TenantID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims.tenant_id is required")
+	}
+
+	var row deviceProvisionRow
+	err := global.DB.WithContext(ctx).
+		Table("device_batteries AS dbat").
+		Select(`
+			d.id AS device_id,
+			d.device_number AS device_number,
+			d.name AS device_name,
+			dbat.ble_mac AS ble_mac,
+			dbat.comm_chip_id AS comm_chip_id
+		`).
+		Joins("JOIN devices AS d ON d.id = dbat.device_id").
+		Where("dbat.item_uuid = ? AND d.tenant_id = ?", itemUUID, claims.TenantID).
+		Scan(&row).Error
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if row.DeviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeNotFound, "device not found by item_uuid")
+	}
+	return &row, nil
+}
+
+// GetProvisionInfo 按 item_uuid 查询设备信息（用于“扫码 UUID”路径）
+func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DeviceProvisionInfoReq, claims *utils.UserClaims) (*model.DeviceProvisionInfoResp, error) {
+	svc := &DeviceProvision{}
+	row, err := svc.findDeviceByItemUUID(ctx, req.ItemUUID, claims)
+	if err != nil {
+		return nil, err
+	}
+
+	var cnt int64
+	if claims != nil && claims.ID != "" {
+		if err := global.DB.WithContext(ctx).
+			Table("device_user_bindings").
+			Where("device_id = ? AND user_id = ?", row.DeviceID, claims.ID).
+			Count(&cnt).Error; err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+	}
+
+	return &model.DeviceProvisionInfoResp{
+		DeviceID:     row.DeviceID,
+		DeviceNumber: row.DeviceNumber,
+		DeviceName:   row.DeviceName,
+		BleMac:       row.BleMac,
+		CommChipID:   row.CommChipID,
+		IsBound:      cnt > 0,
+	}, nil
+}
+
+// BindByItemUUID 按 item_uuid 将设备绑定到当前账号
+func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProvisionBindReq, claims *utils.UserClaims) (*model.DeviceProvisionBindResp, error) {
+	svc := &DeviceProvision{}
+	row, err := svc.findDeviceByItemUUID(ctx, req.ItemUUID, claims)
+	if err != nil {
+		return nil, err
+	}
+
+	// 记录 ble_mac（可选，便于后续 BLE 优先连接与排错）
+	if req.BleMac != nil && strings.TrimSpace(*req.BleMac) != "" {
+		newMac, err := normalizeMac12(*req.BleMac)
+		if err != nil {
+			return nil, err
+		}
+
+		if row.BleMac != nil && strings.TrimSpace(*row.BleMac) != "" {
+			existingMac, err := normalizeMac12(*row.BleMac)
+			if err == nil && existingMac != newMac {
+				return nil, errcode.NewWithMessage(errcode.CodeParamError, "ble_mac mismatch with existing record")
+			}
+		} else {
+			// 只在空值时写入，避免覆盖后台维护数据
+			if err := global.DB.WithContext(ctx).
+				Exec("UPDATE device_batteries SET ble_mac = ? WHERE device_id = ? AND (ble_mac IS NULL OR ble_mac = '')", newMac, row.DeviceID).Error; err != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+		}
+	}
+
+	// 复用现有绑定逻辑（device_user_bindings + activation_status 等）
+	if err := GroupApp.DeviceBinding.BindDevice(model.DeviceBindReq{DeviceNumber: row.DeviceNumber}, claims); err != nil {
+		return nil, err
+	}
+
+	return &model.DeviceProvisionBindResp{
+		DeviceID:     row.DeviceID,
+		DeviceNumber: row.DeviceNumber,
+	}, nil
+}

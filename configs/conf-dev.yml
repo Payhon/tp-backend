@@ -139,6 +139,13 @@ mqtts:
   crtPath: ./conf/certificate/client.crt
   keyPath : ./conf/certificate/client.key
 
+# BMS 移动端开通配置（蓝牙写入 DTU_DOMAIN_PORT）
+# TODO: 按租户配置/从数据库读取（当前先用配置文件）
+bms:
+  provision:
+    # 写入设备寄存器 0x53A~0x56F（108字节 ASCII）："domain:port"
+    dtu_domain_port: ""
+
 automation_task_confg:
   once_task_limit: 100
   periodic_task_limit: 100
