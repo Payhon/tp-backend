@@ -229,15 +229,17 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 
 	colItemUUID, okItem := pickHeader(headerIndex, []string{"电池序列号id", "item_uuid", "序列号", "device_number"})
 	colBatch, okBatch := pickHeader(headerIndex, []string{"批号", "batch_number", "批次号"})
+	colProductSpec, okProductSpec := pickHeader(headerIndex, []string{"产品规格", "product_spec", "规格"})
+	colOrderNumber, okOrderNumber := pickHeader(headerIndex, []string{"订单编号", "order_number", "订单号"})
 	colBle, _ := pickHeader(headerIndex, []string{"蓝牙mac", "ble_mac"})
 	colComm, _ := pickHeader(headerIndex, []string{"4g通讯卡id", "comm_chip_id", "4g卡id"})
 	colModel, _ := pickHeader(headerIndex, []string{"电池型号", "battery_model"})
 	colProd, _ := pickHeader(headerIndex, []string{"出厂日期", "production_date"})
 	colWarranty, _ := pickHeader(headerIndex, []string{"质保到期", "warranty_expire_date"})
 
-	if !okItem || !okBatch {
+	if !okItem || !okBatch || !okProductSpec || !okOrderNumber {
 		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-			"message": "模板表头缺少必填列：电池序列号ID / 批号",
+			"message": "模板表头缺少必填列：电池序列号ID / 批号 / 产品规格 / 订单编号",
 		})
 	}
 
@@ -257,6 +259,8 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 
 		itemUUID := strings.TrimSpace(cellAt(row, colItemUUID))
 		batchNumber := strings.TrimSpace(cellAt(row, colBatch))
+		productSpec := strings.TrimSpace(cellAt(row, colProductSpec))
+		orderNumber := strings.TrimSpace(cellAt(row, colOrderNumber))
 		if itemUUID == "" {
 			failedRows++
 			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", nil, "电池序列号ID不能为空")
@@ -265,6 +269,16 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 		if batchNumber == "" {
 			failedRows++
 			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "批号不能为空")
+			continue
+		}
+		if productSpec == "" {
+			failedRows++
+			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "产品规格不能为空")
+			continue
+		}
+		if orderNumber == "" {
+			failedRows++
+			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "订单编号不能为空")
 			continue
 		}
 
@@ -331,14 +345,34 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 		}
 
 		// Upsert device_batteries（空值不覆盖）
-		if err := upsertDeviceBattery(ctx, device.ID, itemUUID, &batchNumber, batteryModelID, blePtr, commPtr, productionDate, warrantyExpireDate, nil); err != nil {
+		if err := upsertDeviceBattery(
+			ctx,
+			device.ID,
+			itemUUID,
+			&batchNumber,
+			&productSpec,
+			&orderNumber,
+			batteryModelID,
+			blePtr,
+			commPtr,
+			productionDate,
+			warrantyExpireDate,
+			nil,
+		); err != nil {
 			failedRows++
 			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "写入电池信息失败: "+err.Error())
 			continue
 		}
 
 		// 运营日志：IMPORT
-		desc := fmt.Sprintf("导入电池信息（批号=%s%s%s）", batchNumber, formatMaybe("，蓝牙=", blePtr), formatMaybe("，4G卡=", commPtr))
+		desc := fmt.Sprintf(
+			"导入电池信息（批号=%s，规格=%s，订单=%s%s%s）",
+			batchNumber,
+			productSpec,
+			orderNumber,
+			formatMaybe("，蓝牙=", blePtr),
+			formatMaybe("，4G卡=", commPtr),
+		)
 		_ = CreateBatteryOperationLog(ctx, claims.TenantID, device.ID, itemUUID, BatteryOpTypeImport, &claims.ID, &desc, map[string]any{
 			"job_id":           jobID,
 			"battery_model_id": batteryModelID,
@@ -406,21 +440,36 @@ func formatMaybe(prefix string, v *string) string {
 
 // upsertDeviceBattery Upsert device_batteries with "empty does not overwrite" semantics.
 // ownerOrgID: optional, only used when existing owner_org_id is NULL.
-func upsertDeviceBattery(ctx context.Context, deviceID string, itemUUID string, batchNumber *string, batteryModelID *string, bleMac *string, commChipID *string, productionDate *time.Time, warrantyExpireDate *time.Time, ownerOrgID *string) error {
+func upsertDeviceBattery(
+	ctx context.Context,
+	deviceID string,
+	itemUUID string,
+	batchNumber *string,
+	productSpec *string,
+	orderNumber *string,
+	batteryModelID *string,
+	bleMac *string,
+	commChipID *string,
+	productionDate *time.Time,
+	warrantyExpireDate *time.Time,
+	ownerOrgID *string,
+) error {
 	db := global.DB.WithContext(ctx)
 	now := time.Now()
 
 	sql := `
 		INSERT INTO device_batteries (
-			device_id, battery_model_id, batch_number, ble_mac, comm_chip_id, item_uuid,
+			device_id, battery_model_id, batch_number, product_spec, order_number, ble_mac, comm_chip_id, item_uuid,
 			production_date, warranty_expire_date, activation_status, transfer_status, owner_org_id, updated_at
 		) VALUES (
-			?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, 'INACTIVE', 'FACTORY', ?, ?
 		)
 		ON CONFLICT (device_id) DO UPDATE SET
 			battery_model_id = COALESCE(EXCLUDED.battery_model_id, device_batteries.battery_model_id),
 			batch_number = EXCLUDED.batch_number,
+			product_spec = EXCLUDED.product_spec,
+			order_number = EXCLUDED.order_number,
 			ble_mac = COALESCE(EXCLUDED.ble_mac, device_batteries.ble_mac),
 			comm_chip_id = COALESCE(EXCLUDED.comm_chip_id, device_batteries.comm_chip_id),
 			item_uuid = EXCLUDED.item_uuid,
@@ -429,7 +478,22 @@ func upsertDeviceBattery(ctx context.Context, deviceID string, itemUUID string, 
 			owner_org_id = COALESCE(device_batteries.owner_org_id, EXCLUDED.owner_org_id),
 			updated_at = ?
 	`
-	if err := db.Exec(sql, deviceID, batteryModelID, batchNumber, bleMac, commChipID, itemUUID, productionDate, warrantyExpireDate, ownerOrgID, now, now).Error; err != nil {
+	if err := db.Exec(
+		sql,
+		deviceID,
+		batteryModelID,
+		batchNumber,
+		productSpec,
+		orderNumber,
+		bleMac,
+		commChipID,
+		itemUUID,
+		productionDate,
+		warrantyExpireDate,
+		ownerOrgID,
+		now,
+		now,
+	).Error; err != nil {
 		return err
 	}
 	return nil

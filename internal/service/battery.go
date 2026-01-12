@@ -623,6 +623,8 @@ func (*Battery) GetBatteryImportTemplate() (string, error) {
 	headers := []string{
 		"电池序列号ID*",
 		"批号*",
+		"产品规格*",
+		"订单编号*",
 		"电池型号",
 		"蓝牙Mac",
 		"4G通讯卡ID",
@@ -635,7 +637,17 @@ func (*Battery) GetBatteryImportTemplate() (string, error) {
 	}
 
 	// 添加示例数据（第2行）
-	example := []string{"DEVICE001", "BATCH001", "BM-100", "AA:BB:CC:DD:EE:FF", "4G-CHIP-001", "2024-01-01", "2027-01-01"}
+	example := []string{
+		"DEVICE001",
+		"BATCH001",
+		"48V-20Ah",
+		"ORDER001",
+		"BM-100",
+		"AA:BB:CC:DD:EE:FF",
+		"4G-CHIP-001",
+		"2024-01-01",
+		"2027-01-01",
+	}
 	for i, val := range example {
 		cell := fmt.Sprintf("%c2", 'A'+i)
 		f.SetCellValue(sheetName, cell, val)
