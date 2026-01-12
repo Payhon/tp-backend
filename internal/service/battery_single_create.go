@@ -86,6 +86,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 	batchNumber := req.BatchNumber
 	productSpec := req.ProductSpec
 	orderNumber := req.OrderNumber
+	bmsCommType := req.BmsCommType
 	if err := upsertDeviceBattery(
 		ctx,
 		device.ID,
@@ -93,6 +94,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		&batchNumber,
 		&productSpec,
 		&orderNumber,
+		&bmsCommType,
 		batteryModelID,
 		bleMac,
 		commChipID,
@@ -110,6 +112,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		"batch_number":     batchNumber,
 		"product_spec":     productSpec,
 		"order_number":     orderNumber,
+		"bms_comm_type":    bmsCommType,
 	})
 
 	// 查询回显（包含型号名称）
@@ -120,13 +123,14 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		BatchNumber        *string    `gorm:"column:batch_number"`
 		ProductSpec        *string    `gorm:"column:product_spec"`
 		OrderNumber        *string    `gorm:"column:order_number"`
+		BmsCommType        *int       `gorm:"column:bms_comm_type"`
 		BleMac             *string    `gorm:"column:ble_mac"`
 		CommChipID         *string    `gorm:"column:comm_chip_id"`
 		ProductionDate     *time.Time `gorm:"column:production_date"`
 		WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
 	}
 	_ = global.DB.WithContext(ctx).Table("device_batteries AS dbat").
-		Select(`dbat.battery_model_id, bm.name AS battery_model_name, dbat.item_uuid, dbat.batch_number, dbat.product_spec, dbat.order_number, dbat.ble_mac, dbat.comm_chip_id, dbat.production_date, dbat.warranty_expire_date`).
+		Select(`dbat.battery_model_id, bm.name AS battery_model_name, dbat.item_uuid, dbat.batch_number, dbat.product_spec, dbat.order_number, dbat.bms_comm_type, dbat.ble_mac, dbat.comm_chip_id, dbat.production_date, dbat.warranty_expire_date`).
 		Joins(`LEFT JOIN battery_models bm ON bm.id = dbat.battery_model_id`).
 		Where("dbat.device_id = ?", device.ID).
 		Scan(&row).Error
@@ -156,6 +160,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		BatchNumber:        row.BatchNumber,
 		ProductSpec:        row.ProductSpec,
 		OrderNumber:        row.OrderNumber,
+		BmsCommType:        row.BmsCommType,
 		BleMac:             row.BleMac,
 		CommChipID:         row.CommChipID,
 		ProductionDate:     productionDateStr,

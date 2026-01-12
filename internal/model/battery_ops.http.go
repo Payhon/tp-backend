@@ -7,6 +7,7 @@ type BatteryCreateReq struct {
 	BatchNumber        string  `json:"batch_number" binding:"required,max=100"`
 	ProductSpec        string  `json:"product_spec" binding:"required,max=32"`
 	OrderNumber        string  `json:"order_number" binding:"required,max=32"`
+	BmsCommType        int     `json:"bms_comm_type" binding:"required,oneof=1 2 3"`
 	BleMac             *string `json:"ble_mac" binding:"omitempty,max=32"`
 	CommChipID         *string `json:"comm_chip_id" binding:"omitempty,max=64"`
 	BatteryModelID     *string `json:"battery_model_id" binding:"omitempty,max=36"`
@@ -25,6 +26,7 @@ type BatteryCreateResp struct {
 	BatchNumber        *string `json:"batch_number"`
 	ProductSpec        *string `json:"product_spec"`
 	OrderNumber        *string `json:"order_number"`
+	BmsCommType        *int    `json:"bms_comm_type"`
 	BleMac             *string `json:"ble_mac"`
 	CommChipID         *string `json:"comm_chip_id"`
 	ProductionDate     *string `json:"production_date"`

@@ -54,6 +54,26 @@ func normalizeHeader(s string) string {
 	return s
 }
 
+func parseBmsCommTypeText(s string) (int, bool) {
+	v := strings.TrimSpace(s)
+	if v == "" {
+		return 0, false
+	}
+	v = strings.ReplaceAll(v, " ", "")
+	v = strings.ToLower(v)
+	v = strings.ReplaceAll(v, "＋", "+")
+	v = strings.ReplaceAll(v, "4ｇ", "4g")
+	switch v {
+	case "蓝牙", "ble", "bluetooth":
+		return 1, true
+	case "4g":
+		return 2, true
+	case "蓝牙+4g", "ble+4g", "bluetooth+4g":
+		return 3, true
+	}
+	return 0, false
+}
+
 func parseDateYYYYMMDD(s string) (*time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -231,15 +251,16 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 	colBatch, okBatch := pickHeader(headerIndex, []string{"批号", "batch_number", "批次号"})
 	colProductSpec, okProductSpec := pickHeader(headerIndex, []string{"产品规格", "product_spec", "规格"})
 	colOrderNumber, okOrderNumber := pickHeader(headerIndex, []string{"订单编号", "order_number", "订单号"})
+	colCommType, okCommType := pickHeader(headerIndex, []string{"bms通讯类型", "通讯类型", "bms_comm_type", "bmscommtype"})
 	colBle, _ := pickHeader(headerIndex, []string{"蓝牙mac", "ble_mac"})
 	colComm, _ := pickHeader(headerIndex, []string{"4g通讯卡id", "comm_chip_id", "4g卡id"})
 	colModel, _ := pickHeader(headerIndex, []string{"电池型号", "battery_model"})
 	colProd, _ := pickHeader(headerIndex, []string{"出厂日期", "production_date"})
 	colWarranty, _ := pickHeader(headerIndex, []string{"质保到期", "warranty_expire_date"})
 
-	if !okItem || !okBatch || !okProductSpec || !okOrderNumber {
+	if !okItem || !okBatch || !okProductSpec || !okOrderNumber || !okCommType {
 		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-			"message": "模板表头缺少必填列：电池序列号ID / 批号 / 产品规格 / 订单编号",
+			"message": "模板表头缺少必填列：电池序列号ID / 批号 / 产品规格 / 订单编号 / BMS通讯类型",
 		})
 	}
 
@@ -261,6 +282,7 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 		batchNumber := strings.TrimSpace(cellAt(row, colBatch))
 		productSpec := strings.TrimSpace(cellAt(row, colProductSpec))
 		orderNumber := strings.TrimSpace(cellAt(row, colOrderNumber))
+		commTypeText := strings.TrimSpace(cellAt(row, colCommType))
 		if itemUUID == "" {
 			failedRows++
 			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", nil, "电池序列号ID不能为空")
@@ -279,6 +301,12 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 		if orderNumber == "" {
 			failedRows++
 			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "订单编号不能为空")
+			continue
+		}
+		bmsCommType, ok := parseBmsCommTypeText(commTypeText)
+		if !ok {
+			failedRows++
+			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "BMS通讯类型格式错误，应为：蓝牙/4G/蓝牙+4G")
 			continue
 		}
 
@@ -352,6 +380,7 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 			&batchNumber,
 			&productSpec,
 			&orderNumber,
+			&bmsCommType,
 			batteryModelID,
 			blePtr,
 			commPtr,
@@ -366,10 +395,11 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 
 		// 运营日志：IMPORT
 		desc := fmt.Sprintf(
-			"导入电池信息（批号=%s，规格=%s，订单=%s%s%s）",
+			"导入电池信息（批号=%s，规格=%s，订单=%s，通讯=%s%s%s）",
 			batchNumber,
 			productSpec,
 			orderNumber,
+			commTypeText,
 			formatMaybe("，蓝牙=", blePtr),
 			formatMaybe("，4G卡=", commPtr),
 		)
@@ -447,6 +477,7 @@ func upsertDeviceBattery(
 	batchNumber *string,
 	productSpec *string,
 	orderNumber *string,
+	bmsCommType *int,
 	batteryModelID *string,
 	bleMac *string,
 	commChipID *string,
@@ -459,10 +490,10 @@ func upsertDeviceBattery(
 
 	sql := `
 		INSERT INTO device_batteries (
-			device_id, battery_model_id, batch_number, product_spec, order_number, ble_mac, comm_chip_id, item_uuid,
+			device_id, battery_model_id, batch_number, product_spec, order_number, bms_comm_type, ble_mac, comm_chip_id, item_uuid,
 			production_date, warranty_expire_date, activation_status, transfer_status, owner_org_id, updated_at
 		) VALUES (
-			?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, 'INACTIVE', 'FACTORY', ?, ?
 		)
 		ON CONFLICT (device_id) DO UPDATE SET
@@ -470,6 +501,7 @@ func upsertDeviceBattery(
 			batch_number = EXCLUDED.batch_number,
 			product_spec = EXCLUDED.product_spec,
 			order_number = EXCLUDED.order_number,
+			bms_comm_type = EXCLUDED.bms_comm_type,
 			ble_mac = COALESCE(EXCLUDED.ble_mac, device_batteries.ble_mac),
 			comm_chip_id = COALESCE(EXCLUDED.comm_chip_id, device_batteries.comm_chip_id),
 			item_uuid = EXCLUDED.item_uuid,
@@ -485,6 +517,7 @@ func upsertDeviceBattery(
 		batchNumber,
 		productSpec,
 		orderNumber,
+		bmsCommType,
 		bleMac,
 		commChipID,
 		itemUUID,
