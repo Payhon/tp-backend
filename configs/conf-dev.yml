@@ -146,6 +146,27 @@ bms:
     # 写入设备寄存器 0x53A~0x56F（108字节 ASCII）："domain:port"
     dtu_domain_port: ""
 
+# BMS MQTT 透传解析/转发服务（独立二进制：bms-bridge）
+bms_bridge:
+  enabled: true
+  mqtt:
+    # 默认复用 mqtt.* 配置，仅覆盖 client_id/订阅 topic 即可
+    client_id: fjbms-bms-bridge-dev
+    subscribe_topic: device/socket/tx/+
+  report:
+    # BMS 设备主动上报使用的特殊功能码（默认 0xDD=221，可按需调整）
+    function_code: 221
+    # 目前上报内容按状态寄存器块（0x100~）解析
+    status_start_address: 256
+  rules:
+    path: ./configs/bms-bridge-rules.yml
+    reload_interval_sec: 5
+  workers:
+    concurrency: 8
+    queue_size: 4096
+  events:
+    state_ttl_minutes: 60
+
 automation_task_confg:
   once_task_limit: 100
   periodic_task_limit: 100

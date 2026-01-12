@@ -7,3 +7,8 @@
 .idea/
 
 files/logs/
+
+# Build artifacts
+bin/
+/bms-bridge
+/bms-sim

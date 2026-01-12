@@ -1,0 +1,52 @@
+version: 1
+
+# Default (global) rule set.
+default:
+  # Telemetry: dynamic measurements (QoS recommended 0).
+  telemetry:
+    soc: energy.socPct
+    soh: energy.sohPct
+    vPackV: electrical.vPackV
+    currentA: electrical.currentA
+    ambientC: temperature.ambientC
+    chargeMosC: temperature.chargeMosC
+    dischargeMosC: temperature.dischargeMosC
+    highestCellVoltageMv: electrical.highestCellVoltageMv
+    lowestCellVoltageMv: electrical.lowestCellVoltageMv
+    maxCellVoltageDiffMv: electrical.maxCellVoltageDiffMv
+
+  # Attributes: relatively static info (QoS recommended 1).
+  attributes:
+    seriesCount: meta.seriesCount
+    cellTempCount: meta.cellTempCount
+    hardwareVersion: meta.hardwareVersion
+    softwareVersion: meta.softwareVersion
+    protocolVersion: meta.protocolVersion
+    hardwareModel: identity.hardwareModel
+    batteryGroupId: identity.batteryGroupId
+    boardCode: identity.boardCode
+    bluetoothMac: identity.bluetoothMac
+
+  events:
+    enabled: true
+    emit_on_change: true
+    method_prefix: "bms."
+    track_key_prefixes:
+      - status.alarmStatus.
+      - status.protectionStatus.
+
+  # Optional DB sync for device_batteries (allows platform/API to query "latest").
+  db_sync:
+    enabled: true
+    device_batteries:
+      soc: energy.socPct
+      soh: energy.sohPct
+      ble_mac: identity.bluetoothMac
+      item_uuid: identity.boardCode
+
+# Per-device overrides (optional):
+# by_device:
+#   "abc123-def456-ghi789-jkl012":
+#     telemetry:
+#       soc: energy.socPct
+
