@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"project/internal/model"
@@ -23,14 +24,17 @@ func getUserOrgID(userID string) (string, error) {
 		return "", nil
 	}
 
-	var orgID string
+	var orgID sql.NullString
 	if err := global.DB.Table("users").
 		Select("org_id").
 		Where("id = ?", userID).
 		Scan(&orgID).Error; err != nil {
 		return "", err
 	}
-	return orgID, nil
+	if !orgID.Valid {
+		return "", nil
+	}
+	return orgID.String, nil
 }
 
 // BindDevice APP端设备绑定

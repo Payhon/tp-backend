@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"project/internal/model"
@@ -10,27 +12,17 @@ import (
 	global "project/pkg/global"
 	"project/pkg/utils"
 
+	"github.com/go-basic/uuid"
 	"gorm.io/gorm"
 )
 
 // CreateSingleBattery BMS：添加/更新单个电池信息（device_batteries）
 func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreateReq, claims *utils.UserClaims, orgID string) (*model.BatteryCreateResp, error) {
-	// item_uuid -> devices.device_number
-	device, err := query.Device.WithContext(ctx).Where(
-		query.Device.DeviceNumber.Eq(req.ItemUUID),
-		query.Device.TenantID.Eq(claims.TenantID),
-	).First()
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "设备不存在（devices.device_number 未找到）"})
-		}
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
-	}
-
 	// 电池型号：支持 id 或 name
 	var batteryModelID *string
 	var batteryModelName *string
 	var warrantyMonths *int32
+	var deviceConfigID *string
 	if req.BatteryModelID != nil && *req.BatteryModelID != "" {
 		bm, err := query.BatteryModel.WithContext(ctx).Where(
 			query.BatteryModel.ID.Eq(*req.BatteryModelID),
@@ -45,6 +37,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		batteryModelID = &bm.ID
 		batteryModelName = &bm.Name
 		warrantyMonths = bm.WarrantyMonth
+		deviceConfigID = bm.DeviceConfigID
 	} else if req.BatteryModelName != nil && *req.BatteryModelName != "" {
 		bm, err := query.BatteryModel.WithContext(ctx).Where(
 			query.BatteryModel.Name.Eq(*req.BatteryModelName),
@@ -59,6 +52,13 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		batteryModelID = &bm.ID
 		batteryModelName = &bm.Name
 		warrantyMonths = bm.WarrantyMonth
+		deviceConfigID = bm.DeviceConfigID
+	}
+
+	// item_uuid -> devices.device_number
+	device, createdDevice, err := getOrCreateDeviceByNumberForBattery(ctx, claims, req.ItemUUID, deviceConfigID)
+	if err != nil {
+		return nil, err
 	}
 
 	productionDate, err := parseDateYYYYMMDD(ptrToStr(req.ProductionDate))
@@ -107,12 +107,16 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 
 	// 运营日志：CREATE
 	desc := "添加单个电池信息"
+	if createdDevice {
+		desc = "添加单个电池信息（自动创建 devices 记录）"
+	}
 	_ = CreateBatteryOperationLog(ctx, claims.TenantID, device.ID, req.ItemUUID, BatteryOpTypeCreate, &claims.ID, &desc, map[string]any{
 		"battery_model_id": batteryModelID,
 		"batch_number":     batchNumber,
 		"product_spec":     productSpec,
 		"order_number":     orderNumber,
 		"bms_comm_type":    bmsCommType,
+		"created_device":   createdDevice,
 	})
 
 	// 查询回显（包含型号名称）
@@ -173,4 +177,75 @@ func ptrToStr(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func getOrCreateDeviceByNumberForBattery(
+	ctx context.Context,
+	claims *utils.UserClaims,
+	deviceNumber string,
+	deviceConfigID *string,
+) (*model.Device, bool, error) {
+	deviceNumber = strings.TrimSpace(deviceNumber)
+	if deviceNumber == "" {
+		return nil, false, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "item_uuid is required"})
+	}
+
+	// Try find in current tenant first
+	device, err := query.Device.WithContext(ctx).Where(
+		query.Device.DeviceNumber.Eq(deviceNumber),
+		query.Device.TenantID.Eq(claims.TenantID),
+	).First()
+	if err == nil {
+		return device, false, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	// If device_number exists in other tenant, deny auto create to avoid cross-tenant collision
+	other, err := query.Device.WithContext(ctx).Where(query.Device.DeviceNumber.Eq(deviceNumber)).First()
+	if err == nil && other != nil && other.ID != "" {
+		return nil, false, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"message": "设备编号已存在（非当前租户），无法自动创建 devices 记录",
+		})
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	now := time.Now().UTC()
+	name := fmt.Sprintf("Battery_%s", deviceNumber)
+	voucher := fmt.Sprintf(`{"username":"%s","password":"%s"}`, uuid.New()[0:22], uuid.New()[0:7])
+
+	dev := &model.Device{
+		ID:           uuid.New(),
+		Name:         &name,
+		Voucher:      voucher,
+		TenantID:     claims.TenantID,
+		IsEnabled:    "enable",
+		ActivateFlag: "active",
+		CreatedAt:    &now,
+		UpdateAt:     &now,
+		DeviceNumber: deviceNumber,
+		IsOnline:     0,
+		// Keep empty json fields stable
+		AdditionalInfo: StringPtr("{}"),
+		ProtocolConfig: StringPtr("{}"),
+	}
+	if deviceConfigID != nil && *deviceConfigID != "" {
+		dev.DeviceConfigID = deviceConfigID
+	}
+
+	if err := query.Device.WithContext(ctx).Create(dev); err != nil {
+		// Handle concurrent create: retry fetch
+		device, qerr := query.Device.WithContext(ctx).Where(
+			query.Device.DeviceNumber.Eq(deviceNumber),
+			query.Device.TenantID.Eq(claims.TenantID),
+		).First()
+		if qerr == nil {
+			return device, false, nil
+		}
+		return nil, false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return dev, true, nil
 }

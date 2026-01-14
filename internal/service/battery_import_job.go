@@ -86,6 +86,74 @@ func parseDateYYYYMMDD(s string) (*time.Time, error) {
 	return &t, nil
 }
 
+func getOrCreateDeviceForBatteryImport(
+	ctx context.Context,
+	claims *utils.UserClaims,
+	deviceNumber string,
+	deviceConfigID *string,
+) (*model.Device, bool, error) {
+	deviceNumber = strings.TrimSpace(deviceNumber)
+	if deviceNumber == "" {
+		return nil, false, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "电池序列号ID不能为空"})
+	}
+
+	device, err := query.Device.WithContext(ctx).Where(
+		query.Device.DeviceNumber.Eq(deviceNumber),
+		query.Device.TenantID.Eq(claims.TenantID),
+	).First()
+	if err == nil {
+		return device, false, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	other, err := query.Device.WithContext(ctx).Where(query.Device.DeviceNumber.Eq(deviceNumber)).First()
+	if err == nil && other != nil && other.ID != "" {
+		return nil, false, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"message": "设备编号已存在（非当前租户），无法自动创建 devices 记录",
+		})
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	now := time.Now().UTC()
+	name := fmt.Sprintf("Battery_%s", deviceNumber)
+	voucher := fmt.Sprintf(`{"username":"%s","password":"%s"}`, uuid.New()[0:22], uuid.New()[0:7])
+
+	dev := &model.Device{
+		ID:             uuid.New(),
+		Name:           &name,
+		Voucher:        voucher,
+		TenantID:       claims.TenantID,
+		IsEnabled:      "enable",
+		ActivateFlag:   "active",
+		CreatedAt:      &now,
+		UpdateAt:       &now,
+		DeviceNumber:   deviceNumber,
+		DeviceConfigID: nil,
+		IsOnline:       0,
+		AdditionalInfo: StringPtr("{}"),
+		ProtocolConfig: StringPtr("{}"),
+	}
+	if deviceConfigID != nil && *deviceConfigID != "" {
+		dev.DeviceConfigID = deviceConfigID
+	}
+
+	if err := query.Device.WithContext(ctx).Create(dev); err != nil {
+		device, qerr := query.Device.WithContext(ctx).Where(
+			query.Device.DeviceNumber.Eq(deviceNumber),
+			query.Device.TenantID.Eq(claims.TenantID),
+		).First()
+		if qerr == nil {
+			return device, false, nil
+		}
+		return nil, false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return dev, true, nil
+}
+
 func (b *Battery) CreateBatteryImportJob(ctx context.Context, filePath string, claims *utils.UserClaims) (*model.BatteryImportJobCreateResp, error) {
 	jobID := uuid.New()
 	now := time.Now()
@@ -317,22 +385,9 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 		warrantyExpireDateStr := strings.TrimSpace(cellAt(row, colWarranty))
 
 		// 查找设备（item_uuid -> devices.device_number）
-		device, err := query.Device.WithContext(ctx).Where(
-			query.Device.DeviceNumber.Eq(itemUUID),
-			query.Device.TenantID.Eq(claims.TenantID),
-		).First()
-		if err != nil {
-			failedRows++
-			if err == gorm.ErrRecordNotFound {
-				appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "设备不存在（devices.device_number 未找到）")
-				continue
-			}
-			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "查询设备失败: "+err.Error())
-			continue
-		}
-
 		// 电池型号（按 name 查找 id）
 		var batteryModelID *string
+		var deviceConfigID *string
 		if modelName != "" {
 			bm, err := query.BatteryModel.WithContext(ctx).Where(
 				query.BatteryModel.TenantID.Eq(claims.TenantID),
@@ -348,6 +403,15 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 				continue
 			}
 			batteryModelID = &bm.ID
+			deviceConfigID = bm.DeviceConfigID
+		}
+
+		// 查找或自动创建设备（item_uuid -> devices.device_number）
+		device, createdDevice, err := getOrCreateDeviceForBatteryImport(ctx, claims, itemUUID, deviceConfigID)
+		if err != nil {
+			failedRows++
+			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, err.Error())
+			continue
 		}
 
 		productionDate, err := parseDateYYYYMMDD(productionDateStr)
@@ -403,9 +467,13 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 			formatMaybe("，蓝牙=", blePtr),
 			formatMaybe("，4G卡=", commPtr),
 		)
+		if createdDevice {
+			desc = "（自动创建 devices 记录）" + desc
+		}
 		_ = CreateBatteryOperationLog(ctx, claims.TenantID, device.ID, itemUUID, BatteryOpTypeImport, &claims.ID, &desc, map[string]any{
 			"job_id":           jobID,
 			"battery_model_id": batteryModelID,
+			"created_device":   createdDevice,
 		})
 
 		successRows++

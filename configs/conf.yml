@@ -144,7 +144,7 @@ mqtts:
 bms:
   provision:
     # 写入设备寄存器 0x53A~0x56F（108字节 ASCII）："domain:port"
-    dtu_domain_port: ""
+    dtu_domain_port: "fjbms.yz6688.cn:1883"
 
 # BMS MQTT 透传解析/转发服务（独立二进制：bms-bridge）
 bms_bridge:

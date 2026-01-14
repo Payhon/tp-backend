@@ -40,7 +40,7 @@ func (*ActivationLog) GetActivationLogList(ctx context.Context, req model.Activa
 	}
 
 	baseWhere := `
-ol.tenant_id = ? AND ol.path = '/api/v1/app/device/bind' AND ol.name = 'POST'
+ol.tenant_id = ? AND ol.name = 'POST' AND ol.path IN ('/api/v1/app/device/bind','/api/v1/app/device/provision/bind')
 `
 	args := []interface{}{claims.TenantID}
 
@@ -84,7 +84,16 @@ SELECT COUNT(1)
 FROM operation_logs ol
 LEFT JOIN users u ON u.id = ol.user_id
 LEFT JOIN LATERAL (
-  SELECT (ol.request_message::jsonb ->> 'device_number') AS device_number
+  SELECT COALESCE(
+    (ol.request_message::jsonb ->> 'device_number'),
+    (
+      SELECT d2.device_number
+      FROM device_batteries db2
+      JOIN devices d2 ON d2.id = db2.device_id AND d2.tenant_id = ol.tenant_id
+      WHERE db2.item_uuid = (ol.request_message::jsonb ->> 'item_uuid')
+      LIMIT 1
+    )
+  ) AS device_number
 ) req ON true
 LEFT JOIN devices d ON d.device_number = req.device_number AND d.tenant_id = ol.tenant_id
 LEFT JOIN device_batteries dbat ON dbat.device_id = d.id
@@ -105,7 +114,16 @@ SELECT
 FROM operation_logs ol
 LEFT JOIN users u ON u.id = ol.user_id
 LEFT JOIN LATERAL (
-  SELECT (ol.request_message::jsonb ->> 'device_number') AS device_number
+  SELECT COALESCE(
+    (ol.request_message::jsonb ->> 'device_number'),
+    (
+      SELECT d2.device_number
+      FROM device_batteries db2
+      JOIN devices d2 ON d2.id = db2.device_id AND d2.tenant_id = ol.tenant_id
+      WHERE db2.item_uuid = (ol.request_message::jsonb ->> 'item_uuid')
+      LIMIT 1
+    )
+  ) AS device_number
 ) req ON true
 LEFT JOIN devices d ON d.device_number = req.device_number AND d.tenant_id = ol.tenant_id
 LEFT JOIN device_batteries dbat ON dbat.device_id = d.id
