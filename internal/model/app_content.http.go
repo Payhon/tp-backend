@@ -25,13 +25,13 @@ type AppFaqListReq struct {
 }
 
 type AppFaqItemResp struct {
-	ID              string `json:"id"`
-	Question        string `json:"question"`
-	AnswerMarkdown  string `json:"answer_markdown"`
-	AnswerHTML      string `json:"answer_html"`
-	IsPinned        bool   `json:"is_pinned"`
-	Sort            int    `json:"sort"`
-	UpdatedAt       string `json:"updated_at"`
+	ID             string `json:"id"`
+	Question       string `json:"question"`
+	AnswerMarkdown string `json:"answer_markdown"`
+	AnswerHTML     string `json:"answer_html"`
+	IsPinned       bool   `json:"is_pinned"`
+	Sort           int    `json:"sort"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 type AppFaqListResp struct {
@@ -46,13 +46,13 @@ type AppFaqListResp struct {
 // ---------------------------------------------------------------------------
 
 type AppFeedbackCreateReq struct {
-	AppID        string   `json:"appid" validate:"required,max=100"`            // 应用AppID（apps.appid）
-	Content      string   `json:"content" validate:"required,min=1,max=10000"`  // 反馈内容
-	Images       []string `json:"images" validate:"omitempty,max=20"`           // 上传后的图片 path 列表（/files/...）
-	Platform     *string  `json:"platform" validate:"omitempty,max=30"`         // ios/android/harmony/web...
-	AppVersion   *string  `json:"app_version" validate:"omitempty,max=50"`      // 客户端版本
-	DeviceModel  *string  `json:"device_model" validate:"omitempty,max=100"`    // 设备型号
-	OSVersion    *string  `json:"os_version" validate:"omitempty,max=50"`       // 系统版本
+	AppID       string   `json:"appid" validate:"required,max=100"`           // 应用AppID（apps.appid）
+	Content     string   `json:"content" validate:"required,min=1,max=10000"` // 反馈内容
+	Images      []string `json:"images" validate:"omitempty,max=20"`          // 上传后的图片 path 列表（/files/...）
+	Platform    *string  `json:"platform" validate:"omitempty,max=30"`        // ios/android/harmony/web...
+	AppVersion  *string  `json:"app_version" validate:"omitempty,max=50"`     // 客户端版本
+	DeviceModel *string  `json:"device_model" validate:"omitempty,max=100"`   // 设备型号
+	OSVersion   *string  `json:"os_version" validate:"omitempty,max=50"`      // 系统版本
 }
 
 type AppFeedbackListReq struct {
@@ -61,15 +61,15 @@ type AppFeedbackListReq struct {
 }
 
 type AppFeedbackItemResp struct {
-	ID        string  `json:"id"`
-	AppID     string  `json:"appid"`
-	Content   string  `json:"content"`
+	ID        string   `json:"id"`
+	AppID     string   `json:"appid"`
+	Content   string   `json:"content"`
 	Images    []string `json:"images"`
-	Status    string  `json:"status"`
-	Reply     *string `json:"reply"`
-	RepliedAt *string `json:"replied_at"`
-	CreatedAt string  `json:"created_at"`
-	UpdatedAt string  `json:"updated_at"`
+	Status    string   `json:"status"`
+	Reply     *string  `json:"reply"`
+	RepliedAt *string  `json:"replied_at"`
+	CreatedAt string   `json:"created_at"`
+	UpdatedAt string   `json:"updated_at"`
 }
 
 type AppFeedbackListResp struct {
@@ -89,22 +89,22 @@ type AdminContentPageGetReq struct {
 }
 
 type AdminContentPageUpsertReq struct {
-	AppID          string `json:"app_id" validate:"required,uuid"`      // apps.id
-	Lang           string `json:"lang" validate:"required,max=10"`      // zh-CN/en-US
-	Title          string `json:"title" validate:"omitempty,max=255"`
+	AppID           string `json:"app_id" validate:"required,uuid"` // apps.id
+	Lang            string `json:"lang" validate:"required,max=10"` // zh-CN/en-US
+	Title           string `json:"title" validate:"omitempty,max=255"`
 	ContentMarkdown string `json:"content_markdown" validate:"omitempty,max=100000"`
 }
 
 type AdminContentPageResp struct {
-	AppID          string `json:"app_id"`
-	ContentKey     string `json:"content_key"`
-	Published      bool   `json:"published"`
-	PublishedAt    *string `json:"published_at"`
-	Lang           string `json:"lang"`
-	Title          string `json:"title"`
-	ContentMarkdown string `json:"content_markdown"`
-	ContentHTML     string `json:"content_html"`
-	UpdatedAt       string `json:"updated_at"`
+	AppID           string  `json:"app_id"`
+	ContentKey      string  `json:"content_key"`
+	Published       bool    `json:"published"`
+	PublishedAt     *string `json:"published_at"`
+	Lang            string  `json:"lang"`
+	Title           string  `json:"title"`
+	ContentMarkdown string  `json:"content_markdown"`
+	ContentHTML     string  `json:"content_html"`
+	UpdatedAt       string  `json:"updated_at"`
 }
 
 type AdminContentPagePublishReq struct {
@@ -193,24 +193,24 @@ type AdminFeedbackListResp struct {
 }
 
 type AdminFeedbackDetailResp struct {
-	ID        string   `json:"id"`
-	AppID     string   `json:"app_id"`
-	AppIDText string   `json:"appid"`
-	UserID    *string  `json:"user_id"`
-	Phone     *string  `json:"phone"`
-	Email     *string  `json:"email"`
-	Content   string   `json:"content"`
-	Images    []string `json:"images"`
-	Platform  *string  `json:"platform"`
-	AppVersion *string `json:"app_version"`
-	DeviceModel *string `json:"device_model"`
-	OSVersion *string  `json:"os_version"`
-	Status    string   `json:"status"`
-	Reply     *string  `json:"reply"`
-	RepliedAt *string  `json:"replied_at"`
-	HandleNote *string `json:"handle_note"`
-	CreatedAt string   `json:"created_at"`
-	UpdatedAt string   `json:"updated_at"`
+	ID          string   `json:"id"`
+	AppID       string   `json:"app_id"`
+	AppIDText   string   `json:"appid"`
+	UserID      *string  `json:"user_id"`
+	Phone       *string  `json:"phone"`
+	Email       *string  `json:"email"`
+	Content     string   `json:"content"`
+	Images      []string `json:"images"`
+	Platform    *string  `json:"platform"`
+	AppVersion  *string  `json:"app_version"`
+	DeviceModel *string  `json:"device_model"`
+	OSVersion   *string  `json:"os_version"`
+	Status      string   `json:"status"`
+	Reply       *string  `json:"reply"`
+	RepliedAt   *string  `json:"replied_at"`
+	HandleNote  *string  `json:"handle_note"`
+	CreatedAt   string   `json:"created_at"`
+	UpdatedAt   string   `json:"updated_at"`
 }
 
 type AdminFeedbackUpdateReq struct {
@@ -218,4 +218,3 @@ type AdminFeedbackUpdateReq struct {
 	Reply      *string `json:"reply" validate:"omitempty,max=10000"`
 	HandleNote *string `json:"handle_note" validate:"omitempty,max=10000"`
 }
-

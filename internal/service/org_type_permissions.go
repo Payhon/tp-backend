@@ -179,11 +179,11 @@ func (s *OrgTypePermission) Upsert(ctx context.Context, claims *utils.UserClaims
 		}
 		if len(rules) > 0 {
 			if _, err := global.CasbinEnforcer.AddNamedPolicies("p", rules); err != nil {
-			return nil, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
-				"operation": "casbin_add_role_policies",
-				"role":      roleName,
-				"error":     err.Error(),
-			})
+				return nil, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+					"operation": "casbin_add_role_policies",
+					"role":      roleName,
+					"error":     err.Error(),
+				})
 			}
 		}
 	}

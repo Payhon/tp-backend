@@ -67,9 +67,9 @@ type GetDeviceTemplateStatsRsp struct {
 
 // GetDeviceTemplateSelectorReq 获取设备物模型选择器请求
 type GetDeviceTemplateSelectorReq struct {
-	Name             *string `json:"name" form:"name" validate:"omitempty,max=255"`                               // 物模型名称（模糊匹配）
-	Label            *string `json:"label" form:"label" validate:"omitempty,max=255"`                             // 标签（模糊匹配）
-	DeviceTemplateID *string `json:"device_template_id" form:"device_template_id" validate:"omitempty,max=36"`   // 物模型ID（精确匹配）
+	Name             *string `json:"name" form:"name" validate:"omitempty,max=255"`                            // 物模型名称（模糊匹配）
+	Label            *string `json:"label" form:"label" validate:"omitempty,max=255"`                          // 标签（模糊匹配）
+	DeviceTemplateID *string `json:"device_template_id" form:"device_template_id" validate:"omitempty,max=36"` // 物模型ID（精确匹配）
 }
 
 // GetDeviceTemplateSelectorRsp 获取设备物模型选择器响应

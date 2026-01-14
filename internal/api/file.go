@@ -119,4 +119,3 @@ func (*FileApi) ServeFilesCloudRedirect(c *gin.Context) {
 	}
 	c.Redirect(http.StatusFound, f.FullURL)
 }
-

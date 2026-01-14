@@ -74,7 +74,7 @@ func (*BatteryModelApi) UpdateBatteryModel(c *gin.Context) {
 func (*BatteryModelApi) DeleteBatteryModel(c *gin.Context) {
 	id := c.Param("id")
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
-	
+
 	err := service.GroupApp.BatteryModel.DeleteBatteryModel(id, userClaims)
 	if err != nil {
 		c.Error(err)
@@ -96,7 +96,7 @@ func (*BatteryModelApi) DeleteBatteryModel(c *gin.Context) {
 func (*BatteryModelApi) GetBatteryModelByID(c *gin.Context) {
 	id := c.Param("id")
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
-	
+
 	data, err := service.GroupApp.BatteryModel.GetBatteryModelByID(id, userClaims)
 	if err != nil {
 		c.Error(err)

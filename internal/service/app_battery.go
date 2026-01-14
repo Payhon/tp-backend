@@ -25,9 +25,9 @@ type appBatteryDetailRow struct {
 	BatteryModelID   *string `gorm:"column:battery_model_id"`
 	BatteryModelName *string `gorm:"column:battery_model_name"`
 
-	ItemUUID   *string  `gorm:"column:item_uuid"`
-	BleMac     *string  `gorm:"column:ble_mac"`
-	CommChipID *string  `gorm:"column:comm_chip_id"`
+	ItemUUID   *string `gorm:"column:item_uuid"`
+	BleMac     *string `gorm:"column:ble_mac"`
+	CommChipID *string `gorm:"column:comm_chip_id"`
 
 	Soc       *float64   `gorm:"column:soc"`
 	Soh       *float64   `gorm:"column:soh"`
@@ -100,19 +100,19 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 	}
 
 	return &model.AppBatteryDetailResp{
-		DeviceID:          row.DeviceID,
-		DeviceNumber:      row.DeviceNumber,
-		DeviceName:        row.DeviceName,
-		BatteryModelID:    row.BatteryModelID,
-		BatteryModelName:  row.BatteryModelName,
-		ItemUUID:          row.ItemUUID,
-		BleMac:            row.BleMac,
-		CommChipID:        row.CommChipID,
-		Soc:               row.Soc,
-		Soh:               row.Soh,
-		UpdatedAt:         updatedAt,
-		IsOnline:          row.IsOnline,
-		FwVersion:         row.CurrentVer,
-		Remark:            row.DeviceRemark1,
+		DeviceID:         row.DeviceID,
+		DeviceNumber:     row.DeviceNumber,
+		DeviceName:       row.DeviceName,
+		BatteryModelID:   row.BatteryModelID,
+		BatteryModelName: row.BatteryModelName,
+		ItemUUID:         row.ItemUUID,
+		BleMac:           row.BleMac,
+		CommChipID:       row.CommChipID,
+		Soc:              row.Soc,
+		Soh:              row.Soh,
+		UpdatedAt:        updatedAt,
+		IsOnline:         row.IsOnline,
+		FwVersion:        row.CurrentVer,
+		Remark:           row.DeviceRemark1,
 	}, nil
 }

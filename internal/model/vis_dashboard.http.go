@@ -1,6 +1,6 @@
 package model
 
-//create struct
+// create struct
 type CreateDashboardReq struct {
 	RelationId    *string `json:"relation_id" validate:"omitempty,max=36"`
 	JsonData      *string `json:"json_data"  validate:"omitempty"`
@@ -10,7 +10,7 @@ type CreateDashboardReq struct {
 	Remark        *string `json:"remark" validate:"omitempty,max=255"`
 }
 
-//put struct
+// put struct
 type UpdateDashboardReq struct {
 	Id            string  `json:"id" validate:"required,max=36"`
 	RelationId    *string `json:"relation_id" validate:"omitempty,max=36"`
@@ -21,7 +21,7 @@ type UpdateDashboardReq struct {
 	Remark        *string `json:"remark" validate:"omitempty,max=255"`
 }
 
-//list struct
+// list struct
 type DashboardListReq struct {
 	PageReq
 	RelationId *string `json:"relation_id" form:"relation_id" validate:"omitempty,max=36"`

@@ -24,4 +24,3 @@ func GetFileStorageConfig(ctx context.Context, id string) (*model.FileStorageCon
 func UpsertFileStorageConfig(ctx context.Context, cfg *model.FileStorageConfig) error {
 	return global.DB.WithContext(ctx).Save(cfg).Error
 }
-

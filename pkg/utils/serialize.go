@@ -7,18 +7,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func SerializeData(source, target interface{}) (interface{},error )  {
+func SerializeData(source, target interface{}) (interface{}, error) {
 	jsonData, err := json.Marshal(source)
 	if err != nil {
 		logrus.Error("JSON序列化失败:", err)
-		return nil,err
+		return nil, err
 	}
 
 	err = json.Unmarshal(jsonData, &target)
 	if err != nil {
 		logrus.Error("JSON反序列化失败:", err)
-		return nil,err
+		return nil, err
 	}
 
-	return target,nil
+	return target, nil
 }

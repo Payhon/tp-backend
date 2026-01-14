@@ -177,18 +177,18 @@ func (a *AttributeData) AttributePutMessage(ctx context.Context, operatorID stri
 			DeviceConfigID: a.getDeviceConfigID(targetDevice), // 使用顶层网关的配置ID（用于脚本编码）
 			Type:           downlink.MessageTypeAttributeSet,
 			Data:           jsonData,
-			Topic:          "",                                // 不再传Topic，由Adapter构造
-			TopicPrefix:    topicPrefix,                       // 协议插件前缀
+			Topic:          "",          // 不再传Topic，由Adapter构造
+			TopicPrefix:    topicPrefix, // 协议插件前缀
 			MessageID:      messageId,
 		}
 		a.downlinkBus.PublishAttributeSet(msg)
 
 		logrus.WithFields(logrus.Fields{
-			"device_id":           device.ID,
-			"target_device_id":    targetDevice.ID,
+			"device_id":            device.ID,
+			"target_device_id":     targetDevice.ID,
 			"target_device_number": targetDeviceNumber,
-			"device_type":         deviceType,
-			"message_id":          messageId,
+			"device_type":          deviceType,
+			"message_id":           messageId,
 		}).Info("Attribute set sent via downlink")
 	} else {
 		return fmt.Errorf("downlink service not available")
@@ -329,24 +329,24 @@ func (a *AttributeData) AttributeGetMessage(_ *utils.UserClaims, req *model.Attr
 	// 6. 构造下行消息
 	msg := &downlink.Message{
 		DeviceID:       device.ID,
-		DeviceNumber:   targetDeviceNumber,               // 目标设备编号
-		DeviceType:     deviceType,                       // 设备类型
+		DeviceNumber:   targetDeviceNumber,                // 目标设备编号
+		DeviceType:     deviceType,                        // 设备类型
 		DeviceConfigID: a.getDeviceConfigID(targetDevice), // 使用顶层网关的配置ID（用于脚本编码）
 		Type:           downlink.MessageTypeAttributeGet,
 		Data:           payload,
-		Topic:          "",                               // 不再传Topic，由Adapter构造
-		TopicPrefix:    topicPrefix,                      // 协议插件前缀
-		MessageID:      "",                               // 属性获取不需要记录日志
+		Topic:          "",          // 不再传Topic，由Adapter构造
+		TopicPrefix:    topicPrefix, // 协议插件前缀
+		MessageID:      "",          // 属性获取不需要记录日志
 	}
 
 	// 7. 发送到 Bus
 	a.downlinkBus.PublishAttributeGet(msg)
 
 	logrus.WithFields(logrus.Fields{
-		"device_id":           device.ID,
-		"target_device_id":    targetDevice.ID,
+		"device_id":            device.ID,
+		"target_device_id":     targetDevice.ID,
 		"target_device_number": targetDeviceNumber,
-		"device_type":         deviceType,
+		"device_type":          deviceType,
 	}).Info("Attribute get sent via downlink")
 
 	return nil

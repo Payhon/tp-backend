@@ -12,7 +12,7 @@ import (
 type UpLoadApi struct{}
 
 const (
-	MaxFileSize   = 500 << 20 // 200MB
+	MaxFileSize = 500 << 20 // 200MB
 )
 
 // UpFile 处理文件上传

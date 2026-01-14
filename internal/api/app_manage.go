@@ -260,4 +260,3 @@ func (*AppManageApi) BatchDeleteAppVersions(c *gin.Context) {
 	}
 	c.Set("data", nil)
 }
-

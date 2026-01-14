@@ -29,22 +29,22 @@ type WarrantyApplicationListReq struct {
 
 // WarrantyApplicationResp 维保申请响应
 type WarrantyApplicationResp struct {
-	ID             string                 `json:"id"`
-	DeviceID       string                 `json:"device_id"`
-	DeviceNumber   string                 `json:"device_number"`
-	DeviceName     string                 `json:"device_name"`
-	UserID         string                 `json:"user_id"`
-	UserName       *string                `json:"user_name"`
-	UserPhone      string                 `json:"user_phone"`
-	Type           string                 `json:"type"`
-	Description    *string                `json:"description"`
-	Images         []string               `json:"images"`
-	Status         string                 `json:"status"`
-	ResultInfo     map[string]interface{} `json:"result_info"`
-	HandlerID      *string                `json:"handler_id"`
-	HandlerName    *string                `json:"handler_name"`
-	CreatedAt      string                 `json:"created_at"`
-	UpdatedAt      string                 `json:"updated_at"`
+	ID           string                 `json:"id"`
+	DeviceID     string                 `json:"device_id"`
+	DeviceNumber string                 `json:"device_number"`
+	DeviceName   string                 `json:"device_name"`
+	UserID       string                 `json:"user_id"`
+	UserName     *string                `json:"user_name"`
+	UserPhone    string                 `json:"user_phone"`
+	Type         string                 `json:"type"`
+	Description  *string                `json:"description"`
+	Images       []string               `json:"images"`
+	Status       string                 `json:"status"`
+	ResultInfo   map[string]interface{} `json:"result_info"`
+	HandlerID    *string                `json:"handler_id"`
+	HandlerName  *string                `json:"handler_name"`
+	CreatedAt    string                 `json:"created_at"`
+	UpdatedAt    string                 `json:"updated_at"`
 }
 
 // WarrantyApplicationListResp 维保申请列表响应

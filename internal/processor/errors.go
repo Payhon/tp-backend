@@ -4,13 +4,13 @@ import "errors"
 
 // 错误码常量
 const (
-	ErrCodeScriptNotFound      = "SCRIPT_NOT_FOUND"       // 脚本不存在
-	ErrCodeScriptDisabled      = "SCRIPT_DISABLED"        // 脚本未启用
-	ErrCodeScriptExecuteFailed = "SCRIPT_EXEC_FAILED"     // 脚本执行失败
-	ErrCodeScriptTimeout       = "SCRIPT_TIMEOUT"         // 脚本执行超时
-	ErrCodeInvalidInput        = "INVALID_INPUT"          // 输入参数无效
-	ErrCodeCacheError          = "CACHE_ERROR"            // 缓存操作失败
-	ErrCodeDatabaseError       = "DATABASE_ERROR"         // 数据库查询失败
+	ErrCodeScriptNotFound      = "SCRIPT_NOT_FOUND"   // 脚本不存在
+	ErrCodeScriptDisabled      = "SCRIPT_DISABLED"    // 脚本未启用
+	ErrCodeScriptExecuteFailed = "SCRIPT_EXEC_FAILED" // 脚本执行失败
+	ErrCodeScriptTimeout       = "SCRIPT_TIMEOUT"     // 脚本执行超时
+	ErrCodeInvalidInput        = "INVALID_INPUT"      // 输入参数无效
+	ErrCodeCacheError          = "CACHE_ERROR"        // 缓存操作失败
+	ErrCodeDatabaseError       = "DATABASE_ERROR"     // 数据库查询失败
 )
 
 // 预定义错误

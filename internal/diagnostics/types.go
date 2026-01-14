@@ -40,21 +40,21 @@ type Stats struct {
 
 // DiagnosticsResponse API 响应结构
 type DiagnosticsResponse struct {
-	DeviceID       string           `json:"device_id"`
-	Stats          *StatsResponse   `json:"stats"`
-	RecentFailures []FailureRecord  `json:"recent_failures"`
+	DeviceID       string          `json:"device_id"`
+	Stats          *StatsResponse  `json:"stats"`
+	RecentFailures []FailureRecord `json:"recent_failures"`
 }
 
 // StatsResponse 统计响应结构
 type StatsResponse struct {
-	Uplink  *MetricResponse `json:"uplink"`
+	Uplink   *MetricResponse `json:"uplink"`
 	Downlink *MetricResponse `json:"downlink"`
-	Storage *MetricResponse `json:"storage"`
+	Storage  *MetricResponse `json:"storage"`
 }
 
 // MetricResponse 指标响应结构
 type MetricResponse struct {
 	SuccessRate float64 `json:"success_rate"` // 成功率（百分比）
-	Total       int64   `json:"total"`         // 总数
-	Success     int64   `json:"success"`       // 成功数
+	Total       int64   `json:"total"`        // 总数
+	Success     int64   `json:"success"`      // 成功数
 }

@@ -117,7 +117,7 @@ func SendSignedRequestWithTimeout(ctx context.Context, url, message, secret stri
 	// Adding the signature to the request header
 	req.Header.Set("X-Signature-256", "sha256="+signature)
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	// Sending the request
 	client := &http.Client{}
 	resp, err := client.Do(req)

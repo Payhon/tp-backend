@@ -46,12 +46,12 @@ type DeleteServicePluginReq struct {
 	ID string `json:"id" form:"id" binding:"required"`
 }
 
-//HeartbeatReq
+// HeartbeatReq
 type HeartbeatReq struct {
 	ServiceIdentifier string `json:"service_identifier" binding:"required"`
 }
 
-//GetServiceSelectReq
+// GetServiceSelectReq
 type GetServiceSelectReq struct {
 	DeviceType *int `json:"device_type" form:"device_type"`
 }

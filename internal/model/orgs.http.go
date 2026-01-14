@@ -8,18 +8,18 @@ type OrgAccountReq struct {
 
 // OrgCreateReq 创建组织请求
 type OrgCreateReq struct {
-	Name          string  `json:"name" binding:"required"`     // 组织名称
-	OrgType       string  `json:"org_type" binding:"required"` // 组织类型: BMS_FACTORY, PACK_FACTORY, DEALER, STORE
-	ParentID      *string `json:"parent_id"`                   // 上级组织ID
-	ContactPerson *string `json:"contact_person"`              // 联系人
-	Phone         *string `json:"phone"`                       // 电话
-	Email         *string `json:"email"`                       // 邮箱
-	Province      *string `json:"province"`                    // 省份
-	City          *string `json:"city"`                        // 城市
-	District      *string `json:"district"`                    // 区县
-	Address       *string `json:"address"`                     // 详细地址
-	Remark        *string `json:"remark"`                      // 备注
-	Account       *OrgAccountReq `json:"account"`              // 账号信息（可选：不传则仅创建组织）
+	Name          string         `json:"name" binding:"required"`     // 组织名称
+	OrgType       string         `json:"org_type" binding:"required"` // 组织类型: BMS_FACTORY, PACK_FACTORY, DEALER, STORE
+	ParentID      *string        `json:"parent_id"`                   // 上级组织ID
+	ContactPerson *string        `json:"contact_person"`              // 联系人
+	Phone         *string        `json:"phone"`                       // 电话
+	Email         *string        `json:"email"`                       // 邮箱
+	Province      *string        `json:"province"`                    // 省份
+	City          *string        `json:"city"`                        // 城市
+	District      *string        `json:"district"`                    // 区县
+	Address       *string        `json:"address"`                     // 详细地址
+	Remark        *string        `json:"remark"`                      // 备注
+	Account       *OrgAccountReq `json:"account"`                     // 账号信息（可选：不传则仅创建组织）
 }
 
 // OrgUpdateReq 更新组织请求

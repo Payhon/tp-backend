@@ -22,7 +22,7 @@ type UpdateOpenAPIKeyReq struct {
 
 // OpenAPIKeyListRsp API密钥列表响应
 type OpenAPIKeyListRsp struct {
-	OpenAPIKey               // 嵌入OpenAPIKey结构体
+	OpenAPIKey         // 嵌入OpenAPIKey结构体
 	UserID     *string `json:"user_id"`   // 创建者用户ID
 	Email      *string `json:"email"`     // 创建者邮箱
 	UserName   *string `json:"user_name"` // 创建者用户名

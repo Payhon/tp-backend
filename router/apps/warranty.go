@@ -25,4 +25,3 @@ func (*Warranty) InitWarranty(Router *gin.RouterGroup) {
 		warrantyApi.PUT(":id", api.Controllers.WarrantyApi.UpdateWarrantyStatus)
 	}
 }
-

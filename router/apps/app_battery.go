@@ -15,4 +15,3 @@ func (*AppBattery) InitAppBattery(Router *gin.RouterGroup) {
 		r.GET("detail/:device_id", api.Controllers.AppBatteryApi.GetBatteryDetail)
 	}
 }
-

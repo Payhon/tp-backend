@@ -21,8 +21,8 @@ type MqttResponse struct {
 }
 
 type GatewayCommandPulish struct {
-	GatewayData    *EventInfo                       `json:"gateway_data"`
-	SubDeviceData  *map[string]EventInfo            `json:"sub_device_data"`
+	GatewayData    *EventInfo                        `json:"gateway_data"`
+	SubDeviceData  *map[string]EventInfo             `json:"sub_device_data"`
 	SubGatewayData *map[string]*GatewayCommandPulish `json:"sub_gateway_data"`
 }
 

@@ -30,4 +30,3 @@ func (*AppManage) InitAppManage(Router *gin.RouterGroup) {
 		versions.DELETE("/:id", api.Controllers.AppManageApi.DeleteAppVersion)
 	}
 }
-

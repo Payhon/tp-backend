@@ -115,4 +115,3 @@ func (*WarrantyApi) GetWarrantyDetail(c *gin.Context) {
 
 	c.Set("data", data)
 }
-

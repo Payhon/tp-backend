@@ -9,9 +9,9 @@ import (
 // Response 统一响应结构（用于 Swagger 文档描述）
 // 实际返回结构由 middleware/response.Response 生成，字段保持一致。
 type Response struct {
-	Code    int         `json:"code" example:"200"`           // 业务状态码
-	Message string      `json:"message" example:"success"`    // 提示信息
-	Data    interface{} `json:"data,omitempty"`               // 业务数据
+	Code    int         `json:"code" example:"200"`        // 业务状态码
+	Message string      `json:"message" example:"success"` // 提示信息
+	Data    interface{} `json:"data,omitempty"`            // 业务数据
 }
 
 // 分页请求参数

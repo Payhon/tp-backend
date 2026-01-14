@@ -19,23 +19,23 @@ import (
 type AppManage struct{}
 
 type appRow struct {
-	ID          string     `gorm:"column:id"`
-	AppID       string     `gorm:"column:appid"`
-	AppType     int16      `gorm:"column:app_type"`
-	Name        string     `gorm:"column:name"`
-	Description *string    `gorm:"column:description"`
-	Remark      *string    `gorm:"column:remark"`
-	CreatedAt   *time.Time `gorm:"column:created_at"`
-	UpdatedAt   *time.Time `gorm:"column:updated_at"`
-	IconURL     *string    `gorm:"column:icon_url"`
-	Introduction *string   `gorm:"column:introduction"`
-	Screenshot  datatypes.JSON `gorm:"column:screenshot"`
-	AppAndroid  datatypes.JSON `gorm:"column:app_android"`
-	AppIOS      datatypes.JSON `gorm:"column:app_ios"`
-	AppHarmony  datatypes.JSON `gorm:"column:app_harmony"`
-	H5          datatypes.JSON `gorm:"column:h5"`
-	QuickApp    datatypes.JSON `gorm:"column:quickapp"`
-	StoreList   datatypes.JSON `gorm:"column:store_list"`
+	ID           string         `gorm:"column:id"`
+	AppID        string         `gorm:"column:appid"`
+	AppType      int16          `gorm:"column:app_type"`
+	Name         string         `gorm:"column:name"`
+	Description  *string        `gorm:"column:description"`
+	Remark       *string        `gorm:"column:remark"`
+	CreatedAt    *time.Time     `gorm:"column:created_at"`
+	UpdatedAt    *time.Time     `gorm:"column:updated_at"`
+	IconURL      *string        `gorm:"column:icon_url"`
+	Introduction *string        `gorm:"column:introduction"`
+	Screenshot   datatypes.JSON `gorm:"column:screenshot"`
+	AppAndroid   datatypes.JSON `gorm:"column:app_android"`
+	AppIOS       datatypes.JSON `gorm:"column:app_ios"`
+	AppHarmony   datatypes.JSON `gorm:"column:app_harmony"`
+	H5           datatypes.JSON `gorm:"column:h5"`
+	QuickApp     datatypes.JSON `gorm:"column:quickapp"`
+	StoreList    datatypes.JSON `gorm:"column:store_list"`
 }
 
 func formatLocalTime(t *time.Time) string {
@@ -174,37 +174,37 @@ func (*AppManage) CreateApp(ctx context.Context, req model.AppCreateReq, claims 
 
 	if err := global.DB.WithContext(ctx).Table("apps").Create(map[string]interface{}{
 		"id":           id,
-		"tenant_id":     claims.TenantID,
-		"appid":         strings.TrimSpace(req.AppID),
-		"app_type":      appType,
-		"name":          strings.TrimSpace(req.Name),
-		"description":   req.Description,
-		"creator_uid":   req.CreatorUID,
-		"owner_type":    req.OwnerType,
-		"owner_id":      req.OwnerID,
-		"managers":      jsonArrayOfStrings(req.Managers),
-		"members":       jsonArrayOfStrings(req.Members),
-		"icon_url":      req.IconURL,
-		"introduction":  req.Introduction,
-		"screenshot":    jsonArrayOfStrings(req.Screenshot),
-		"app_android":   jsonOrNil(req.AppAndroid),
-		"app_ios":       jsonOrNil(req.AppIOS),
-		"app_harmony":   jsonOrNil(req.AppHarmony),
-		"h5":            jsonOrNil(req.H5),
-		"quickapp":      jsonOrNil(req.QuickApp),
-		"store_list":    storeList,
-		"remark":        req.Remark,
-		"created_at":    now,
-		"updated_at":    now,
-		"mp_weixin":     jsonOrNil(req.MPWeixin),
-		"mp_alipay":     jsonOrNil(req.MPAlipay),
-		"mp_baidu":      jsonOrNil(req.MPBaidu),
-		"mp_toutiao":    jsonOrNil(req.MPToutiao),
-		"mp_qq":         jsonOrNil(req.MPQQ),
-		"mp_kuaishou":   jsonOrNil(req.MPKuaishou),
-		"mp_lark":       jsonOrNil(req.MPLark),
-		"mp_jd":         jsonOrNil(req.MPJD),
-		"mp_dingtalk":   jsonOrNil(req.MPDingtalk),
+		"tenant_id":    claims.TenantID,
+		"appid":        strings.TrimSpace(req.AppID),
+		"app_type":     appType,
+		"name":         strings.TrimSpace(req.Name),
+		"description":  req.Description,
+		"creator_uid":  req.CreatorUID,
+		"owner_type":   req.OwnerType,
+		"owner_id":     req.OwnerID,
+		"managers":     jsonArrayOfStrings(req.Managers),
+		"members":      jsonArrayOfStrings(req.Members),
+		"icon_url":     req.IconURL,
+		"introduction": req.Introduction,
+		"screenshot":   jsonArrayOfStrings(req.Screenshot),
+		"app_android":  jsonOrNil(req.AppAndroid),
+		"app_ios":      jsonOrNil(req.AppIOS),
+		"app_harmony":  jsonOrNil(req.AppHarmony),
+		"h5":           jsonOrNil(req.H5),
+		"quickapp":     jsonOrNil(req.QuickApp),
+		"store_list":   storeList,
+		"remark":       req.Remark,
+		"created_at":   now,
+		"updated_at":   now,
+		"mp_weixin":    jsonOrNil(req.MPWeixin),
+		"mp_alipay":    jsonOrNil(req.MPAlipay),
+		"mp_baidu":     jsonOrNil(req.MPBaidu),
+		"mp_toutiao":   jsonOrNil(req.MPToutiao),
+		"mp_qq":        jsonOrNil(req.MPQQ),
+		"mp_kuaishou":  jsonOrNil(req.MPKuaishou),
+		"mp_lark":      jsonOrNil(req.MPLark),
+		"mp_jd":        jsonOrNil(req.MPJD),
+		"mp_dingtalk":  jsonOrNil(req.MPDingtalk),
 	}).Error; err != nil {
 		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
@@ -316,22 +316,22 @@ func (*AppManage) BatchDeleteApps(ctx context.Context, ids []string, claims *uti
 // -----------------------------------------------------------------------------
 
 type appVersionRow struct {
-	ID            string        `gorm:"column:id"`
-	AppID         string        `gorm:"column:appid"`
-	AppName       string        `gorm:"column:name"`
-	Title         *string       `gorm:"column:title"`
-	Contents      *string       `gorm:"column:contents"`
+	ID            string         `gorm:"column:id"`
+	AppID         string         `gorm:"column:appid"`
+	AppName       string         `gorm:"column:name"`
+	Title         *string        `gorm:"column:title"`
+	Contents      *string        `gorm:"column:contents"`
 	Platform      datatypes.JSON `gorm:"column:platform"`
-	Type          string        `gorm:"column:type"`
-	Version       string        `gorm:"column:version"`
-	MinUniVersion *string       `gorm:"column:min_uni_version"`
-	URL           *string       `gorm:"column:url"`
-	StablePublish bool          `gorm:"column:stable_publish"`
-	IsSilently    bool          `gorm:"column:is_silently"`
-	IsMandatory   bool          `gorm:"column:is_mandatory"`
-	UniPlatform   string        `gorm:"column:uni_platform"`
-	CreateEnv     string        `gorm:"column:create_env"`
-	CreateDate    *time.Time    `gorm:"column:create_date"`
+	Type          string         `gorm:"column:type"`
+	Version       string         `gorm:"column:version"`
+	MinUniVersion *string        `gorm:"column:min_uni_version"`
+	URL           *string        `gorm:"column:url"`
+	StablePublish bool           `gorm:"column:stable_publish"`
+	IsSilently    bool           `gorm:"column:is_silently"`
+	IsMandatory   bool           `gorm:"column:is_mandatory"`
+	UniPlatform   string         `gorm:"column:uni_platform"`
+	CreateEnv     string         `gorm:"column:create_env"`
+	CreateDate    *time.Time     `gorm:"column:create_date"`
 }
 
 func parsePlatform(j datatypes.JSON) []string {
@@ -475,27 +475,27 @@ func (*AppManage) CreateAppVersion(ctx context.Context, req model.AppVersionCrea
 	}
 
 	if err := db.Table("app_versions").Create(map[string]interface{}{
-		"id":            id,
-		"tenant_id":      claims.TenantID,
-		"app_id":         app.ID,
-		"appid":          app.AppID,
-		"name":           app.Name,
-		"title":          req.Title,
-		"contents":       req.Contents,
-		"platform":       jsonArrayOfStrings(req.Platform),
-		"type":           req.Type,
-		"version":        req.Version,
+		"id":              id,
+		"tenant_id":       claims.TenantID,
+		"app_id":          app.ID,
+		"appid":           app.AppID,
+		"name":            app.Name,
+		"title":           req.Title,
+		"contents":        req.Contents,
+		"platform":        jsonArrayOfStrings(req.Platform),
+		"type":            req.Type,
+		"version":         req.Version,
 		"min_uni_version": req.MinUniVersion,
-		"url":            req.URL,
-		"stable_publish": stable,
-		"is_silently":    isSilently,
-		"is_mandatory":   isMandatory,
-		"create_date":    now,
-		"uni_platform":   req.UniPlatform,
-		"create_env":     createEnv,
-		"store_list":     storeList,
-		"created_at":     now,
-		"updated_at":     now,
+		"url":             req.URL,
+		"stable_publish":  stable,
+		"is_silently":     isSilently,
+		"is_mandatory":    isMandatory,
+		"create_date":     now,
+		"uni_platform":    req.UniPlatform,
+		"create_env":      createEnv,
+		"store_list":      storeList,
+		"created_at":      now,
+		"updated_at":      now,
 	}).Error; err != nil {
 		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}

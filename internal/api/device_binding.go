@@ -88,4 +88,3 @@ func (*DeviceBindingApi) GetUserDevices(c *gin.Context) {
 
 	c.Set("data", data)
 }
-

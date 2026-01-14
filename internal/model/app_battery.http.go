@@ -10,14 +10,13 @@ type AppBatteryDetailResp struct {
 	BatteryModelName *string `json:"battery_model_name"`
 
 	// 设备电池扩展信息（device_batteries）
-	ItemUUID    *string  `json:"item_uuid"`
-	BleMac      *string  `json:"ble_mac"`
-	CommChipID  *string  `json:"comm_chip_id"`
-	Soc         *float64 `json:"soc"`
-	Soh         *float64 `json:"soh"`
-	UpdatedAt   *string  `json:"updated_at"`
-	IsOnline    int16    `json:"is_online"`
-	FwVersion   *string  `json:"fw_version"`
-	Remark      *string  `json:"remark"`
+	ItemUUID   *string  `json:"item_uuid"`
+	BleMac     *string  `json:"ble_mac"`
+	CommChipID *string  `json:"comm_chip_id"`
+	Soc        *float64 `json:"soc"`
+	Soh        *float64 `json:"soh"`
+	UpdatedAt  *string  `json:"updated_at"`
+	IsOnline   int16    `json:"is_online"`
+	FwVersion  *string  `json:"fw_version"`
+	Remark     *string  `json:"remark"`
 }
-

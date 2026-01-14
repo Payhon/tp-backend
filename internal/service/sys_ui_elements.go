@@ -137,29 +137,29 @@ func (*UiElements) ServeUiElementsListByAuthority(ctx context.Context, u *utils.
 
 	// 机构类型菜单权限：仅对归属 PACK/经销商/门店 的业务账号生效
 	// - 菜单来源仍然是用户原有菜单（casbin/authority）
-		// - 在返回前按 org_type_permissions.ui_codes 做一次裁剪，保证不同机构类型看到的菜单一致
+	// - 在返回前按 org_type_permissions.ui_codes 做一次裁剪，保证不同机构类型看到的菜单一致
 	if u.Authority != "SYS_ADMIN" && u.Authority != "TENANT_ADMIN" && strings.TrimSpace(u.TenantID) != "" && strings.TrimSpace(u.ID) != "" {
 		orgType, ok, err := GroupApp.OrgTypePermission.GetUserOrgType(ctx, u.TenantID, u.ID)
 		if err == nil && ok {
 			switch orgType {
 			case model.OrgTypePACKFactory, model.OrgTypeDealer, model.OrgTypeStore:
-					allowed, exists, err := GroupApp.OrgTypePermission.GetAllowedUICodes(ctx, u.TenantID, orgType)
-					if err == nil && exists {
-						if typed, ok := list.([]*model.UiElementsListRsp); ok {
-							allowedSet := make(map[string]struct{}, len(allowed))
-							for _, code := range allowed {
-								code = strings.TrimSpace(code)
-								if code == "" {
-									continue
-								}
-								allowedSet[code] = struct{}{}
+				allowed, exists, err := GroupApp.OrgTypePermission.GetAllowedUICodes(ctx, u.TenantID, orgType)
+				if err == nil && exists {
+					if typed, ok := list.([]*model.UiElementsListRsp); ok {
+						allowedSet := make(map[string]struct{}, len(allowed))
+						for _, code := range allowed {
+							code = strings.TrimSpace(code)
+							if code == "" {
+								continue
 							}
-							list = filterMenuTreeByAllowedCodes(typed, allowedSet)
+							allowedSet[code] = struct{}{}
 						}
+						list = filterMenuTreeByAllowedCodes(typed, allowedSet)
 					}
 				}
 			}
 		}
+	}
 
 	return map[string]interface{}{
 		"total": total,

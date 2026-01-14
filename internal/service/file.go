@@ -95,7 +95,7 @@ func defaultStorageConfig() model.UpsertFileStorageConfigReq {
 		StorageType: "local",
 		Provider:    "",
 		Local: model.LocalStorageConfig{
-			BaseDir:         "./files",
+			BaseDir:          "./files",
 			PublicPathPrefix: "/files",
 		},
 		Aliyun: model.AliyunOSSConfig{
@@ -583,11 +583,11 @@ func (s *File) CreateCloudUploadCredential(ctx context.Context, claims *utils.Us
 			ObjectKey: key,
 			AccessURL: domain + "/" + key,
 			Upload: map[string]interface{}{
-				"method":     "PUT",
-				"url":        signedURL,
-				"expire_at":  time.Now().Add(expire).Unix(),
-				"headers":    map[string]string{"Content-Type": mimeType},
-				"mime_type":  mimeType,
+				"method":    "PUT",
+				"url":       signedURL,
+				"expire_at": time.Now().Add(expire).Unix(),
+				"headers":   map[string]string{"Content-Type": mimeType},
+				"mime_type": mimeType,
 			},
 		}, nil
 	case "qiniu":

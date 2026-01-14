@@ -59,7 +59,7 @@ type messagePushManage struct {
 	LastPushTime field.Time   // 最后一次推送时间
 	ErrCount     field.Int32  // 联系推送错误次数
 	InactiveTime field.Time   // 标记不活跃时间
-	fieldMap map[string]field.Expr
+	fieldMap     map[string]field.Expr
 }
 
 func (m messagePushManage) Table(newTableName string) *messagePushManage {

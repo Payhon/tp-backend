@@ -21,9 +21,9 @@ type DecodeOutput struct {
 // EncodeInput 下行数据编码输入
 type EncodeInput struct {
 	DeviceConfigID string          `json:"device_config_id"` // 设备配置ID（用于查找脚本）*必填
-	Type           DataType         `json:"type"`             // 数据类型：telemetry_control/attribute_set/command *必填
-	Data           json.RawMessage  `json:"data"`             // 标准化数据（JSON格式）*必填
-	Timestamp      int64            `json:"timestamp"`        // 时间戳（毫秒）可选
+	Type           DataType        `json:"type"`             // 数据类型：telemetry_control/attribute_set/command *必填
+	Data           json.RawMessage `json:"data"`             // 标准化数据（JSON格式）*必填
+	Timestamp      int64           `json:"timestamp"`        // 时间戳（毫秒）可选
 }
 
 // EncodeOutput 下行数据编码输出

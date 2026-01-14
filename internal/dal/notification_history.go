@@ -56,20 +56,20 @@ func CreateNotificationHistory(notificationHistory *model.NotificationHistory) e
 func UpdateNotificationHistory(id string, status *string, remark *string) (int64, error) {
 	q := query.NotificationHistory
 	updates := make(map[string]interface{})
-	
+
 	if status != nil {
 		updates["send_result"] = *status
 	}
 	if remark != nil {
 		updates["remark"] = *remark
 	}
-	
+
 	result, err := q.Where(q.ID.Eq(id)).Updates(updates)
 	if err != nil {
 		logrus.Error("更新通知历史记录失败:", err)
 		return 0, err
 	}
-	
+
 	return result.RowsAffected, nil
 }
 
@@ -77,7 +77,7 @@ func UpdateNotificationHistory(id string, status *string, remark *string) (int64
 func UpdateNotificationHistoryWithContent(id string, status *string, remark *string, content *string) (int64, error) {
 	q := query.NotificationHistory
 	updates := make(map[string]interface{})
-	
+
 	if status != nil {
 		updates["send_result"] = *status
 	}
@@ -87,12 +87,12 @@ func UpdateNotificationHistoryWithContent(id string, status *string, remark *str
 	if content != nil {
 		updates["send_content"] = *content
 	}
-	
+
 	result, err := q.Where(q.ID.Eq(id)).Updates(updates)
 	if err != nil {
 		logrus.Error("更新通知历史记录失败:", err)
 		return 0, err
 	}
-	
+
 	return result.RowsAffected, nil
 }

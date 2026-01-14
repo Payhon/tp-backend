@@ -48,10 +48,10 @@ const (
 	TopicTemplateTelemetryControl = "devices/telemetry/control/%s"
 
 	// 网关下行 Topic 模板
-	TopicTemplateGatewayAttributeSet      = "gateway/attributes/set/%s/%s"      // gateway_number + message_id
-	TopicTemplateGatewayAttributeGet      = "gateway/attributes/get/%s"         // gateway_number
-	TopicTemplateGatewayCommand           = "gateway/command/%s/%s"             // gateway_number + message_id
-	TopicTemplateGatewayTelemetryControl  = "gateway/telemetry/control/%s"      // gateway_number
+	TopicTemplateGatewayAttributeSet     = "gateway/attributes/set/%s/%s" // gateway_number + message_id
+	TopicTemplateGatewayAttributeGet     = "gateway/attributes/get/%s"    // gateway_number
+	TopicTemplateGatewayCommand          = "gateway/command/%s/%s"        // gateway_number + message_id
+	TopicTemplateGatewayTelemetryControl = "gateway/telemetry/control/%s" // gateway_number
 )
 
 // 响应 Topic 模板（设备 → 平台的 ACK）
@@ -65,8 +65,8 @@ const (
 	TopicTemplateEventResponse = "devices/event/response/%s/%s"
 
 	// 命令/属性设置响应订阅模式
-	TopicPatternCommandResponse      = "devices/command/response/+"
-	TopicPatternAttributeSetResponse = "devices/attributes/set/response/+"
+	TopicPatternCommandResponse             = "devices/command/response/+"
+	TopicPatternAttributeSetResponse        = "devices/attributes/set/response/+"
 	TopicPatternGatewayCommandResponse      = "gateway/command/response/+"
 	TopicPatternGatewayAttributeSetResponse = "gateway/attributes/set/response/+"
 )

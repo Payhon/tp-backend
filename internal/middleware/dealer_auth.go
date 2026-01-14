@@ -44,4 +44,3 @@ func DealerAuthMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-

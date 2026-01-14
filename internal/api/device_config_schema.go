@@ -22,35 +22,32 @@ import (
 // 	Remark           *string   `gorm:"column:remark;comment:备注" json:"remark"`                                              // 备注
 // }
 
-
 type DeviceConfigReadSchema struct {
-	ID               string    `json:"id"`                                           // Id
-	Name             string    `json:"name"`                                         // 名称
-	DeviceTemplateID *string   `json:"device_template_id"`                          // 设备模板id
-	DeviceType       string    `json:"device_type"`                                  // 设备类型
-	ProtocolType     *string   `json:"protocol_type"`                                // 协议类型
-	VoucherType      *string   `json:"voucher_type"`                                 // 凭证类型
-	ProtocolConfig   *string   `json:"protocol_config"`                              // 协议表单配置
-	DeviceConnType   *string   `json:"device_conn_type"`                            // 设备连接方式（默认A）A-设备连接平台B-平台连接设备
-	AdditionalInfo   *string   `json:"additional_info"`                              // 附加信息
-	Description      *string   `json:"description"`                                  // 描述
-	TenantID         string    `json:"tenant_id"`                                    // 租户id
-	CreatedAt        time.Time `json:"created_at"`                                   // 创建时间
-	UpdatedAt        time.Time `json:"updated_at"`                                   // 更新时间
-	Remark           *string   `json:"remark"`                                       // 备注
+	ID               string    `json:"id"`                 // Id
+	Name             string    `json:"name"`               // 名称
+	DeviceTemplateID *string   `json:"device_template_id"` // 设备模板id
+	DeviceType       string    `json:"device_type"`        // 设备类型
+	ProtocolType     *string   `json:"protocol_type"`      // 协议类型
+	VoucherType      *string   `json:"voucher_type"`       // 凭证类型
+	ProtocolConfig   *string   `json:"protocol_config"`    // 协议表单配置
+	DeviceConnType   *string   `json:"device_conn_type"`   // 设备连接方式（默认A）A-设备连接平台B-平台连接设备
+	AdditionalInfo   *string   `json:"additional_info"`    // 附加信息
+	Description      *string   `json:"description"`        // 描述
+	TenantID         string    `json:"tenant_id"`          // 租户id
+	CreatedAt        time.Time `json:"created_at"`         // 创建时间
+	UpdatedAt        time.Time `json:"updated_at"`         // 更新时间
+	Remark           *string   `json:"remark"`             // 备注
 }
 
-
 type GetDeviceConfigResponse struct {
-	Code    int                       `json:"code" example:"200"`
-	Message string                    `json:"message" example:"success"`
+	Code    int                    `json:"code" example:"200"`
+	Message string                 `json:"message" example:"success"`
 	Data    DeviceConfigReadSchema `json:"data"`
 }
 
-
 type GetDeviceConfigListResponse struct {
-	Code    int                       `json:"code" example:"200"`
-	Message string                    `json:"message" example:"success"`
+	Code    int                     `json:"code" example:"200"`
+	Message string                  `json:"message" example:"success"`
 	Data    GetDeviceConfigListData `json:"data"`
 }
 

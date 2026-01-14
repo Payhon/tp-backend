@@ -22,7 +22,7 @@ type MessagePushManage struct {
 	DeleteTime   *time.Time `gorm:"column:delete_time;comment:删除时间" json:"delete_time"`                // 删除时间
 	LastPushTime *time.Time `gorm:"column:last_push_time;comment:最后一次推送时间" json:"last_push_time"`      // 最后一次推送时间
 	ErrCount     *int32     `gorm:"column:err_count;default:1;comment:联系推送错误次数" json:"err_count"`      // 联系推送错误次数
-	InactiveTime *time.Time `gorm:"column:inactive_time;comment:标记不活跃时间" json:"inactive_time"`	//标记不活跃时间
+	InactiveTime *time.Time `gorm:"column:inactive_time;comment:标记不活跃时间" json:"inactive_time"`         //标记不活跃时间
 }
 
 // TableName MessagePushManage's table name

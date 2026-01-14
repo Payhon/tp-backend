@@ -21,4 +21,3 @@ type FileStorageConfig struct {
 func (*FileStorageConfig) TableName() string {
 	return TableNameFileStorageConfig
 }
-

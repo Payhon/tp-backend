@@ -12,36 +12,36 @@ type AppListReq struct {
 }
 
 type AppCreateReq struct {
-	AppID        string            `json:"appid" validate:"required,max=100"`
-	AppType      *int16            `json:"app_type" validate:"omitempty,oneof=0 1"`
-	Name         string            `json:"name" validate:"required,max=255"`
-	Description  *string           `json:"description" validate:"omitempty,max=5000"`
-	IconURL      *string           `json:"icon_url" validate:"omitempty,max=500"`
-	Introduction *string           `json:"introduction" validate:"omitempty,max=5000"`
-	Screenshot   []string          `json:"screenshot" validate:"omitempty"`
-	AppAndroid   *json.RawMessage  `json:"app_android" validate:"omitempty,max=10000"`
-	AppIOS       *json.RawMessage  `json:"app_ios" validate:"omitempty,max=10000"`
-	AppHarmony   *json.RawMessage  `json:"app_harmony" validate:"omitempty,max=10000"`
-	H5           *json.RawMessage  `json:"h5" validate:"omitempty,max=10000"`
-	QuickApp     *json.RawMessage  `json:"quickapp" validate:"omitempty,max=10000"`
-	StoreList    *json.RawMessage  `json:"store_list" validate:"omitempty,max=20000"`
-	Remark       *string           `json:"remark" validate:"omitempty,max=5000"`
-	Extra        *json.RawMessage  `json:"extra" validate:"omitempty,max=50000"` // 预留：小程序等扩展信息
-	Managers     []string          `json:"managers" validate:"omitempty"`
-	Members      []string          `json:"members" validate:"omitempty"`
-	OwnerType    *int16            `json:"owner_type" validate:"omitempty,oneof=1 2"`
-	OwnerID      *string           `json:"owner_id" validate:"omitempty,max=36"`
-	CreatorUID   *string           `json:"creator_uid" validate:"omitempty,max=36"`
-	MPWeixin     *json.RawMessage  `json:"mp_weixin" validate:"omitempty,max=10000"`
-	MPAlipay     *json.RawMessage  `json:"mp_alipay" validate:"omitempty,max=10000"`
-	MPBaidu      *json.RawMessage  `json:"mp_baidu" validate:"omitempty,max=10000"`
-	MPToutiao    *json.RawMessage  `json:"mp_toutiao" validate:"omitempty,max=10000"`
-	MPQQ         *json.RawMessage  `json:"mp_qq" validate:"omitempty,max=10000"`
-	MPKuaishou   *json.RawMessage  `json:"mp_kuaishou" validate:"omitempty,max=10000"`
-	MPLark       *json.RawMessage  `json:"mp_lark" validate:"omitempty,max=10000"`
-	MPJD         *json.RawMessage  `json:"mp_jd" validate:"omitempty,max=10000"`
-	MPDingtalk   *json.RawMessage  `json:"mp_dingtalk" validate:"omitempty,max=10000"`
-	AppExtraInfo *json.RawMessage  `json:"app_extra" validate:"omitempty,max=50000"` // 预留：与 apps 表 JSON 字段兼容
+	AppID        string           `json:"appid" validate:"required,max=100"`
+	AppType      *int16           `json:"app_type" validate:"omitempty,oneof=0 1"`
+	Name         string           `json:"name" validate:"required,max=255"`
+	Description  *string          `json:"description" validate:"omitempty,max=5000"`
+	IconURL      *string          `json:"icon_url" validate:"omitempty,max=500"`
+	Introduction *string          `json:"introduction" validate:"omitempty,max=5000"`
+	Screenshot   []string         `json:"screenshot" validate:"omitempty"`
+	AppAndroid   *json.RawMessage `json:"app_android" validate:"omitempty,max=10000"`
+	AppIOS       *json.RawMessage `json:"app_ios" validate:"omitempty,max=10000"`
+	AppHarmony   *json.RawMessage `json:"app_harmony" validate:"omitempty,max=10000"`
+	H5           *json.RawMessage `json:"h5" validate:"omitempty,max=10000"`
+	QuickApp     *json.RawMessage `json:"quickapp" validate:"omitempty,max=10000"`
+	StoreList    *json.RawMessage `json:"store_list" validate:"omitempty,max=20000"`
+	Remark       *string          `json:"remark" validate:"omitempty,max=5000"`
+	Extra        *json.RawMessage `json:"extra" validate:"omitempty,max=50000"` // 预留：小程序等扩展信息
+	Managers     []string         `json:"managers" validate:"omitempty"`
+	Members      []string         `json:"members" validate:"omitempty"`
+	OwnerType    *int16           `json:"owner_type" validate:"omitempty,oneof=1 2"`
+	OwnerID      *string          `json:"owner_id" validate:"omitempty,max=36"`
+	CreatorUID   *string          `json:"creator_uid" validate:"omitempty,max=36"`
+	MPWeixin     *json.RawMessage `json:"mp_weixin" validate:"omitempty,max=10000"`
+	MPAlipay     *json.RawMessage `json:"mp_alipay" validate:"omitempty,max=10000"`
+	MPBaidu      *json.RawMessage `json:"mp_baidu" validate:"omitempty,max=10000"`
+	MPToutiao    *json.RawMessage `json:"mp_toutiao" validate:"omitempty,max=10000"`
+	MPQQ         *json.RawMessage `json:"mp_qq" validate:"omitempty,max=10000"`
+	MPKuaishou   *json.RawMessage `json:"mp_kuaishou" validate:"omitempty,max=10000"`
+	MPLark       *json.RawMessage `json:"mp_lark" validate:"omitempty,max=10000"`
+	MPJD         *json.RawMessage `json:"mp_jd" validate:"omitempty,max=10000"`
+	MPDingtalk   *json.RawMessage `json:"mp_dingtalk" validate:"omitempty,max=10000"`
+	AppExtraInfo *json.RawMessage `json:"app_extra" validate:"omitempty,max=50000"` // 预留：与 apps 表 JSON 字段兼容
 }
 
 type AppUpdateReq struct {
@@ -107,52 +107,52 @@ type AppListResp struct {
 
 type AppVersionListReq struct {
 	PageReq
-	AppID   *string `json:"app_id" form:"app_id" validate:"omitempty,max=36"`          // apps.id
-	Keyword *string `json:"keyword" form:"keyword" validate:"omitempty,max=200"`      // title/version 模糊搜索
+	AppID   *string `json:"app_id" form:"app_id" validate:"omitempty,max=36"`           // apps.id
+	Keyword *string `json:"keyword" form:"keyword" validate:"omitempty,max=200"`        // title/version 模糊搜索
 	Type    *string `json:"type" form:"type" validate:"omitempty,oneof=native_app wgt"` // 安装包类型
 }
 
 type AppVersionCreateReq struct {
-	AppID         string   `json:"app_id" validate:"required,max=36"`
-	Title         *string  `json:"title" validate:"omitempty,max=255"`
-	Contents      string   `json:"contents" validate:"required,max=10000"`
-	Platform      []string `json:"platform" validate:"required,min=1"` // Android/iOS/Harmony
-	Type          string   `json:"type" validate:"required,oneof=native_app wgt"`
-	Version       string   `json:"version" validate:"required,max=50"`
-	MinUniVersion *string  `json:"min_uni_version" validate:"omitempty,max=50"`
-	URL           string   `json:"url" validate:"required,max=500"`
-	StablePublish *bool    `json:"stable_publish" validate:"omitempty"`
-	IsSilently    *bool    `json:"is_silently" validate:"omitempty"`
-	IsMandatory   *bool    `json:"is_mandatory" validate:"omitempty"`
-	UniPlatform   string   `json:"uni_platform" validate:"required,max=50"`
-	CreateEnv     *string  `json:"create_env" validate:"omitempty,max=50"` // uni-stat/upgrade-center
+	AppID         string           `json:"app_id" validate:"required,max=36"`
+	Title         *string          `json:"title" validate:"omitempty,max=255"`
+	Contents      string           `json:"contents" validate:"required,max=10000"`
+	Platform      []string         `json:"platform" validate:"required,min=1"` // Android/iOS/Harmony
+	Type          string           `json:"type" validate:"required,oneof=native_app wgt"`
+	Version       string           `json:"version" validate:"required,max=50"`
+	MinUniVersion *string          `json:"min_uni_version" validate:"omitempty,max=50"`
+	URL           string           `json:"url" validate:"required,max=500"`
+	StablePublish *bool            `json:"stable_publish" validate:"omitempty"`
+	IsSilently    *bool            `json:"is_silently" validate:"omitempty"`
+	IsMandatory   *bool            `json:"is_mandatory" validate:"omitempty"`
+	UniPlatform   string           `json:"uni_platform" validate:"required,max=50"`
+	CreateEnv     *string          `json:"create_env" validate:"omitempty,max=50"` // uni-stat/upgrade-center
 	StoreList     *json.RawMessage `json:"store_list" validate:"omitempty,max=20000"`
 }
 
 type AppVersionUpdateReq struct {
-	Title         *string  `json:"title" validate:"omitempty,max=255"`
-	Contents      *string  `json:"contents" validate:"omitempty,max=10000"`
-	Platform      []string `json:"platform" validate:"omitempty"`
-	Version       *string  `json:"version" validate:"omitempty,max=50"`
-	MinUniVersion *string  `json:"min_uni_version" validate:"omitempty,max=50"`
-	URL           *string  `json:"url" validate:"omitempty,max=500"`
-	StablePublish *bool    `json:"stable_publish" validate:"omitempty"`
-	IsSilently    *bool    `json:"is_silently" validate:"omitempty"`
-	IsMandatory   *bool    `json:"is_mandatory" validate:"omitempty"`
-	UniPlatform   *string  `json:"uni_platform" validate:"omitempty,max=50"`
+	Title         *string          `json:"title" validate:"omitempty,max=255"`
+	Contents      *string          `json:"contents" validate:"omitempty,max=10000"`
+	Platform      []string         `json:"platform" validate:"omitempty"`
+	Version       *string          `json:"version" validate:"omitempty,max=50"`
+	MinUniVersion *string          `json:"min_uni_version" validate:"omitempty,max=50"`
+	URL           *string          `json:"url" validate:"omitempty,max=500"`
+	StablePublish *bool            `json:"stable_publish" validate:"omitempty"`
+	IsSilently    *bool            `json:"is_silently" validate:"omitempty"`
+	IsMandatory   *bool            `json:"is_mandatory" validate:"omitempty"`
+	UniPlatform   *string          `json:"uni_platform" validate:"omitempty,max=50"`
 	StoreList     *json.RawMessage `json:"store_list" validate:"omitempty,max=20000"`
 }
 
 type AppVersionListItemResp struct {
-	ID           string   `json:"id"`
-	AppID        string   `json:"appid"`
-	AppName      string   `json:"name"`
-	Title        *string  `json:"title"`
-	Type         string   `json:"type"`
-	Platform     []string `json:"platform"`
-	Version      string   `json:"version"`
-	StablePublish bool    `json:"stable_publish"`
-	CreateDate   string   `json:"create_date"`
+	ID            string   `json:"id"`
+	AppID         string   `json:"appid"`
+	AppName       string   `json:"name"`
+	Title         *string  `json:"title"`
+	Type          string   `json:"type"`
+	Platform      []string `json:"platform"`
+	Version       string   `json:"version"`
+	StablePublish bool     `json:"stable_publish"`
+	CreateDate    string   `json:"create_date"`
 }
 
 type AppVersionDetailResp struct {

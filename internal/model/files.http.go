@@ -16,17 +16,17 @@ type GetFileListByPageReq struct {
 }
 
 type FileListItem struct {
-	ID              string     `json:"id"`
-	FileName        string     `json:"file_name"`
-	FileSize        int64      `json:"file_size"`
-	StorageLocation string     `json:"storage_location"`
-	BizType         string     `json:"biz_type"`
-	MimeType        *string    `json:"mime_type,omitempty"`
-	FileExt         *string    `json:"file_ext,omitempty"`
-	UploadedAt      time.Time  `json:"uploaded_at"`
-	UploadedBy      *string    `json:"uploaded_by,omitempty"`
-	Path            string     `json:"path"` // 本地为 ./files/...，云为 ./files-cloud/{id}
-	URL             string     `json:"url"`  // full_url
+	ID              string    `json:"id"`
+	FileName        string    `json:"file_name"`
+	FileSize        int64     `json:"file_size"`
+	StorageLocation string    `json:"storage_location"`
+	BizType         string    `json:"biz_type"`
+	MimeType        *string   `json:"mime_type,omitempty"`
+	FileExt         *string   `json:"file_ext,omitempty"`
+	UploadedAt      time.Time `json:"uploaded_at"`
+	UploadedBy      *string   `json:"uploaded_by,omitempty"`
+	Path            string    `json:"path"` // 本地为 ./files/...，云为 ./files-cloud/{id}
+	URL             string    `json:"url"`  // full_url
 }
 
 type GetFileListByPageRsp struct {
@@ -35,10 +35,10 @@ type GetFileListByPageRsp struct {
 }
 
 type CreateCloudUploadCredentialReq struct {
-	BizType   string  `json:"biz_type" validate:"required,max=50"`
-	FileName  string  `json:"file_name" validate:"required,max=255"`
-	MimeType  *string `json:"mime_type" validate:"omitempty,max=100"`
-	FileSize  *int64  `json:"file_size" validate:"omitempty,gte=0"`
+	BizType  string  `json:"biz_type" validate:"required,max=50"`
+	FileName string  `json:"file_name" validate:"required,max=255"`
+	MimeType *string `json:"mime_type" validate:"omitempty,max=100"`
+	FileSize *int64  `json:"file_size" validate:"omitempty,gte=0"`
 }
 
 type CreateCloudUploadCredentialRsp struct {
@@ -49,11 +49,11 @@ type CreateCloudUploadCredentialRsp struct {
 }
 
 type RegisterCloudFileReq struct {
-	BizType  string  `json:"biz_type" validate:"required,max=50"`
-	FileName string  `json:"file_name" validate:"required,max=255"`
-	FileSize int64   `json:"file_size" validate:"required,gte=0"`
-	MimeType *string `json:"mime_type" validate:"omitempty,max=100"`
-	ObjectKey string `json:"object_key" validate:"required,max=500"`
+	BizType   string  `json:"biz_type" validate:"required,max=50"`
+	FileName  string  `json:"file_name" validate:"required,max=255"`
+	FileSize  int64   `json:"file_size" validate:"required,gte=0"`
+	MimeType  *string `json:"mime_type" validate:"omitempty,max=100"`
+	ObjectKey string  `json:"object_key" validate:"required,max=500"`
 }
 
 type UploadFileRsp struct {

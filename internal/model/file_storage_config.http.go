@@ -1,7 +1,7 @@
 package model
 
 type LocalStorageConfig struct {
-	BaseDir         string `json:"base_dir" validate:"omitempty,max=255"`
+	BaseDir          string `json:"base_dir" validate:"omitempty,max=255"`
 	PublicPathPrefix string `json:"public_path_prefix" validate:"omitempty,max=255"` // 默认 /files
 }
 
@@ -47,4 +47,3 @@ type GetFileStorageConfigRsp struct {
 	UpdatedAt   int64              `json:"updated_at"` // unix seconds
 	Remark      *string            `json:"remark,omitempty"`
 }
-
