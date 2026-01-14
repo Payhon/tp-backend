@@ -15,11 +15,23 @@ func (*Dict) InitDict(Router *gin.RouterGroup) {
 		// 新增字典列
 		dictapi.POST("column", api.Controllers.DictApi.CreateDictColumn)
 
+		// 更新字典列
+		dictapi.PUT("column/:id", api.Controllers.DictApi.UpdateDictColumn)
+
 		// 新增字典多语言
 		dictapi.POST("language", api.Controllers.CreateDictLanguage)
 
+		// 新增/更新字典多语言
+		dictapi.PUT("language", api.Controllers.DictApi.UpsertDictLanguage)
+
 		// 枚举查询接口
 		dictapi.GET("enum", api.Controllers.DictApi.HandleDict)
+
+		// 字典类别列表
+		dictapi.GET("categories", api.Controllers.DictApi.HandleDictCategories)
+
+		// 获取单个字典值翻译
+		dictapi.GET("value", api.Controllers.DictApi.HandleDictValue)
 
 		// 字典列表分页查询
 		dictapi.GET("", api.Controllers.DictApi.HandleDictLisyByPage)

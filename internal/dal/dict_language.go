@@ -3,6 +3,8 @@ package dal
 import (
 	model "project/internal/model"
 	query "project/internal/query"
+
+	"gorm.io/gorm/clause"
 )
 
 func CreateDictLanguage(dictLanguage *model.SysDictLanguage, tx *query.QueryTx) error {
@@ -16,6 +18,10 @@ func CreateDictLanguage(dictLanguage *model.SysDictLanguage, tx *query.QueryTx) 
 func DeleteDictLanguageById(id string) error {
 	_, err := query.SysDictLanguage.Where(query.SysDictLanguage.ID.Eq(id)).Delete()
 	return err
+}
+
+func GetDictLanguageById(id string) (*model.SysDictLanguage, error) {
+	return query.SysDictLanguage.Where(query.SysDictLanguage.ID.Eq(id)).First()
 }
 
 func GetDictLanguageByDictIdListAndLanguageCode(dictIdList []string, languageCode string) (dictLanList []*model.SysDictLanguage, err error) {
@@ -36,4 +42,13 @@ func GetDictLanguageListByDictId(dictId string) ([]*model.SysDictLanguage, error
 	var d []*model.SysDictLanguage
 	d, err := q.Select(q.ALL).Where(q.DictID.Eq(dictId)).Order(q.LanguageCode).Find()
 	return d, err
+}
+
+func UpsertDictLanguage(dictLanguage *model.SysDictLanguage) error {
+	return query.SysDictLanguage.UnderlyingDB().
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "dict_id"}, {Name: "language_code"}},
+			DoUpdates: clause.AssignmentColumns([]string{"translation"}),
+		}).
+		Create(dictLanguage).Error
 }

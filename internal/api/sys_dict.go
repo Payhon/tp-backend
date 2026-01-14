@@ -82,7 +82,8 @@ func (*DictApi) HandleDict(c *gin.Context) {
 		return
 	}
 	lang := c.GetHeader("Accept-Language")
-	list, err := service.GroupApp.Dict.GetDict(&dictEnum, lang)
+	var userClaims = c.MustGet("claims").(*utils.UserClaims)
+	list, err := service.GroupApp.Dict.GetDict(&dictEnum, lang, userClaims)
 	if err != nil {
 		c.Error(err)
 		return
@@ -135,4 +136,68 @@ func (*DictApi) HandleDictLisyByPage(c *gin.Context) {
 	}
 
 	c.Set("data", list)
+}
+
+// UpdateDictColumn 更新字典条目
+// @Router   /api/v1/dict/column/{id} [put]
+func (*DictApi) UpdateDictColumn(c *gin.Context) {
+	id := c.Param("id")
+	var req model.UpdateDictReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	var userClaims = c.MustGet("claims").(*utils.UserClaims)
+	if err := service.GroupApp.Dict.UpdateDictColumn(id, &req, userClaims); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}
+
+// UpsertDictLanguage 新增/更新字典多语言
+// @Router   /api/v1/dict/language [put]
+func (*DictApi) UpsertDictLanguage(c *gin.Context) {
+	var req model.UpsertDictLanguageReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	var userClaims = c.MustGet("claims").(*utils.UserClaims)
+	if err := service.GroupApp.Dict.UpsertDictLanguage(&req, userClaims); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}
+
+// HandleDictCategories 字典类别列表
+// @Router   /api/v1/dict/categories [get]
+func (*DictApi) HandleDictCategories(c *gin.Context) {
+	var req model.DictCategoriesReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	var userClaims = c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.Dict.GetDictCategories(&req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// HandleDictValue 获取单个字典值的翻译
+// @Router   /api/v1/dict/value [get]
+func (*DictApi) HandleDictValue(c *gin.Context) {
+	var req model.DictValueReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	lang := c.GetHeader("Accept-Language")
+	var userClaims = c.MustGet("claims").(*utils.UserClaims)
+	val, err := service.GroupApp.Dict.GetDictValue(&req, lang, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", val)
 }

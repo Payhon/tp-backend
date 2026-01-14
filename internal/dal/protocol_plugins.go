@@ -35,13 +35,16 @@ func CreateProtocolPluginWithDict(p *model.CreateProtocolPluginReq) (*model.Prot
 	defer tx.Rollback()
 	t := time.Now().UTC()
 	// 创建sys_dict
-	var dict = model.SysDict{}
 	dictId := uuid.New()
-	dict.ID = dictId
-	dict.DictCode = dictCode
-	dict.DictValue = p.ProtocolType
-	dict.CreatedAt = t
-	if err := CreateDict(&dict, tx); err != nil {
+	dict := model.SysDictRecord{
+		ID:        dictId,
+		DictCode:  dictCode,
+		DictValue: p.ProtocolType,
+		TenantID:  "0",
+		Category:  "protocol",
+		CreatedAt: t,
+	}
+	if err := CreateDict(&dict, tx.SysDict.UnderlyingDB()); err != nil {
 		tx.Rollback()
 		return nil, err
 	}

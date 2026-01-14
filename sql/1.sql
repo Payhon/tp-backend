@@ -594,9 +594,11 @@ CREATE TABLE public.sys_dict (
 	id varchar(36) NOT NULL, -- 主键ID
 	dict_code varchar(36) NOT NULL, -- 字典标识符
 	dict_value varchar(255) NOT NULL, -- 字典值
+	tenant_id varchar(36) NOT NULL DEFAULT '0', -- 租户ID(0-系统全局)
+	category varchar(100) NOT NULL DEFAULT 'default', -- 字典类别
 	created_at timestamptz(6) NOT NULL, -- 创建时间
 	remark varchar(255) NULL, -- 备注
-	CONSTRAINT sys_dict_dict_code_dict_value_key UNIQUE (dict_code, dict_value),
+	CONSTRAINT sys_dict_tenant_dict_code_dict_value_key UNIQUE (tenant_id, dict_code, dict_value),
 	CONSTRAINT sys_dict_pkey PRIMARY KEY (id)
 );
 
@@ -605,12 +607,14 @@ CREATE TABLE public.sys_dict (
 COMMENT ON COLUMN public.sys_dict.id IS '主键ID';
 COMMENT ON COLUMN public.sys_dict.dict_code IS '字典标识符';
 COMMENT ON COLUMN public.sys_dict.dict_value IS '字典值';
+COMMENT ON COLUMN public.sys_dict.tenant_id IS '租户ID(0-系统全局)';
+COMMENT ON COLUMN public.sys_dict.category IS '字典类别';
 COMMENT ON COLUMN public.sys_dict.created_at IS '创建时间';
 COMMENT ON COLUMN public.sys_dict.remark IS '备注';
 
 -- Constraint comments
 
-COMMENT ON CONSTRAINT sys_dict_dict_code_dict_value_key ON public.sys_dict IS 'dict_code和dict_value唯一';
+COMMENT ON CONSTRAINT sys_dict_tenant_dict_code_dict_value_key ON public.sys_dict IS 'tenant_id+dict_code+dict_value唯一';
 
 
 -- public.sys_function definition
@@ -1655,8 +1659,8 @@ COMMENT ON COLUMN public.command_set_logs.description IS '描述';
 COMMENT ON COLUMN public.command_set_logs.identify IS '数据标识符';
 
 -- 初始化sql
-INSERT INTO public.sys_dict (id, dict_code, dict_value, created_at, remark) VALUES('0013fb9e-e3be-95d4-9c96-f18d1f9ddfcd', 'GATEWAY_PROTOCOL', 'MQTT', '2024-01-18 15:39:38.469', NULL);
-INSERT INTO public.sys_dict (id, dict_code, dict_value, created_at, remark) VALUES('7162fb9e-e3be-95d4-9c96-f18d1f9ddfcd', 'DRIECT_ATTACHED_PROTOCOL', 'MQTT', '2024-01-18 15:39:38.469', NULL);
+INSERT INTO public.sys_dict (id, dict_code, dict_value, tenant_id, category, created_at, remark) VALUES('0013fb9e-e3be-95d4-9c96-f18d1f9ddfcd', 'GATEWAY_PROTOCOL', 'MQTT', '0', 'protocol', '2024-01-18 15:39:38.469', NULL);
+INSERT INTO public.sys_dict (id, dict_code, dict_value, tenant_id, category, created_at, remark) VALUES('7162fb9e-e3be-95d4-9c96-f18d1f9ddfcd', 'DRIECT_ATTACHED_PROTOCOL', 'MQTT', '0', 'protocol', '2024-01-18 15:39:38.469', NULL);
 
 INSERT INTO public.sys_dict_language (id, dict_id, language_code, "translation") VALUES('001c3960-3067-536d-5c97-7645351a687c', '7162fb9e-e3be-95d4-9c96-f18d1f9ddfcd', 'zh', 'MQTT协议');
 INSERT INTO public.sys_dict_language (id, dict_id, language_code, "translation") VALUES('002c3960-3067-536d-5c97-7645351a687b', '0013fb9e-e3be-95d4-9c96-f18d1f9ddfcd', 'zh', 'MQTT协议(网关)');
