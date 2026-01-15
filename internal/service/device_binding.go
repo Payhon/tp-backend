@@ -440,6 +440,29 @@ func (*DeviceBinding) GetUserDevices(req model.DeviceUserBindingListReq, claims 
 		deviceMap[d.ID] = d
 	}
 
+	// device_batteries: ble_mac（用于移动端扫描时过滤“已绑定设备”）
+	type batteryBleRow struct {
+		DeviceID string  `gorm:"column:device_id"`
+		BleMac   *string `gorm:"column:ble_mac"`
+	}
+	var batteryRows []batteryBleRow
+	if err := global.DB.WithContext(ctx).
+		Table("device_batteries").
+		Select("device_id, ble_mac").
+		Where("device_id IN ?", deviceIDList).
+		Scan(&batteryRows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+	batteryMacMap := make(map[string]*string, len(batteryRows))
+	for _, r := range batteryRows {
+		if r.DeviceID == "" {
+			continue
+		}
+		batteryMacMap[r.DeviceID] = r.BleMac
+	}
+
 	// 组装响应
 	list := make([]model.DeviceUserBindingResp, 0, len(bindings))
 	for _, b := range bindings {
@@ -464,6 +487,9 @@ func (*DeviceBinding) GetUserDevices(req model.DeviceUserBindingListReq, claims 
 			if d.Name != nil {
 				resp.DeviceName = *d.Name
 			}
+		}
+		if mac, ok := batteryMacMap[b.DeviceID]; ok {
+			resp.BleMac = mac
 		}
 
 		list = append(list, resp)

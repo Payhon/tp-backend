@@ -6,6 +6,8 @@ type AppBatteryDetailResp struct {
 	DeviceNumber string  `json:"device_number"`
 	DeviceName   *string `json:"device_name"`
 
+	BmsCommType *int `json:"bms_comm_type,omitempty"` // 1:蓝牙、2:4G、3:蓝牙+4G
+
 	BatteryModelID   *string `json:"battery_model_id"`
 	BatteryModelName *string `json:"battery_model_name"`
 

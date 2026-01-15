@@ -22,6 +22,8 @@ type appBatteryDetailRow struct {
 	DeviceNumber string  `gorm:"column:device_number"`
 	DeviceName   *string `gorm:"column:device_name"`
 
+	BmsCommType *int `gorm:"column:bms_comm_type"`
+
 	BatteryModelID   *string `gorm:"column:battery_model_id"`
 	BatteryModelName *string `gorm:"column:battery_model_name"`
 
@@ -73,6 +75,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 			d.is_online AS is_online,
 			d.current_version AS current_version,
 			d.remark1 AS remark1,
+			dbat.bms_comm_type AS bms_comm_type,
 			dbat.battery_model_id AS battery_model_id,
 			bm.name AS battery_model_name,
 			dbat.item_uuid AS item_uuid,
@@ -103,6 +106,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 		DeviceID:         row.DeviceID,
 		DeviceNumber:     row.DeviceNumber,
 		DeviceName:       row.DeviceName,
+		BmsCommType:      row.BmsCommType,
 		BatteryModelID:   row.BatteryModelID,
 		BatteryModelName: row.BatteryModelName,
 		ItemUUID:         row.ItemUUID,

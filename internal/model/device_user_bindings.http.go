@@ -28,6 +28,7 @@ type DeviceUserBindingResp struct {
 	DeviceID     string  `json:"device_id"`
 	DeviceNumber string  `json:"device_number"`
 	DeviceName   string  `json:"device_name"`
+	BleMac       *string `json:"ble_mac,omitempty"`
 	IsOwner      bool    `json:"is_owner"`
 	BindingTime  string  `json:"binding_time"`
 }
