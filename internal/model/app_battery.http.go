@@ -22,3 +22,13 @@ type AppBatteryDetailResp struct {
 	FwVersion  *string  `json:"fw_version"`
 	Remark     *string  `json:"remark"`
 }
+
+// AppBatteryMqttCredentialResp APP端直连 MQTT(Broker WebSocket) 所需信息
+type AppBatteryMqttCredentialResp struct {
+	DeviceID   string `json:"device_id"`
+	WsURL      string `json:"ws_url"`
+	Username   string `json:"username"`
+	Password   string `json:"password,omitempty"`
+	WriteTopic string `json:"write_topic"`
+	ReadTopic  string `json:"read_topic"`
+}

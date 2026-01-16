@@ -71,6 +71,7 @@ type Controller struct {
 	OfflineCommandApi     // BMS: 离线指令
 	OrgApi                // BMS: 组织管理（多层级）
 	OrgTypePermissionApi  // WEB: 机构类型权限配置（菜单权限/设备参数权限）
+	MqttHTTPAuthApi       // EMQX: HTTP 认证
 }
 
 var (

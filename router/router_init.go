@@ -141,6 +141,9 @@ func RouterInit() *gin.Engine {
 			v1.GET("sys_version", controllers.SystemApi.HandleSysVersion)
 			// 设备动态认证（一型一密）
 			v1.POST("/device/auth", controllers.DeviceAuthApi.DeviceAuth)
+			// EMQX HTTP 认证
+			v1.POST("mqtt/auth", controllers.MqttHTTPAuthApi.Auth)
+			v1.GET("mqtt/auth", controllers.MqttHTTPAuthApi.Auth)
 			// 设备诊断（不校验权限）
 			v1.GET("/devices/:device_id/diagnostics", controllers.DeviceApi.GetDeviceDiagnostics)
 		}

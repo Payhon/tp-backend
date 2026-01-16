@@ -42,6 +42,27 @@ func (*AppBatteryApi) GetBatteryDetail(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// GetBatteryMqttCredential 获取APP端直连MQTT凭证
+// @Summary 获取APP端直连MQTT凭证
+// @Description APP端直连 EMQX WebSocket 使用
+// @Tags APP-Battery
+// @Accept json
+// @Produce json
+// @Param device_id path string true "设备ID(UUID)"
+// @Success 200 {object} model.AppBatteryMqttCredentialResp
+// @Router /api/v1/app/battery/mqtt-credential/{device_id} [get]
+func (*AppBatteryApi) GetBatteryMqttCredential(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	data, err := service.GroupApp.AppBattery.GetBatteryMqttCredentialForApp(context.Background(), deviceID, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // ServeBatterySocketByWS APP端：MQTT透传(WebSocket桥接)
 // 客户端首次消息需发送 JSON：{"device_id":"...","token":"..."}
 // 随后发送：

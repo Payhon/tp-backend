@@ -2,15 +2,18 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
+	"project/internal/dal"
 	"project/internal/model"
 	"project/internal/query"
 	"project/pkg/errcode"
 	global "project/pkg/global"
 	"project/pkg/utils"
 
+	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
 
@@ -118,5 +121,64 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 		IsOnline:         row.IsOnline,
 		FwVersion:        row.CurrentVer,
 		Remark:           row.DeviceRemark1,
+	}, nil
+}
+
+// GetBatteryMqttCredentialForApp 获取APP端直连MQTT所需凭证（要求设备已绑定）
+func (*AppBattery) GetBatteryMqttCredentialForApp(ctx context.Context, deviceID string, claims *utils.UserClaims) (*model.AppBatteryMqttCredentialResp, error) {
+	if deviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+	if claims == nil || claims.ID == "" || claims.TenantID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
+	}
+
+	// 复用绑定校验逻辑（管理员允许跨设备查看，仍受 tenant 约束）
+	if _, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims); err != nil {
+		return nil, err
+	}
+
+	device, err := dal.GetDeviceByID(deviceID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if device.TenantID != claims.TenantID {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not in current tenant")
+	}
+
+	voucher := strings.TrimSpace(device.Voucher)
+	if voucher == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device voucher is empty")
+	}
+	var dv model.DeviceVoucher
+	if err := json.Unmarshal([]byte(voucher), &dv); err != nil {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device voucher is not valid json")
+	}
+	if strings.TrimSpace(dv.Username) == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device voucher username is empty")
+	}
+
+	wsURL, err := GetDictValueByConfigKey("mqtt.ws_address", claims.TenantID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"err": err.Error()})
+	}
+	wsURL = strings.TrimSpace(wsURL)
+	if wsURL == "" {
+		wsURL = strings.TrimSpace(viper.GetString("mqtt.ws_address"))
+	}
+	if wsURL == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "mqtt.ws_address is not configured")
+	}
+
+	writeTopic := "device/socket/rx/" + deviceID
+	readTopic := "device/socket/tx/" + deviceID
+
+	return &model.AppBatteryMqttCredentialResp{
+		DeviceID:   deviceID,
+		WsURL:      wsURL,
+		Username:   dv.Username,
+		Password:   dv.Password,
+		WriteTopic: writeTopic,
+		ReadTopic:  readTopic,
 	}, nil
 }

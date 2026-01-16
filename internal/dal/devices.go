@@ -217,6 +217,25 @@ func GetDeviceByVoucher(voucher string) (*model.Device, error) {
 	return device, err
 }
 
+// GetDeviceByMQTTUsername 通过 MQTT 用户名查询设备（devices.voucher JSON）
+func GetDeviceByMQTTUsername(username string) (*model.Device, error) {
+	if strings.TrimSpace(username) == "" {
+		return nil, fmt.Errorf("username is empty")
+	}
+	var device model.Device
+	err := global.DB.Raw(
+		`SELECT * FROM devices WHERE voucher <> '' AND voucher::jsonb->>'username' = ? LIMIT 1`,
+		username,
+	).Scan(&device).Error
+	if err != nil {
+		return nil, err
+	}
+	if device.ID == "" {
+		return nil, fmt.Errorf("device not found for username: %s", username)
+	}
+	return &device, nil
+}
+
 // 更新设备在线状态
 func UpdateDeviceOnlineStatus(deviceId string, status int16) error {
 	if status == 0 {

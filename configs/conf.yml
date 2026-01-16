@@ -54,9 +54,14 @@ mqtt_server: gmqtt
 mqtt:
   access_address: 127.0.0.1:1883
   broker: 127.0.0.1:1883 # 默认localhost:1883
+  # WebSocket 直连地址（用于APP直连EMQX）
+  ws_address: ws://127.0.0.1:8083/mqtt
   client_id: thingspanel-adapter-1
   user: root # 默认root
   pass: root # 默认root
+  http_auth:
+    # EMQX HTTP 认证共享密钥（建议配置；为空则不校验）
+    shared_secret: ""
   channel_buffer_size: 1000 # 默认10000
   # 启用共享订阅：true、false
   enable_shared_subscription: false
