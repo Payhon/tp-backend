@@ -63,6 +63,27 @@ func (*AppBatteryApi) GetBatteryMqttCredential(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// CheckBatteryOta APP端OTA升级检查
+// @Summary APP端OTA升级检查
+// @Description 返回是否需要升级以及固件下载地址
+// @Tags APP-Battery
+// @Accept json
+// @Produce json
+// @Param device_id path string true "设备ID(UUID)"
+// @Success 200 {object} model.AppBatteryOtaCheckResp
+// @Router /api/v1/app/battery/ota/check/{device_id} [get]
+func (*AppBatteryApi) CheckBatteryOta(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	data, err := service.GroupApp.AppBattery.CheckBatteryOtaForApp(context.Background(), deviceID, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // ServeBatterySocketByWS APP端：MQTT透传(WebSocket桥接)
 // 客户端首次消息需发送 JSON：{"device_id":"...","token":"..."}
 // 随后发送：

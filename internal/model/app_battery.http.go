@@ -32,3 +32,20 @@ type AppBatteryMqttCredentialResp struct {
 	WriteTopic string `json:"write_topic"`
 	ReadTopic  string `json:"read_topic"`
 }
+
+// AppBatteryOtaCheckResp APP端OTA检查结果
+type AppBatteryOtaCheckResp struct {
+	DeviceID       string  `json:"device_id"`
+	NeedUpgrade    bool    `json:"need_upgrade"`
+	CurrentVersion *string `json:"current_version,omitempty"`
+	Version        *string `json:"version,omitempty"`
+	TargetVersion  *string `json:"target_version,omitempty"`
+	FirmwareURL    *string `json:"firmware_url,omitempty"`
+	PackageID      *string `json:"package_id,omitempty"`
+	PackageType    *int16  `json:"package_type,omitempty"`
+	SignatureType  *string `json:"signature_type,omitempty"`
+	Signature      *string `json:"signature,omitempty"`
+	Module         *string `json:"module,omitempty"`
+	AdditionalInfo *string `json:"additional_info,omitempty"`
+	Remark         *string `json:"remark,omitempty"`
+}

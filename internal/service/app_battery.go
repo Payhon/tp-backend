@@ -43,6 +43,15 @@ type appBatteryDetailRow struct {
 	DeviceRemark1 *string `gorm:"column:remark1"`
 }
 
+type appBatteryOtaCheckRow struct {
+	DeviceID         string  `gorm:"column:device_id"`
+	CurrentVersion   *string `gorm:"column:current_version"`
+	DeviceConfigID   *string `gorm:"column:device_config_id"`
+	TenantID         *string `gorm:"column:tenant_id"`
+	BatteryModelID   *string `gorm:"column:battery_model_id"`
+	BatteryModelName *string `gorm:"column:battery_model_name"`
+}
+
 // GetBatteryDetailForApp 获取APP端电池设备详情（要求设备已绑定到当前用户）
 func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, claims *utils.UserClaims) (*model.AppBatteryDetailResp, error) {
 	if deviceID == "" {
@@ -181,4 +190,116 @@ func (*AppBattery) GetBatteryMqttCredentialForApp(ctx context.Context, deviceID 
 		WriteTopic: writeTopic,
 		ReadTopic:  readTopic,
 	}, nil
+}
+
+// CheckBatteryOtaForApp APP端OTA升级检查（根据设备配置匹配升级包）
+func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, deviceID string, claims *utils.UserClaims) (*model.AppBatteryOtaCheckResp, error) {
+	if deviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+	if claims == nil || claims.ID == "" || claims.TenantID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
+	}
+
+	// 复用绑定校验逻辑（管理员允许跨设备查看，仍受 tenant 约束）
+	if _, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims); err != nil {
+		return nil, err
+	}
+
+	var row appBatteryOtaCheckRow
+	err := global.DB.WithContext(ctx).
+		Table("devices AS d").
+		Select(`
+			d.id AS device_id,
+			d.current_version AS current_version,
+			d.tenant_id AS tenant_id,
+			dbat.battery_model_id AS battery_model_id,
+			bm.name AS battery_model_name,
+			bm.device_config_id AS device_config_id
+		`).
+		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
+		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+		Where("d.id = ? AND d.tenant_id = ?", deviceID, claims.TenantID).
+		Scan(&row).Error
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if row.DeviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not found")
+	}
+
+	resp := &model.AppBatteryOtaCheckResp{
+		DeviceID:       row.DeviceID,
+		NeedUpgrade:    false,
+		CurrentVersion: row.CurrentVersion,
+	}
+
+	if row.DeviceConfigID == nil || strings.TrimSpace(*row.DeviceConfigID) == "" {
+		return resp, nil
+	}
+
+	var pkg model.OtaUpgradePackage
+	pkgQuery := global.DB.WithContext(ctx).Table(model.TableNameOtaUpgradePackage).
+		Where("device_config_id = ?", strings.TrimSpace(*row.DeviceConfigID))
+	// 允许租户级或公共包（tenant_id 为 NULL）
+	pkgQuery = pkgQuery.Where("tenant_id = ? OR tenant_id IS NULL", claims.TenantID)
+	if err := pkgQuery.Order("created_at DESC").Limit(1).Take(&pkg).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return resp, nil
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	currentVer := ""
+	if row.CurrentVersion != nil {
+		currentVer = strings.TrimSpace(*row.CurrentVersion)
+	}
+	targetVer := ""
+	if pkg.TargetVersion != nil {
+		targetVer = strings.TrimSpace(*pkg.TargetVersion)
+	}
+	if targetVer != "" {
+		resp.NeedUpgrade = !strings.EqualFold(currentVer, targetVer)
+	} else {
+		resp.NeedUpgrade = !strings.EqualFold(currentVer, pkg.Version)
+	}
+
+	// 若无需升级，返回版本信息但不携带下载地址
+	if !resp.NeedUpgrade {
+		resp.Version = &pkg.Version
+		resp.TargetVersion = pkg.TargetVersion
+		resp.PackageID = &pkg.ID
+		resp.PackageType = &pkg.PackageType
+		return resp, nil
+	}
+
+	firmwareURL := buildOtaDownloadURL(pkg.PackageURL)
+	resp.Version = &pkg.Version
+	resp.TargetVersion = pkg.TargetVersion
+	resp.FirmwareURL = firmwareURL
+	resp.PackageID = &pkg.ID
+	resp.PackageType = &pkg.PackageType
+	resp.SignatureType = pkg.SignatureType
+	resp.Signature = pkg.Signature
+	resp.Module = pkg.Module
+	resp.AdditionalInfo = pkg.AdditionalInfo
+	resp.Remark = pkg.Remark
+
+	return resp, nil
+}
+
+func buildOtaDownloadURL(packageURL *string) *string {
+	if packageURL == nil || strings.TrimSpace(*packageURL) == "" {
+		return nil
+	}
+	raw := strings.TrimSpace(*packageURL)
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return &raw
+	}
+	base := strings.TrimSpace(global.OtaAddress)
+	if base == "" {
+		return &raw
+	}
+	url := base + strings.TrimPrefix(raw, ".")
+	return &url
 }

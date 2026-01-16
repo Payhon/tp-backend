@@ -14,5 +14,6 @@ func (*AppBattery) InitAppBattery(Router *gin.RouterGroup) {
 	{
 		r.GET("detail/:device_id", api.Controllers.AppBatteryApi.GetBatteryDetail)
 		r.GET("mqtt-credential/:device_id", api.Controllers.AppBatteryApi.GetBatteryMqttCredential)
+		r.GET("ota/check/:device_id", api.Controllers.AppBatteryApi.CheckBatteryOta)
 	}
 }
