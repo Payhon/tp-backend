@@ -38,6 +38,65 @@ type appRow struct {
 	StoreList    datatypes.JSON `gorm:"column:store_list"`
 }
 
+type appCreateRow struct {
+	ID           string          `gorm:"column:id"`
+	TenantID     string          `gorm:"column:tenant_id"`
+	AppID        string          `gorm:"column:appid"`
+	AppType      int16           `gorm:"column:app_type"`
+	Name         string          `gorm:"column:name"`
+	Description  *string         `gorm:"column:description"`
+	CreatorUID   *string         `gorm:"column:creator_uid"`
+	OwnerType    *int16          `gorm:"column:owner_type"`
+	OwnerID      *string         `gorm:"column:owner_id"`
+	Managers     datatypes.JSON  `gorm:"column:managers"`
+	Members      datatypes.JSON  `gorm:"column:members"`
+	IconURL      *string         `gorm:"column:icon_url"`
+	Introduction *string         `gorm:"column:introduction"`
+	Screenshot   datatypes.JSON  `gorm:"column:screenshot"`
+	AppAndroid   *datatypes.JSON `gorm:"column:app_android"`
+	AppIOS       *datatypes.JSON `gorm:"column:app_ios"`
+	AppHarmony   *datatypes.JSON `gorm:"column:app_harmony"`
+	H5           *datatypes.JSON `gorm:"column:h5"`
+	QuickApp     *datatypes.JSON `gorm:"column:quickapp"`
+	StoreList    datatypes.JSON  `gorm:"column:store_list"`
+	Remark       *string         `gorm:"column:remark"`
+	CreatedAt    time.Time       `gorm:"column:created_at"`
+	UpdatedAt    time.Time       `gorm:"column:updated_at"`
+	MPWeixin     *datatypes.JSON `gorm:"column:mp_weixin"`
+	MPAlipay     *datatypes.JSON `gorm:"column:mp_alipay"`
+	MPBaidu      *datatypes.JSON `gorm:"column:mp_baidu"`
+	MPToutiao    *datatypes.JSON `gorm:"column:mp_toutiao"`
+	MPQQ         *datatypes.JSON `gorm:"column:mp_qq"`
+	MPKuaishou   *datatypes.JSON `gorm:"column:mp_kuaishou"`
+	MPLark       *datatypes.JSON `gorm:"column:mp_lark"`
+	MPJD         *datatypes.JSON `gorm:"column:mp_jd"`
+	MPDingtalk   *datatypes.JSON `gorm:"column:mp_dingtalk"`
+}
+
+type appVersionCreateRow struct {
+	ID            string         `gorm:"column:id"`
+	TenantID      string         `gorm:"column:tenant_id"`
+	AppID         string         `gorm:"column:app_id"`
+	AppIDText     string         `gorm:"column:appid"`
+	Name          string         `gorm:"column:name"`
+	Title         *string        `gorm:"column:title"`
+	Contents      string         `gorm:"column:contents"`
+	Platform      datatypes.JSON `gorm:"column:platform"`
+	Type          string         `gorm:"column:type"`
+	Version       string         `gorm:"column:version"`
+	MinUniVersion *string        `gorm:"column:min_uni_version"`
+	URL           string         `gorm:"column:url"`
+	StablePublish bool           `gorm:"column:stable_publish"`
+	IsSilently    bool           `gorm:"column:is_silently"`
+	IsMandatory   bool           `gorm:"column:is_mandatory"`
+	CreateDate    time.Time      `gorm:"column:create_date"`
+	UniPlatform   string         `gorm:"column:uni_platform"`
+	CreateEnv     string         `gorm:"column:create_env"`
+	StoreList     datatypes.JSON `gorm:"column:store_list"`
+	CreatedAt     time.Time      `gorm:"column:created_at"`
+	UpdatedAt     time.Time      `gorm:"column:updated_at"`
+}
+
 func formatLocalTime(t *time.Time) string {
 	if t == nil {
 		return ""
@@ -69,6 +128,28 @@ func jsonArrayOfStrings(in []string) datatypes.JSON {
 	}
 	b, _ := json.Marshal(in)
 	return datatypes.JSON(b)
+}
+
+func jsonOrNilPtr(raw *json.RawMessage) *datatypes.JSON {
+	if raw == nil {
+		return nil
+	}
+	if len(*raw) == 0 {
+		j := datatypes.JSON([]byte("null"))
+		return &j
+	}
+	j := datatypes.JSON(*raw)
+	return &j
+}
+
+func isAppIDDuplicateError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "uk_apps_tenant_appid") ||
+		(strings.Contains(errStr, "SQLSTATE 23505") &&
+			strings.Contains(errStr, "duplicate key value violates unique constraint"))
 }
 
 // ListApps 应用管理列表
@@ -166,46 +247,64 @@ func (*AppManage) CreateApp(ctx context.Context, req model.AppCreateReq, claims 
 	if req.AppType != nil {
 		appType = *req.AppType
 	}
+	appID := strings.TrimSpace(req.AppID)
+	if appID == "" {
+		return "", errcode.WithData(errcode.CodeParamError, map[string]interface{}{"appid": "missing"})
+	}
 
 	storeList := datatypes.JSON([]byte("[]"))
 	if req.StoreList != nil && len(*req.StoreList) != 0 {
 		storeList = datatypes.JSON(*req.StoreList)
 	}
 
-	if err := global.DB.WithContext(ctx).Table("apps").Create(map[string]interface{}{
-		"id":           id,
-		"tenant_id":    claims.TenantID,
-		"appid":        strings.TrimSpace(req.AppID),
-		"app_type":     appType,
-		"name":         strings.TrimSpace(req.Name),
-		"description":  req.Description,
-		"creator_uid":  req.CreatorUID,
-		"owner_type":   req.OwnerType,
-		"owner_id":     req.OwnerID,
-		"managers":     jsonArrayOfStrings(req.Managers),
-		"members":      jsonArrayOfStrings(req.Members),
-		"icon_url":     req.IconURL,
-		"introduction": req.Introduction,
-		"screenshot":   jsonArrayOfStrings(req.Screenshot),
-		"app_android":  jsonOrNil(req.AppAndroid),
-		"app_ios":      jsonOrNil(req.AppIOS),
-		"app_harmony":  jsonOrNil(req.AppHarmony),
-		"h5":           jsonOrNil(req.H5),
-		"quickapp":     jsonOrNil(req.QuickApp),
-		"store_list":   storeList,
-		"remark":       req.Remark,
-		"created_at":   now,
-		"updated_at":   now,
-		"mp_weixin":    jsonOrNil(req.MPWeixin),
-		"mp_alipay":    jsonOrNil(req.MPAlipay),
-		"mp_baidu":     jsonOrNil(req.MPBaidu),
-		"mp_toutiao":   jsonOrNil(req.MPToutiao),
-		"mp_qq":        jsonOrNil(req.MPQQ),
-		"mp_kuaishou":  jsonOrNil(req.MPKuaishou),
-		"mp_lark":      jsonOrNil(req.MPLark),
-		"mp_jd":        jsonOrNil(req.MPJD),
-		"mp_dingtalk":  jsonOrNil(req.MPDingtalk),
-	}).Error; err != nil {
+	var exists int64
+	if err := global.DB.WithContext(ctx).Table("apps").
+		Where("tenant_id = ? AND appid = ?", claims.TenantID, appID).
+		Count(&exists).Error; err != nil {
+		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if exists > 0 {
+		return "", errcode.New(errcode.CodeAppIDDuplicated)
+	}
+
+	row := appCreateRow{
+		ID:           id,
+		TenantID:     claims.TenantID,
+		AppID:        appID,
+		AppType:      appType,
+		Name:         strings.TrimSpace(req.Name),
+		Description:  req.Description,
+		CreatorUID:   req.CreatorUID,
+		OwnerType:    req.OwnerType,
+		OwnerID:      req.OwnerID,
+		Managers:     jsonArrayOfStrings(req.Managers),
+		Members:      jsonArrayOfStrings(req.Members),
+		IconURL:      req.IconURL,
+		Introduction: req.Introduction,
+		Screenshot:   jsonArrayOfStrings(req.Screenshot),
+		AppAndroid:   jsonOrNilPtr(req.AppAndroid),
+		AppIOS:       jsonOrNilPtr(req.AppIOS),
+		AppHarmony:   jsonOrNilPtr(req.AppHarmony),
+		H5:           jsonOrNilPtr(req.H5),
+		QuickApp:     jsonOrNilPtr(req.QuickApp),
+		StoreList:    storeList,
+		Remark:       req.Remark,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		MPWeixin:     jsonOrNilPtr(req.MPWeixin),
+		MPAlipay:     jsonOrNilPtr(req.MPAlipay),
+		MPBaidu:      jsonOrNilPtr(req.MPBaidu),
+		MPToutiao:    jsonOrNilPtr(req.MPToutiao),
+		MPQQ:         jsonOrNilPtr(req.MPQQ),
+		MPKuaishou:   jsonOrNilPtr(req.MPKuaishou),
+		MPLark:       jsonOrNilPtr(req.MPLark),
+		MPJD:         jsonOrNilPtr(req.MPJD),
+		MPDingtalk:   jsonOrNilPtr(req.MPDingtalk),
+	}
+	if err := global.DB.WithContext(ctx).Table("apps").Create(&row).Error; err != nil {
+		if isAppIDDuplicateError(err) {
+			return "", errcode.New(errcode.CodeAppIDDuplicated)
+		}
 		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
@@ -474,29 +573,30 @@ func (*AppManage) CreateAppVersion(ctx context.Context, req model.AppVersionCrea
 		storeList = datatypes.JSON(*req.StoreList)
 	}
 
-	if err := db.Table("app_versions").Create(map[string]interface{}{
-		"id":              id,
-		"tenant_id":       claims.TenantID,
-		"app_id":          app.ID,
-		"appid":           app.AppID,
-		"name":            app.Name,
-		"title":           req.Title,
-		"contents":        req.Contents,
-		"platform":        jsonArrayOfStrings(req.Platform),
-		"type":            req.Type,
-		"version":         req.Version,
-		"min_uni_version": req.MinUniVersion,
-		"url":             req.URL,
-		"stable_publish":  stable,
-		"is_silently":     isSilently,
-		"is_mandatory":    isMandatory,
-		"create_date":     now,
-		"uni_platform":    req.UniPlatform,
-		"create_env":      createEnv,
-		"store_list":      storeList,
-		"created_at":      now,
-		"updated_at":      now,
-	}).Error; err != nil {
+	row := appVersionCreateRow{
+		ID:            id,
+		TenantID:      claims.TenantID,
+		AppID:         app.ID,
+		AppIDText:     app.AppID,
+		Name:          app.Name,
+		Title:         req.Title,
+		Contents:      req.Contents,
+		Platform:      jsonArrayOfStrings(req.Platform),
+		Type:          req.Type,
+		Version:       req.Version,
+		MinUniVersion: req.MinUniVersion,
+		URL:           req.URL,
+		StablePublish: stable,
+		IsSilently:    isSilently,
+		IsMandatory:   isMandatory,
+		CreateDate:    now,
+		UniPlatform:   req.UniPlatform,
+		CreateEnv:     createEnv,
+		StoreList:     storeList,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := db.Table("app_versions").Create(&row).Error; err != nil {
 		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	return id, nil

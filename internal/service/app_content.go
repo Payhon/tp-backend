@@ -22,6 +22,69 @@ import (
 // AppContent APP内容管理（单页/FAQ/用户反馈）
 type AppContent struct{}
 
+type appContentPageCreateRow struct {
+	ID         string    `gorm:"column:id"`
+	TenantID   string    `gorm:"column:tenant_id"`
+	AppID      string    `gorm:"column:app_id"`
+	ContentKey string    `gorm:"column:content_key"`
+	Published  bool      `gorm:"column:published"`
+	CreatedBy  string    `gorm:"column:created_by"`
+	UpdatedBy  string    `gorm:"column:updated_by"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
+	UpdatedAt  time.Time `gorm:"column:updated_at"`
+}
+
+type appContentPageI18nCreateRow struct {
+	ID              string    `gorm:"column:id"`
+	PageID          string    `gorm:"column:page_id"`
+	Lang            string    `gorm:"column:lang"`
+	Title           string    `gorm:"column:title"`
+	ContentMarkdown string    `gorm:"column:content_markdown"`
+	ContentHTML     string    `gorm:"column:content_html"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
+}
+
+type appFaqCreateRow struct {
+	ID          string     `gorm:"column:id"`
+	TenantID    string     `gorm:"column:tenant_id"`
+	AppID       string     `gorm:"column:app_id"`
+	IsPinned    bool       `gorm:"column:is_pinned"`
+	Sort        int        `gorm:"column:sort"`
+	Published   bool       `gorm:"column:published"`
+	PublishedAt *time.Time `gorm:"column:published_at"`
+	CreatedBy   string     `gorm:"column:created_by"`
+	UpdatedBy   string     `gorm:"column:updated_by"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at"`
+}
+
+type appFaqI18nCreateRow struct {
+	ID             string    `gorm:"column:id"`
+	FaqID          string    `gorm:"column:faq_id"`
+	Lang           string    `gorm:"column:lang"`
+	Question       string    `gorm:"column:question"`
+	AnswerMarkdown string    `gorm:"column:answer_markdown"`
+	AnswerHTML     string    `gorm:"column:answer_html"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
+}
+
+type appFeedbackCreateRow struct {
+	ID          string         `gorm:"column:id"`
+	TenantID    string         `gorm:"column:tenant_id"`
+	AppID       string         `gorm:"column:app_id"`
+	AppIDText   string         `gorm:"column:appid"`
+	UserID      string         `gorm:"column:user_id"`
+	Content     string         `gorm:"column:content"`
+	Images      datatypes.JSON `gorm:"column:images"`
+	Platform    *string        `gorm:"column:platform"`
+	AppVersion  *string        `gorm:"column:app_version"`
+	DeviceModel *string        `gorm:"column:device_model"`
+	OSVersion   *string        `gorm:"column:os_version"`
+	Status      string         `gorm:"column:status"`
+	CreatedAt   time.Time      `gorm:"column:created_at"`
+	UpdatedAt   time.Time      `gorm:"column:updated_at"`
+}
+
 const (
 	contentKeyUserPolicy    = "user_policy"
 	contentKeyPrivacyPolicy = "privacy_policy"
@@ -331,17 +394,18 @@ func (*AppContent) AdminGetPage(ctx context.Context, claims *utils.UserClaims, a
 		// 读取时自动创建草稿记录，方便前端直接编辑
 		now := time.Now().UTC()
 		id := uuid.NewString()
-		if err := global.DB.WithContext(ctx).Table("app_content_pages").Create(map[string]interface{}{
-			"id":          id,
-			"tenant_id":   claims.TenantID,
-			"app_id":      appID,
-			"content_key": contentKey,
-			"published":   false,
-			"created_by":  claims.ID,
-			"updated_by":  claims.ID,
-			"created_at":  now,
-			"updated_at":  now,
-		}).Error; err != nil {
+		row := appContentPageCreateRow{
+			ID:         id,
+			TenantID:   claims.TenantID,
+			AppID:      appID,
+			ContentKey: contentKey,
+			Published:  false,
+			CreatedBy:  claims.ID,
+			UpdatedBy:  claims.ID,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := global.DB.WithContext(ctx).Table("app_content_pages").Create(&row).Error; err != nil {
 			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 		}
 		p.ID = id
@@ -441,17 +505,18 @@ func (*AppContent) AdminUpsertPage(ctx context.Context, claims *utils.UserClaims
 	}
 	if p.ID == "" {
 		p.ID = uuid.NewString()
-		if err := tx.Table("app_content_pages").Create(map[string]interface{}{
-			"id":          p.ID,
-			"tenant_id":   claims.TenantID,
-			"app_id":      req.AppID,
-			"content_key": contentKey,
-			"published":   false,
-			"created_by":  claims.ID,
-			"updated_by":  claims.ID,
-			"created_at":  now,
-			"updated_at":  now,
-		}).Error; err != nil {
+		row := appContentPageCreateRow{
+			ID:         p.ID,
+			TenantID:   claims.TenantID,
+			AppID:      req.AppID,
+			ContentKey: contentKey,
+			Published:  false,
+			CreatedBy:  claims.ID,
+			UpdatedBy:  claims.ID,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := tx.Table("app_content_pages").Create(&row).Error; err != nil {
 			tx.Rollback()
 			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 		}
@@ -473,15 +538,16 @@ func (*AppContent) AdminUpsertPage(ctx context.Context, claims *utils.UserClaims
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	if tr.ID == "" {
-		if err := tx.Table("app_content_page_i18n").Create(map[string]interface{}{
-			"id":               uuid.NewString(),
-			"page_id":          p.ID,
-			"lang":             lang,
-			"title":            strings.TrimSpace(req.Title),
-			"content_markdown": req.ContentMarkdown,
-			"content_html":     html,
-			"updated_at":       now,
-		}).Error; err != nil {
+		i18nRow := appContentPageI18nCreateRow{
+			ID:              uuid.NewString(),
+			PageID:          p.ID,
+			Lang:            lang,
+			Title:           strings.TrimSpace(req.Title),
+			ContentMarkdown: req.ContentMarkdown,
+			ContentHTML:     html,
+			UpdatedAt:       now,
+		}
+		if err := tx.Table("app_content_page_i18n").Create(&i18nRow).Error; err != nil {
 			tx.Rollback()
 			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 		}
@@ -695,24 +761,24 @@ func (*AppContent) AdminCreateFaq(ctx context.Context, claims *utils.UserClaims,
 		}
 	}()
 
-	if err := tx.Table("app_faq").Create(map[string]interface{}{
-		"id":        id,
-		"tenant_id": claims.TenantID,
-		"app_id":    req.AppID,
-		"is_pinned": req.IsPinned,
-		"sort":      req.Sort,
-		"published": req.Published,
-		"published_at": func() interface{} {
-			if req.Published {
-				return now
-			}
-			return nil
-		}(),
-		"created_by": claims.ID,
-		"updated_by": claims.ID,
-		"created_at": now,
-		"updated_at": now,
-	}).Error; err != nil {
+	var publishedAt *time.Time
+	if req.Published {
+		publishedAt = &now
+	}
+	row := appFaqCreateRow{
+		ID:          id,
+		TenantID:    claims.TenantID,
+		AppID:       req.AppID,
+		IsPinned:    req.IsPinned,
+		Sort:        req.Sort,
+		Published:   req.Published,
+		PublishedAt: publishedAt,
+		CreatedBy:   claims.ID,
+		UpdatedBy:   claims.ID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := tx.Table("app_faq").Create(&row).Error; err != nil {
 		tx.Rollback()
 		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
@@ -820,15 +886,16 @@ func upsertFaqI18n(tx *gorm.DB, faqID string, i18n map[string]model.AdminFaqI18n
 			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 		}
 		if r.ID == "" {
-			if err := tx.Table("app_faq_i18n").Create(map[string]interface{}{
-				"id":              uuid.NewString(),
-				"faq_id":          faqID,
-				"lang":            lang,
-				"question":        strings.TrimSpace(payload.Question),
-				"answer_markdown": payload.AnswerMarkdown,
-				"answer_html":     answerHTML,
-				"updated_at":      now,
-			}).Error; err != nil {
+			i18nRow := appFaqI18nCreateRow{
+				ID:             uuid.NewString(),
+				FaqID:          faqID,
+				Lang:           lang,
+				Question:       strings.TrimSpace(payload.Question),
+				AnswerMarkdown: payload.AnswerMarkdown,
+				AnswerHTML:     answerHTML,
+				UpdatedAt:      now,
+			}
+			if err := tx.Table("app_faq_i18n").Create(&i18nRow).Error; err != nil {
 				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 			}
 		} else {
@@ -1067,22 +1134,23 @@ func (*AppContent) CreateFeedbackForApp(ctx context.Context, claims *utils.UserC
 	now := time.Now().UTC()
 	id := uuid.NewString()
 	b, _ := json.Marshal(req.Images)
-	if err := global.DB.WithContext(ctx).Table("app_feedback").Create(map[string]interface{}{
-		"id":           id,
-		"tenant_id":    claims.TenantID,
-		"app_id":       app.ID,
-		"appid":        app.AppID,
-		"user_id":      claims.ID,
-		"content":      strings.TrimSpace(req.Content),
-		"images":       datatypes.JSON(b),
-		"platform":     req.Platform,
-		"app_version":  req.AppVersion,
-		"device_model": req.DeviceModel,
-		"os_version":   req.OSVersion,
-		"status":       "NEW",
-		"created_at":   now,
-		"updated_at":   now,
-	}).Error; err != nil {
+	row := appFeedbackCreateRow{
+		ID:          id,
+		TenantID:    claims.TenantID,
+		AppID:       app.ID,
+		AppIDText:   app.AppID,
+		UserID:      claims.ID,
+		Content:     strings.TrimSpace(req.Content),
+		Images:      datatypes.JSON(b),
+		Platform:    req.Platform,
+		AppVersion:  req.AppVersion,
+		DeviceModel: req.DeviceModel,
+		OSVersion:   req.OSVersion,
+		Status:      "NEW",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := global.DB.WithContext(ctx).Table("app_feedback").Create(&row).Error; err != nil {
 		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	return id, nil

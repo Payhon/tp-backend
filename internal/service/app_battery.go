@@ -193,7 +193,8 @@ func (*AppBattery) GetBatteryMqttCredentialForApp(ctx context.Context, deviceID 
 }
 
 // CheckBatteryOtaForApp APP端OTA升级检查（根据设备配置匹配升级包）
-func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, deviceID string, claims *utils.UserClaims) (*model.AppBatteryOtaCheckResp, error) {
+func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatteryOtaCheckReq, claims *utils.UserClaims) (*model.AppBatteryOtaCheckResp, error) {
+	deviceID := strings.TrimSpace(req.DeviceID)
 	if deviceID == "" {
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
 	}
@@ -234,56 +235,113 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, deviceID string, c
 		CurrentVersion: row.CurrentVersion,
 	}
 
-	if row.DeviceConfigID == nil || strings.TrimSpace(*row.DeviceConfigID) == "" {
+	deviceConfigID := row.DeviceConfigID
+	if deviceConfigID == nil || strings.TrimSpace(*deviceConfigID) == "" {
+		modelName := ""
+		if req.Model != nil {
+			modelName = strings.TrimSpace(*req.Model)
+		}
+		if modelName == "" && row.BatteryModelName != nil {
+			modelName = strings.TrimSpace(*row.BatteryModelName)
+		}
+		if modelName != "" {
+			var bm model.BatteryModel
+			if err := global.DB.WithContext(ctx).
+				Where("name = ? AND tenant_id = ?", modelName, claims.TenantID).
+				Limit(1).
+				First(&bm).Error; err != nil {
+				if err != gorm.ErrRecordNotFound {
+					return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+				}
+			} else if bm.DeviceConfigID != nil && strings.TrimSpace(*bm.DeviceConfigID) != "" {
+				deviceConfigID = bm.DeviceConfigID
+			}
+		}
+	}
+
+	if deviceConfigID == nil || strings.TrimSpace(*deviceConfigID) == "" {
 		return resp, nil
 	}
 
-	var pkg model.OtaUpgradePackage
+	var packages []model.OtaUpgradePackage
 	pkgQuery := global.DB.WithContext(ctx).Table(model.TableNameOtaUpgradePackage).
-		Where("device_config_id = ?", strings.TrimSpace(*row.DeviceConfigID))
+		Where("device_config_id = ?", strings.TrimSpace(*deviceConfigID))
 	// 允许租户级或公共包（tenant_id 为 NULL）
 	pkgQuery = pkgQuery.Where("tenant_id = ? OR tenant_id IS NULL", claims.TenantID)
-	if err := pkgQuery.Order("created_at DESC").Limit(1).Take(&pkg).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return resp, nil
-		}
+	if err := pkgQuery.Order("created_at DESC").Find(&packages).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
+	if len(packages) == 0 {
+		return resp, nil
+	}
 
-	currentVer := ""
-	if row.CurrentVersion != nil {
-		currentVer = strings.TrimSpace(*row.CurrentVersion)
+	reportedVer := ""
+	if req.Version != nil {
+		reportedVer = strings.TrimSpace(*req.Version)
 	}
-	targetVer := ""
-	if pkg.TargetVersion != nil {
-		targetVer = strings.TrimSpace(*pkg.TargetVersion)
+	if reportedVer == "" && row.CurrentVersion != nil {
+		reportedVer = strings.TrimSpace(*row.CurrentVersion)
 	}
-	if targetVer != "" {
-		resp.NeedUpgrade = !strings.EqualFold(currentVer, targetVer)
-	} else {
-		resp.NeedUpgrade = !strings.EqualFold(currentVer, pkg.Version)
+	resp.CurrentVersion = stringPtrOrNil(reportedVer)
+
+	// 优先匹配 target_version == reportedVer 的升级包
+	var selected *model.OtaUpgradePackage
+	for i := range packages {
+		p := &packages[i]
+		if p.TargetVersion == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(*p.TargetVersion), reportedVer) {
+			selected = p
+			break
+		}
 	}
+
+	// 没有匹配 target_version 时，按版本号大小选择最新包
+	if selected == nil {
+		for i := range packages {
+			p := &packages[i]
+			if p.TargetVersion != nil && strings.TrimSpace(*p.TargetVersion) != "" {
+				// target_version 不匹配当前版本，忽略
+				continue
+			}
+			if selected == nil {
+				selected = p
+				continue
+			}
+			if compareVersion(p.Version, selected.Version) > 0 {
+				selected = p
+			}
+		}
+	}
+
+	if selected == nil {
+		return resp, nil
+	}
+
+	cmp := compareVersion(selected.Version, reportedVer)
+	resp.NeedUpgrade = cmp > 0
 
 	// 若无需升级，返回版本信息但不携带下载地址
 	if !resp.NeedUpgrade {
-		resp.Version = &pkg.Version
-		resp.TargetVersion = pkg.TargetVersion
-		resp.PackageID = &pkg.ID
-		resp.PackageType = &pkg.PackageType
+		resp.Version = &selected.Version
+		resp.TargetVersion = selected.TargetVersion
+		resp.PackageID = &selected.ID
+		resp.PackageType = &selected.PackageType
 		return resp, nil
 	}
 
-	firmwareURL := buildOtaDownloadURL(pkg.PackageURL)
-	resp.Version = &pkg.Version
-	resp.TargetVersion = pkg.TargetVersion
+	firmwareURL := buildOtaDownloadURL(selected.PackageURL)
+	resp.Version = &selected.Version
+	resp.TargetVersion = selected.TargetVersion
 	resp.FirmwareURL = firmwareURL
-	resp.PackageID = &pkg.ID
-	resp.PackageType = &pkg.PackageType
-	resp.SignatureType = pkg.SignatureType
-	resp.Signature = pkg.Signature
-	resp.Module = pkg.Module
-	resp.AdditionalInfo = pkg.AdditionalInfo
-	resp.Remark = pkg.Remark
+	resp.PackageID = &selected.ID
+	resp.PackageType = &selected.PackageType
+	resp.SignatureType = selected.SignatureType
+	resp.Signature = selected.Signature
+	resp.Module = selected.Module
+	resp.AdditionalInfo = selected.AdditionalInfo
+	resp.Remark = selected.Remark
 
 	return resp, nil
 }
@@ -302,4 +360,122 @@ func buildOtaDownloadURL(packageURL *string) *string {
 	}
 	url := base + strings.TrimPrefix(raw, ".")
 	return &url
+}
+
+func compareVersion(a, b string) int {
+	aa := normalizeVersion(a)
+	bb := normalizeVersion(b)
+	if aa == "" && bb == "" {
+		return 0
+	}
+	if aa == "" {
+		return -1
+	}
+	if bb == "" {
+		return 1
+	}
+	if isNumeric(aa) && isNumeric(bb) {
+		return compareNumericStrings(aa, bb)
+	}
+	if isSemverLike(aa) && isSemverLike(bb) {
+		return compareSemver(aa, bb)
+	}
+	return strings.Compare(strings.ToLower(aa), strings.ToLower(bb))
+}
+
+func normalizeVersion(s string) string {
+	out := strings.TrimSpace(s)
+	out = strings.TrimPrefix(strings.ToLower(out), "v")
+	return out
+}
+
+func isNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isSemverLike(s string) bool {
+	if s == "" {
+		return false
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, p := range parts {
+		if !isNumeric(p) {
+			return false
+		}
+	}
+	return true
+}
+
+func compareSemver(a, b string) int {
+	ap := strings.Split(a, ".")
+	bp := strings.Split(b, ".")
+	n := len(ap)
+	if len(bp) > n {
+		n = len(bp)
+	}
+	for i := 0; i < n; i++ {
+		ai := 0
+		if i < len(ap) && ap[i] != "" {
+			ai = atoiSafe(ap[i])
+		}
+		bi := 0
+		if i < len(bp) && bp[i] != "" {
+			bi = atoiSafe(bp[i])
+		}
+		if ai > bi {
+			return 1
+		}
+		if ai < bi {
+			return -1
+		}
+	}
+	return 0
+}
+
+func compareNumericStrings(a, b string) int {
+	aa := strings.TrimLeft(a, "0")
+	bb := strings.TrimLeft(b, "0")
+	if aa == "" {
+		aa = "0"
+	}
+	if bb == "" {
+		bb = "0"
+	}
+	if len(aa) > len(bb) {
+		return 1
+	}
+	if len(aa) < len(bb) {
+		return -1
+	}
+	return strings.Compare(aa, bb)
+}
+
+func atoiSafe(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return n
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
+
+func stringPtrOrNil(s string) *string {
+	out := strings.TrimSpace(s)
+	if out == "" {
+		return nil
+	}
+	return &out
 }

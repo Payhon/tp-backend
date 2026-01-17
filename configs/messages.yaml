@@ -86,6 +86,9 @@ messages:
   200007:
     zh_CN: "手机号已被使用"
     en_US: "Phone number already in use"
+  200090:
+    zh_CN: "应用AppID已存在"
+    en_US: "App ID already exists"
   200008:
     zh_CN: "用户邮箱已注册"
     en_US: "User email already registered"

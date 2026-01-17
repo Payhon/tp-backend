@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
+	"project/internal/model"
 	"project/internal/service"
 	"project/pkg/errcode"
 	"project/pkg/utils"
@@ -15,7 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/viper"
-	"sync"
 )
 
 // AppBatteryApi APP端：电池设备详情/透传
@@ -69,14 +70,18 @@ func (*AppBatteryApi) GetBatteryMqttCredential(c *gin.Context) {
 // @Tags APP-Battery
 // @Accept json
 // @Produce json
-// @Param device_id path string true "设备ID(UUID)"
+// @Param body body model.AppBatteryOtaCheckReq true "检查请求"
 // @Success 200 {object} model.AppBatteryOtaCheckResp
-// @Router /api/v1/app/battery/ota/check/{device_id} [get]
+// @Router /api/v1/app/battery/ota/check [post]
 func (*AppBatteryApi) CheckBatteryOta(c *gin.Context) {
-	deviceID := c.Param("device_id")
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	var req model.AppBatteryOtaCheckReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errcode.NewWithMessage(errcode.CodeParamError, "invalid request body"))
+		return
+	}
 
-	data, err := service.GroupApp.AppBattery.CheckBatteryOtaForApp(context.Background(), deviceID, userClaims)
+	data, err := service.GroupApp.AppBattery.CheckBatteryOtaForApp(context.Background(), req, userClaims)
 	if err != nil {
 		c.Error(err)
 		return

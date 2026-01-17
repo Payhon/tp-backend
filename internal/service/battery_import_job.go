@@ -159,13 +159,15 @@ func (b *Battery) CreateBatteryImportJob(ctx context.Context, filePath string, c
 	now := time.Now()
 
 	db := global.DB.WithContext(ctx)
-	if err := db.Table("battery_import_jobs").Create(map[string]any{
-		"id":          jobID,
-		"tenant_id":   claims.TenantID,
-		"operator_id": claims.ID,
-		"status":      "RUNNING",
-		"started_at":  now,
-	}).Error; err != nil {
+	jobRow := batteryImportJob{
+		ID:         jobID,
+		TenantID:   claims.TenantID,
+		OperatorID: claims.ID,
+		Status:     "RUNNING",
+		StartedAt:  &now,
+		CreatedAt:  now,
+	}
+	if err := db.Table("battery_import_jobs").Create(&jobRow).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
@@ -519,14 +521,17 @@ func cellAt(row []string, col int) string {
 }
 
 func appendImportJobLog(ctx context.Context, jobID, tenantID string, rowNumber *int, level string, deviceNumber *string, message string) {
-	_ = global.DB.WithContext(ctx).Table("battery_import_job_logs").Create(map[string]any{
-		"job_id":        jobID,
-		"tenant_id":     tenantID,
-		"row_number":    rowNumber,
-		"level":         level,
-		"device_number": deviceNumber,
-		"message":       message,
-	}).Error
+	now := time.Now()
+	logRow := batteryImportJobLog{
+		JobID:        jobID,
+		TenantID:     tenantID,
+		RowNumber:    rowNumber,
+		Level:        level,
+		DeviceNumber: deviceNumber,
+		Message:      message,
+		CreatedAt:    now,
+	}
+	_ = global.DB.WithContext(ctx).Table("battery_import_job_logs").Create(&logRow).Error
 }
 
 func formatMaybe(prefix string, v *string) string {

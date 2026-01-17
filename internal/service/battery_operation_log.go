@@ -32,6 +32,17 @@ type batteryOperationLogRow struct {
 	Description   *string   `gorm:"column:description"`
 }
 
+type batteryOperationLogCreateRow struct {
+	TenantID      string    `gorm:"column:tenant_id"`
+	DeviceID      string    `gorm:"column:device_id"`
+	DeviceNumber  string    `gorm:"column:device_number"`
+	OperationType string    `gorm:"column:operation_type"`
+	OperatorID    *string   `gorm:"column:operator_id"`
+	Description   *string   `gorm:"column:description"`
+	Extra         any       `gorm:"column:extra"`
+	OccurredAt    time.Time `gorm:"column:occurred_at"`
+}
+
 // CreateBatteryOperationLog 写入电池运营日志
 func CreateBatteryOperationLog(ctx context.Context, tenantID, deviceID, deviceNumber, operationType string, operatorID *string, description *string, extra any) error {
 	return createBatteryOperationLogWithDB(global.DB.WithContext(ctx), tenantID, deviceID, deviceNumber, operationType, operatorID, description, extra)
@@ -45,16 +56,17 @@ func CreateBatteryOperationLogTx(tx *gorm.DB, tenantID, deviceID, deviceNumber, 
 }
 
 func createBatteryOperationLogWithDB(db *gorm.DB, tenantID, deviceID, deviceNumber, operationType string, operatorID *string, description *string, extra any) error {
-	return db.Table("battery_operation_logs").Create(map[string]any{
-		"tenant_id":      tenantID,
-		"device_id":      deviceID,
-		"device_number":  deviceNumber,
-		"operation_type": operationType,
-		"operator_id":    operatorID,
-		"description":    description,
-		"extra":          extra,
-		"occurred_at":    time.Now(),
-	}).Error
+	row := batteryOperationLogCreateRow{
+		TenantID:      tenantID,
+		DeviceID:      deviceID,
+		DeviceNumber:  deviceNumber,
+		OperationType: operationType,
+		OperatorID:    operatorID,
+		Description:   description,
+		Extra:         extra,
+		OccurredAt:    time.Now(),
+	}
+	return db.Table("battery_operation_logs").Create(&row).Error
 }
 
 // GetBatteryOperationLogList 查询运营日志列表（分页）

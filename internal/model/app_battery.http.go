@@ -49,3 +49,10 @@ type AppBatteryOtaCheckResp struct {
 	AdditionalInfo *string `json:"additional_info,omitempty"`
 	Remark         *string `json:"remark,omitempty"`
 }
+
+// AppBatteryOtaCheckReq APP端OTA检查请求
+type AppBatteryOtaCheckReq struct {
+	DeviceID string  `json:"device_id" binding:"required"`
+	Model    *string `json:"model,omitempty"`
+	Version  *string `json:"version,omitempty"`
+}
