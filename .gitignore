@@ -10,5 +10,6 @@ files/logs/
 
 # Build artifacts
 bin/
+bin/fjbms
 /bms-bridge
 /bms-sim
