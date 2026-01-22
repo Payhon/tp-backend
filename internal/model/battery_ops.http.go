@@ -98,3 +98,24 @@ type BatteryOperationLogListResp struct {
 	Page     int                           `json:"page"`
 	PageSize int                           `json:"page_size"`
 }
+
+// BatteryFactoryOutReq 电池出厂（厂家 -> PACK/经销商）
+type BatteryFactoryOutReq struct {
+	DeviceID string  `json:"device_id" binding:"required"`
+	ToOrgID  string  `json:"to_org_id" binding:"required"`
+	Remark   *string `json:"remark"`
+}
+
+// BatteryTransferReq 电池调拨（组织转移）
+type BatteryTransferReq struct {
+	DeviceID string  `json:"device_id" binding:"required"`
+	ToOrgID  string  `json:"to_org_id" binding:"required"`
+	Remark   *string `json:"remark"`
+}
+
+// BatteryActivateReq 电池激活（绑定到 APP 用户）
+type BatteryActivateReq struct {
+	DeviceID string  `json:"device_id" binding:"required"`
+	UserID   string  `json:"user_id" binding:"required"`
+	Remark   *string `json:"remark"`
+}

@@ -14,7 +14,9 @@ import (
 const (
 	BatteryOpTypeCreate            = "CREATE"
 	BatteryOpTypeImport            = "IMPORT"
+	BatteryOpTypeFactoryOut        = "FACTORY_OUT"
 	BatteryOpTypeTransfer          = "TRANSFER"
+	BatteryOpTypeActivate          = "ACTIVATE"
 	BatteryOpTypeWarrantySubmit    = "WARRANTY_SUBMIT"
 	BatteryOpTypeWarrantyHandle    = "WARRANTY_HANDLE"
 	BatteryOpTypeMaintenanceSubmit = "MAINTENANCE_SUBMIT"

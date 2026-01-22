@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -39,10 +40,24 @@ func (*ActivationLog) GetActivationLogList(ctx context.Context, req model.Activa
 		BindingTerminal string    `gorm:"-"`
 	}
 
-	baseWhere := `
-ol.tenant_id = ? AND ol.name = 'POST' AND ol.path IN ('/api/v1/app/device/bind','/api/v1/app/device/provision/bind')
-`
+	appPaths := []string{"/api/v1/app/device/bind", "/api/v1/app/device/provision/bind"}
+	webPaths := []string{"/api/v1/battery/activate"}
+	paths := append([]string{}, appPaths...)
+	paths = append(paths, webPaths...)
+	if req.Method != nil && *req.Method != "" {
+		if *req.Method == "APP" {
+			paths = appPaths
+		} else if *req.Method == "WEB" {
+			paths = webPaths
+		}
+	}
+
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(paths)), ",")
+	baseWhere := fmt.Sprintf("ol.tenant_id = ? AND ol.name = 'POST' AND ol.path IN (%s)", placeholders)
 	args := []interface{}{claims.TenantID}
+	for _, p := range paths {
+		args = append(args, p)
+	}
 
 	if req.StartTime != nil && req.EndTime != nil {
 		baseWhere += " AND ol.created_at BETWEEN ? AND ?"
@@ -65,24 +80,15 @@ ol.tenant_id = ? AND ol.name = 'POST' AND ol.path IN ('/api/v1/app/device/bind',
 		args = append(args, dealerScopeID)
 	}
 
-	// Method：当前仅实现 APP（WEB 手动绑定暂无对应接口/日志来源）
-	if req.Method != nil && *req.Method != "" {
-		if *req.Method == "WEB" {
-			return &model.ActivationLogListResp{
-				List:     []model.ActivationLogResp{},
-				Total:    0,
-				Page:     req.Page,
-				PageSize: req.PageSize,
-			}, nil
-		}
-	}
-
 	// count
 	var total int64
 	countSQL := `
 SELECT COUNT(1)
 FROM operation_logs ol
-LEFT JOIN users u ON u.id = ol.user_id
+LEFT JOIN users u ON u.id = CASE
+  WHEN ol.path = '/api/v1/battery/activate' THEN (ol.request_message::jsonb ->> 'user_id')
+  ELSE ol.user_id
+END
 LEFT JOIN LATERAL (
   SELECT COALESCE(
     (ol.request_message::jsonb ->> 'device_number'),
@@ -91,6 +97,12 @@ LEFT JOIN LATERAL (
       FROM device_batteries db2
       JOIN devices d2 ON d2.id = db2.device_id AND d2.tenant_id = ol.tenant_id
       WHERE db2.item_uuid = (ol.request_message::jsonb ->> 'item_uuid')
+      LIMIT 1
+    ),
+    (
+      SELECT d3.device_number
+      FROM devices d3
+      WHERE d3.id = (ol.request_message::jsonb ->> 'device_id') AND d3.tenant_id = ol.tenant_id
       LIMIT 1
     )
   ) AS device_number
@@ -110,9 +122,12 @@ SELECT
   ol.created_at AS created_at,
   ol.ip AS ip,
   ol.remark AS user_agent,
-  'APP扫码' AS activation_way
+  CASE WHEN ol.path = '/api/v1/battery/activate' THEN 'WEB后台' ELSE 'APP扫码' END AS activation_way
 FROM operation_logs ol
-LEFT JOIN users u ON u.id = ol.user_id
+LEFT JOIN users u ON u.id = CASE
+  WHEN ol.path = '/api/v1/battery/activate' THEN (ol.request_message::jsonb ->> 'user_id')
+  ELSE ol.user_id
+END
 LEFT JOIN LATERAL (
   SELECT COALESCE(
     (ol.request_message::jsonb ->> 'device_number'),
@@ -121,6 +136,12 @@ LEFT JOIN LATERAL (
       FROM device_batteries db2
       JOIN devices d2 ON d2.id = db2.device_id AND d2.tenant_id = ol.tenant_id
       WHERE db2.item_uuid = (ol.request_message::jsonb ->> 'item_uuid')
+      LIMIT 1
+    ),
+    (
+      SELECT d3.device_number
+      FROM devices d3
+      WHERE d3.id = (ol.request_message::jsonb ->> 'device_id') AND d3.tenant_id = ol.tenant_id
       LIMIT 1
     )
   ) AS device_number
@@ -144,13 +165,17 @@ LIMIT ? OFFSET ?
 		if r.UserAgent != nil {
 			ua = *r.UserAgent
 		}
+		bindingTerminal := inferBindingTerminalByUA(ua)
+		if r.ActivationWay == "WEB后台" {
+			bindingTerminal = "WEB"
+		}
 		out = append(out, model.ActivationLogResp{
 			DeviceNumber:    r.DeviceNumber,
 			BatteryModel:    r.BatteryModel,
 			UserPhone:       r.UserPhone,
 			ActivationTime:  r.CreatedAt.In(time.Local).Format("2006-01-02 15:04:05"),
 			ActivationWay:   r.ActivationWay,
-			BindingTerminal: inferBindingTerminalByUA(ua),
+			BindingTerminal: bindingTerminal,
 			IP:              r.IP,
 		})
 	}

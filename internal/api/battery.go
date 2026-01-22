@@ -278,6 +278,81 @@ func (*BatteryApi) GetBatteryOperationLogList(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// FactoryOutBattery 电池出厂
+// @Summary 电池出厂
+// @Description BMS 电池管理-出厂（厂家 -> PACK/经销商）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryFactoryOutReq true "请求参数"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/battery/factory_out [post]
+func (*BatteryApi) FactoryOutBattery(c *gin.Context) {
+	var req model.BatteryFactoryOutReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	if err := service.GroupApp.Battery.FactoryOutBattery(context.Background(), req, userClaims, orgID); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", map[string]interface{}{"message": "出厂成功"})
+}
+
+// TransferBattery 电池调拨
+// @Summary 电池调拨
+// @Description BMS 电池管理-调拨（组织转移）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryTransferReq true "请求参数"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/battery/transfer [post]
+func (*BatteryApi) TransferBattery(c *gin.Context) {
+	var req model.BatteryTransferReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	if err := service.GroupApp.Battery.TransferBattery(context.Background(), req, userClaims, orgID); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", map[string]interface{}{"message": "调拨成功"})
+}
+
+// ActivateBattery 电池激活
+// @Summary 电池激活
+// @Description BMS 电池管理-激活（绑定 APP 用户）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryActivateReq true "请求参数"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/battery/activate [post]
+func (*BatteryApi) ActivateBattery(c *gin.Context) {
+	var req model.BatteryActivateReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	if err := service.GroupApp.Battery.ActivateBattery(context.Background(), req, userClaims, orgID); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", map[string]interface{}{"message": "激活成功"})
+}
+
 // BatchAssignDealer 批量分配经销商
 // @Summary 批量分配经销商
 // @Description BMS 电池管理-批量分配经销商
