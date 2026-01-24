@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"project/internal/middleware"
 	"project/internal/model"
 	"project/internal/query"
 	"project/pkg/errcode"
@@ -529,6 +528,20 @@ func allowOrgFilter(orgType, targetType string) bool {
 	}
 }
 
+func canAccessOrg(tenantID, accessorOrgID, targetOrgID string) bool {
+	if accessorOrgID == "" {
+		return true
+	}
+	if accessorOrgID == targetOrgID {
+		return true
+	}
+	var count int64
+	global.DB.Table("org_closure").
+		Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", tenantID, accessorOrgID, targetOrgID).
+		Count(&count)
+	return count > 0
+}
+
 // GetOrgDevices 获取组织范围设备列表（APP端）
 func (*DeviceBinding) GetOrgDevices(req model.AppOrgDeviceListReq, claims *utils.UserClaims) (*model.AppOrgDeviceListResp, error) {
 	ctx := context.Background()
@@ -608,7 +621,7 @@ func (*DeviceBinding) GetOrgDevices(req model.AppOrgDeviceListReq, claims *utils
 	if req.OwnerOrgID != nil && strings.TrimSpace(*req.OwnerOrgID) != "" {
 		ownerID := strings.TrimSpace(*req.OwnerOrgID)
 		if !isFactory && orgID != "" {
-			if !middleware.CanAccessOrg(tenantID, orgID, ownerID) {
+			if !canAccessOrg(tenantID, orgID, ownerID) {
 				return nil, errcode.New(errcode.CodeNoPermission)
 			}
 		}
