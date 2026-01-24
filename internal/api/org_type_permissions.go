@@ -35,7 +35,7 @@ func (*OrgTypePermissionApi) ListOrgTypePermissions(c *gin.Context) {
 // @Tags 权限管理
 // @Accept json
 // @Produce json
-// @Param org_type path string true "机构类型: PACK_FACTORY, DEALER, STORE"
+// @Param org_type path string true "机构类型: PACK_FACTORY, DEALER, STORE, APP_USER"
 // @Param tenant_id query string false "租户ID（仅SYS_ADMIN可用）"
 // @Param body body model.OrgTypePermissionUpsertReq true "权限配置"
 // @Success 200 {object} model.OrgTypePermissionResp
@@ -51,6 +51,24 @@ func (*OrgTypePermissionApi) UpsertOrgTypePermission(c *gin.Context) {
 	}
 
 	data, err := service.GroupApp.OrgTypePermission.Upsert(c.Request.Context(), claims, tenantID, orgType, &req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// GetCurrentDeviceParamPermissions 获取当前用户设备参数权限
+// @Summary 获取当前用户设备参数权限
+// @Tags 权限管理
+// @Accept json
+// @Produce json
+// @Success 200 {object} model.DeviceParamPermissionResp
+// @Router /api/v1/org_type_permissions/device_param_permissions/me [get]
+func (*OrgTypePermissionApi) GetCurrentDeviceParamPermissions(c *gin.Context) {
+	claims := c.MustGet("claims").(*utils.UserClaims)
+
+	data, err := service.GroupApp.OrgTypePermission.GetCurrentDeviceParamPermissions(c.Request.Context(), claims)
 	if err != nil {
 		c.Error(err)
 		return

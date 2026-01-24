@@ -13,6 +13,14 @@ type OrgTypePermissionResp struct {
 	DeviceParamPermissions string   `json:"device_param_permissions"`
 }
 
+// DeviceParamPermissionResp 当前用户设备参数权限
+type DeviceParamPermissionResp struct {
+	OrgType                string   `json:"org_type"`
+	OrgTypes               []string `json:"org_types"`
+	AllowAll               bool     `json:"allow_all"`
+	DeviceParamPermissions []string `json:"device_param_permissions"`
+}
+
 // DeviceParamTreeNode 设备参数权限树节点
 type DeviceParamTreeNode struct {
 	Label string `json:"label"`

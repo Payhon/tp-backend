@@ -112,11 +112,11 @@ func (s *OrgTypePermission) Upsert(ctx context.Context, claims *utils.UserClaims
 	}
 
 	switch orgType {
-	case model.OrgTypePACKFactory, model.OrgTypeDealer, model.OrgTypeStore:
+	case model.OrgTypePACKFactory, model.OrgTypeDealer, model.OrgTypeStore, model.OrgTypeAppUser:
 	default:
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"org_type": orgType,
-			"error":    "org_type must be one of PACK_FACTORY/DEALER/STORE",
+			"error":    "org_type must be one of PACK_FACTORY/DEALER/STORE/APP_USER",
 		})
 	}
 
@@ -232,6 +232,62 @@ func (s *OrgTypePermission) GetAllowedUICodes(ctx context.Context, tenantID, org
 	return uiCodes, true, nil
 }
 
+func splitDeviceParamPermissions(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
+func (s *OrgTypePermission) GetAllowedDeviceParamPermissions(ctx context.Context, tenantID, orgType string) ([]string, bool, error) {
+	var row orgTypePermissionPO
+	if err := global.DB.WithContext(ctx).
+		Where("tenant_id = ? AND org_type = ?", tenantID, orgType).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	raw := ""
+	if row.DeviceParamPermissions != nil {
+		raw = *row.DeviceParamPermissions
+	}
+	return splitDeviceParamPermissions(raw), true, nil
+}
+
+func (s *OrgTypePermission) GetUserKind(ctx context.Context, tenantID, userID string) (string, error) {
+	var kind string
+	if err := global.DB.WithContext(ctx).
+		Table("users").
+		Select("user_kind").
+		Where("id = ? AND tenant_id = ?", userID, tenantID).
+		Scan(&kind).Error; err != nil {
+		return "", err
+	}
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		kind = model.UserKindEndUser
+	}
+	return kind, nil
+}
+
 func (s *OrgTypePermission) GetUserOrgType(ctx context.Context, tenantID, userID string) (string, bool, error) {
 	var orgID string
 	if err := global.DB.WithContext(ctx).
@@ -259,6 +315,114 @@ func (s *OrgTypePermission) GetUserOrgType(ctx context.Context, tenantID, userID
 		return "", false, nil
 	}
 	return orgType, true, nil
+}
+
+func (s *OrgTypePermission) GetCurrentDeviceParamPermissions(ctx context.Context, claims *utils.UserClaims) (*model.DeviceParamPermissionResp, error) {
+	resp := &model.DeviceParamPermissionResp{
+		OrgType:                "",
+		OrgTypes:               []string{},
+		AllowAll:               true,
+		DeviceParamPermissions: []string{},
+	}
+	if claims == nil {
+		return resp, nil
+	}
+	if claims.Authority == "SYS_ADMIN" || claims.Authority == "TENANT_ADMIN" {
+		return resp, nil
+	}
+
+	tenantID := strings.TrimSpace(claims.TenantID)
+	userID := strings.TrimSpace(claims.ID)
+	if tenantID == "" || userID == "" {
+		return resp, nil
+	}
+
+	userKind, err := s.GetUserKind(ctx, tenantID, userID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user_kind",
+			"user_id":   userID,
+			"error":     err.Error(),
+		})
+	}
+
+	orgTypes := []string{model.OrgTypeAppUser}
+	orgType := ""
+	if userKind == model.UserKindOrgUser {
+		var ok bool
+		orgType, ok, err = s.GetUserOrgType(ctx, tenantID, userID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_org_type",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		}
+		if ok {
+			orgType = strings.TrimSpace(orgType)
+			if orgType != "" {
+				orgTypes = append(orgTypes, orgType)
+			}
+		}
+	}
+
+	resp.OrgType = orgType
+	resp.OrgTypes = normalizeOrgTypes(orgTypes)
+
+	merged := make([]string, 0)
+	mergedSet := make(map[string]struct{})
+	hasConfig := false
+	for _, ot := range orgTypes {
+		ot = strings.TrimSpace(ot)
+		if ot == "" {
+			continue
+		}
+		allowed, exists, err := s.GetAllowedDeviceParamPermissions(ctx, tenantID, ot)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_device_param_permissions",
+				"org_type":  ot,
+				"error":     err.Error(),
+			})
+		}
+		if !exists {
+			continue
+		}
+		hasConfig = true
+		for _, key := range allowed {
+			if _, ok := mergedSet[key]; ok {
+				continue
+			}
+			mergedSet[key] = struct{}{}
+			merged = append(merged, key)
+		}
+	}
+
+	if hasConfig {
+		resp.AllowAll = false
+		resp.DeviceParamPermissions = merged
+	}
+	return resp, nil
+}
+
+func normalizeOrgTypes(items []string) []string {
+	if len(items) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (s *OrgTypePermission) GetDeviceParamOptions() ([]model.DeviceParamTreeNode, error) {

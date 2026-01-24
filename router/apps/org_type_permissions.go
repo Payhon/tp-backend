@@ -14,6 +14,7 @@ func (*OrgTypePermission) InitOrgTypePermission(Router *gin.RouterGroup) {
 	{
 		g.GET("", api.Controllers.OrgTypePermissionApi.ListOrgTypePermissions)
 		g.PUT(":org_type", api.Controllers.OrgTypePermissionApi.UpsertOrgTypePermission)
+		g.GET("device_param_permissions/me", api.Controllers.OrgTypePermissionApi.GetCurrentDeviceParamPermissions)
 		g.GET("device_param_options", api.Controllers.OrgTypePermissionApi.GetDeviceParamPermissionOptions)
 	}
 }
