@@ -154,9 +154,6 @@ func GetUsersById(uid string) (*model.User, error) {
 }
 
 func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
-	q := query.User
-	qa := query.UserAddress
-
 	// 联表查询用户和地址信息
 	type UserWithAddress struct {
 		// 用户字段
@@ -180,6 +177,10 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 		LastVisitDevice     *string    `gorm:"column:last_visit_device"`
 		PasswordFailCount   *int32     `gorm:"column:password_fail_count"`
 		AvatarURL           *string    `gorm:"column:avatar_url"`
+		OrgID               *string    `gorm:"column:org_id"`
+		UserKind            *string    `gorm:"column:user_kind"`
+		OrgType             *string    `gorm:"column:org_type"`
+		OrgName             *string    `gorm:"column:org_name"`
 		// 地址字段
 		AddressID             *int32     `gorm:"column:address_id"`
 		Country               *string    `gorm:"column:address_country"`
@@ -198,22 +199,52 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 	}
 
 	var result UserWithAddress
-	err := q.WithContext(context.Background()).
-		LeftJoin(qa, q.ID.EqCol(qa.UserID)).
-		Where(q.ID.Eq(uid)).
-		Select(
-			q.ID, q.Name, q.PhoneNumber, q.Email, q.Status, q.Authority, q.TenantID, q.Remark,
-			q.AdditionalInfo, q.Organization, q.Timezone, q.DefaultLanguage,
-			q.CreatedAt, q.UpdatedAt, q.PasswordLastUpdated, q.LastVisitTime, q.LastVisitIP, q.LastVisitDevice, q.PasswordFailCount, q.AvatarURL,
-			qa.ID.As("address_id"),
-			qa.Country.As("address_country"), qa.Province.As("address_province"), qa.City.As("address_city"),
-			qa.District.As("address_district"), qa.Street.As("address_street"),
-			qa.DetailedAddress.As("address_detailed_address"), qa.PostalCode.As("address_postal_code"),
-			qa.AddressLabel.As("address_label"), qa.Longitude.As("address_longitude"),
-			qa.Latitude.As("address_latitude"), qa.AdditionalInfo.As("address_additional_info"),
-			qa.CreatedTime.As("address_created_time"), qa.UpdatedTime.As("address_updated_time"),
-		).
-		Scan(&result)
+	err := global.DB.WithContext(context.Background()).
+		Table("users AS u").
+		Joins("LEFT JOIN user_address AS ua ON ua.user_id = u.id").
+		Joins("LEFT JOIN orgs AS o ON o.id = u.org_id").
+		Where("u.id = ?", uid).
+		Select(`
+			u.id,
+			u.name,
+			u.phone_number,
+			u.email,
+			u.status,
+			u.authority,
+			u.tenant_id,
+			u.remark,
+			u.additional_info,
+			u.organization,
+			u.timezone,
+			u.default_language,
+			u.created_at,
+			u.updated_at,
+			u.password_last_updated,
+			u.last_visit_time,
+			u.last_visit_ip,
+			u.last_visit_device,
+			u.password_fail_count,
+			u.avatar_url,
+			u.org_id,
+			u.user_kind,
+			o.org_type AS org_type,
+			o.name AS org_name,
+			ua.id AS address_id,
+			ua.country AS address_country,
+			ua.province AS address_province,
+			ua.city AS address_city,
+			ua.district AS address_district,
+			ua.street AS address_street,
+			ua.detailed_address AS address_detailed_address,
+			ua.postal_code AS address_postal_code,
+			ua.address_label AS address_label,
+			ua.longitude AS address_longitude,
+			ua.latitude AS address_latitude,
+			ua.additional_info AS address_additional_info,
+			ua.created_time AS address_created_time,
+			ua.updated_time AS address_updated_time
+		`).
+		Scan(&result).Error
 
 	if err != nil {
 		return nil, err
@@ -249,6 +280,10 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 		"last_visit_device":     result.LastVisitDevice,
 		"password_fail_count":   result.PasswordFailCount,
 		"avatar_url":            result.AvatarURL,
+		"org_id":                result.OrgID,
+		"user_kind":             result.UserKind,
+		"org_type":              result.OrgType,
+		"org_name":              result.OrgName,
 		"user_roles":            roles,
 	}
 

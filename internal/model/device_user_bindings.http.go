@@ -40,3 +40,39 @@ type DeviceUserBindingListResp struct {
 	Page     int                     `json:"page"`
 	PageSize int                     `json:"page_size"`
 }
+
+// AppOrgDeviceListReq APP端组织范围设备列表请求
+type AppOrgDeviceListReq struct {
+	Page     int `form:"page" binding:"required,min=1"`
+	PageSize int `form:"page_size" binding:"required,min=1,max=100"`
+
+	// 设备编号模糊查询
+	DeviceNumber *string `form:"device_number"`
+
+	// 按组织筛选
+	OwnerOrgID *string `form:"owner_org_id"`
+
+	// 按组织类型筛选（PACK_FACTORY/DEALER/STORE）
+	OwnerOrgType *string `form:"owner_org_type"`
+}
+
+// AppOrgDeviceListItem APP端组织范围设备列表项
+type AppOrgDeviceListItem struct {
+	DeviceID         string  `json:"device_id"`
+	DeviceNumber     string  `json:"device_number"`
+	DeviceName       *string `json:"device_name"`
+	IsOnline         int16   `json:"is_online"`
+	ActivationStatus *string `json:"activation_status"`
+
+	OwnerOrgID   *string `json:"owner_org_id"`
+	OwnerOrgName *string `json:"owner_org_name"`
+	OwnerOrgType *string `json:"owner_org_type"`
+}
+
+// AppOrgDeviceListResp APP端组织范围设备列表响应
+type AppOrgDeviceListResp struct {
+	List     []AppOrgDeviceListItem `json:"list"`
+	Total    int64                  `json:"total"`
+	Page     int                    `json:"page"`
+	PageSize int                    `json:"page_size"`
+}

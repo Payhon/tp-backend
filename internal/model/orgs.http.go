@@ -77,3 +77,15 @@ type OrgDetailResp struct {
 	DeviceCount int64 `json:"device_count"` // 关联设备数量
 	UserCount   int64 `json:"user_count"`   // 关联用户数量
 }
+
+// AppOrgOptionReq APP端组织选项请求
+type AppOrgOptionReq struct {
+	OrgType string `form:"org_type" binding:"required,oneof=PACK_FACTORY DEALER STORE"` // 目标组织类型
+}
+
+// AppOrgOptionResp APP端组织选项
+type AppOrgOptionResp struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	OrgType string `json:"org_type"`
+}

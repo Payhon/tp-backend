@@ -88,3 +88,57 @@ func (*DeviceBindingApi) GetUserDevices(c *gin.Context) {
 
 	c.Set("data", data)
 }
+
+// GetOrgDevices 获取当前组织范围内设备列表（APP端）
+// @Summary 获取组织范围设备列表
+// @Description 组织用户获取机构权限范围内设备列表
+// @Tags APP-Device
+// @Accept json
+// @Produce json
+// @Param page query int true "页码"
+// @Param page_size query int true "每页数量"
+// @Param device_number query string false "设备编号"
+// @Param owner_org_id query string false "组织ID"
+// @Param owner_org_type query string false "组织类型"
+// @Success 200 {object} model.AppOrgDeviceListResp
+// @Router /api/v1/app/device/org/list [get]
+func (*DeviceBindingApi) GetOrgDevices(c *gin.Context) {
+	var req model.AppOrgDeviceListReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.DeviceBinding.GetOrgDevices(req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.Set("data", data)
+}
+
+// GetOrgOptions 获取当前组织范围内下级组织选项（APP端）
+// @Summary 获取组织选项
+// @Description 组织用户获取下级组织选项（用于筛选设备）
+// @Tags APP-Device
+// @Accept json
+// @Produce json
+// @Param org_type query string true "组织类型: PACK_FACTORY, DEALER, STORE"
+// @Success 200 {array} model.AppOrgOptionResp
+// @Router /api/v1/app/org/options [get]
+func (*DeviceBindingApi) GetOrgOptions(c *gin.Context) {
+	var req model.AppOrgOptionReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.DeviceBinding.GetOrgOptions(c.Request.Context(), &req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.Set("data", data)
+}

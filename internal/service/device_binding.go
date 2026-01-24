@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
+	"project/internal/middleware"
 	"project/internal/model"
 	"project/internal/query"
 	"project/pkg/errcode"
@@ -501,4 +503,230 @@ func (*DeviceBinding) GetUserDevices(req model.DeviceUserBindingListReq, claims 
 		Page:     req.Page,
 		PageSize: req.PageSize,
 	}, nil
+}
+
+type appOrgDeviceRow struct {
+	DeviceID         string  `gorm:"column:device_id"`
+	DeviceNumber     string  `gorm:"column:device_number"`
+	DeviceName       *string `gorm:"column:device_name"`
+	IsOnline         int16   `gorm:"column:is_online"`
+	ActivationStatus *string `gorm:"column:activation_status"`
+	OwnerOrgID       *string `gorm:"column:owner_org_id"`
+	OwnerOrgName     *string `gorm:"column:owner_org_name"`
+	OwnerOrgType     *string `gorm:"column:owner_org_type"`
+}
+
+func allowOrgFilter(orgType, targetType string) bool {
+	switch strings.TrimSpace(orgType) {
+	case model.OrgTypeBMSFactory:
+		return targetType == model.OrgTypePACKFactory || targetType == model.OrgTypeDealer || targetType == model.OrgTypeStore
+	case model.OrgTypePACKFactory:
+		return targetType == model.OrgTypeDealer || targetType == model.OrgTypeStore
+	case model.OrgTypeDealer:
+		return targetType == model.OrgTypeStore
+	default:
+		return false
+	}
+}
+
+// GetOrgDevices 获取组织范围设备列表（APP端）
+func (*DeviceBinding) GetOrgDevices(req model.AppOrgDeviceListReq, claims *utils.UserClaims) (*model.AppOrgDeviceListResp, error) {
+	ctx := context.Background()
+	tenantID := strings.TrimSpace(claims.TenantID)
+	userID := strings.TrimSpace(claims.ID)
+	if tenantID == "" || userID == "" {
+		return &model.AppOrgDeviceListResp{
+			List:     []model.AppOrgDeviceListItem{},
+			Total:    0,
+			Page:     req.Page,
+			PageSize: req.PageSize,
+		}, nil
+	}
+
+	isAdmin := claims.Authority == "SYS_ADMIN" || claims.Authority == "TENANT_ADMIN"
+	userKind := model.UserKindEndUser
+	if !isAdmin {
+		var err error
+		userKind, err = GroupApp.OrgTypePermission.GetUserKind(ctx, tenantID, userID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_kind",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		}
+		if userKind != model.UserKindOrgUser {
+			return nil, errcode.New(errcode.CodeNoPermission)
+		}
+	}
+
+	orgID, _ := getUserOrgID(userID)
+	orgType := ""
+	if !isAdmin {
+		var ok bool
+		var err error
+		orgType, ok, err = GroupApp.OrgTypePermission.GetUserOrgType(ctx, tenantID, userID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_org_type",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		}
+		if !ok {
+			orgType = ""
+		}
+	}
+	orgType = strings.TrimSpace(orgType)
+	isFactory := isAdmin || orgType == model.OrgTypeBMSFactory || orgID == ""
+
+	db := global.DB.WithContext(ctx)
+	queryBuilder := db.Table("devices AS d").
+		Select(`
+			d.id AS device_id,
+			d.device_number AS device_number,
+			d.name AS device_name,
+			d.is_online AS is_online,
+			dbat.activation_status AS activation_status,
+			dbat.owner_org_id AS owner_org_id,
+			org.name AS owner_org_name,
+			org.org_type AS owner_org_type
+		`).
+		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
+		Joins(`LEFT JOIN orgs AS org ON org.id = dbat.owner_org_id`).
+		Where("d.tenant_id = ?", tenantID)
+
+	if !isFactory && orgID != "" {
+		queryBuilder = queryBuilder.Where(`dbat.owner_org_id IN (
+			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+		)`, tenantID, orgID)
+	}
+
+	if req.DeviceNumber != nil && strings.TrimSpace(*req.DeviceNumber) != "" {
+		queryBuilder = queryBuilder.Where("d.device_number ILIKE ?", "%"+strings.TrimSpace(*req.DeviceNumber)+"%")
+	}
+	if req.OwnerOrgID != nil && strings.TrimSpace(*req.OwnerOrgID) != "" {
+		ownerID := strings.TrimSpace(*req.OwnerOrgID)
+		if !isFactory && orgID != "" {
+			if !middleware.CanAccessOrg(tenantID, orgID, ownerID) {
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+		}
+		queryBuilder = queryBuilder.Where("dbat.owner_org_id = ?", ownerID)
+	} else if req.OwnerOrgType != nil && strings.TrimSpace(*req.OwnerOrgType) != "" {
+		ownerType := strings.TrimSpace(*req.OwnerOrgType)
+		if !isFactory && !allowOrgFilter(orgType, ownerType) {
+			return nil, errcode.New(errcode.CodeNoPermission)
+		}
+		queryBuilder = queryBuilder.Where("org.org_type = ?", ownerType)
+	}
+
+	var total int64
+	if err := queryBuilder.Count(&total).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	offset := (req.Page - 1) * req.PageSize
+	rows := make([]appOrgDeviceRow, 0, req.PageSize)
+	if err := queryBuilder.
+		Order("d.created_at DESC").
+		Offset(offset).
+		Limit(req.PageSize).
+		Scan(&rows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	list := make([]model.AppOrgDeviceListItem, 0, len(rows))
+	for _, r := range rows {
+		list = append(list, model.AppOrgDeviceListItem{
+			DeviceID:         r.DeviceID,
+			DeviceNumber:     r.DeviceNumber,
+			DeviceName:       r.DeviceName,
+			IsOnline:         r.IsOnline,
+			ActivationStatus: r.ActivationStatus,
+			OwnerOrgID:       r.OwnerOrgID,
+			OwnerOrgName:     r.OwnerOrgName,
+			OwnerOrgType:     r.OwnerOrgType,
+		})
+	}
+
+	return &model.AppOrgDeviceListResp{
+		List:     list,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	}, nil
+}
+
+// GetOrgOptions 获取组织选项（APP端）
+func (*DeviceBinding) GetOrgOptions(ctx context.Context, req *model.AppOrgOptionReq, claims *utils.UserClaims) ([]model.AppOrgOptionResp, error) {
+	tenantID := strings.TrimSpace(claims.TenantID)
+	userID := strings.TrimSpace(claims.ID)
+	if tenantID == "" || userID == "" {
+		return []model.AppOrgOptionResp{}, nil
+	}
+
+	isAdmin := claims.Authority == "SYS_ADMIN" || claims.Authority == "TENANT_ADMIN"
+	userKind := model.UserKindEndUser
+	if !isAdmin {
+		var err error
+		userKind, err = GroupApp.OrgTypePermission.GetUserKind(ctx, tenantID, userID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_kind",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		}
+		if userKind != model.UserKindOrgUser {
+			return nil, errcode.New(errcode.CodeNoPermission)
+		}
+	}
+
+	orgID, _ := getUserOrgID(userID)
+	orgType := ""
+	if !isAdmin {
+		var ok bool
+		var err error
+		orgType, ok, err = GroupApp.OrgTypePermission.GetUserOrgType(ctx, tenantID, userID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_org_type",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		}
+		if !ok {
+			orgType = ""
+		}
+	}
+	orgType = strings.TrimSpace(orgType)
+	isFactory := isAdmin || orgType == model.OrgTypeBMSFactory || orgID == ""
+
+	if !isFactory && !allowOrgFilter(orgType, req.OrgType) {
+		return nil, errcode.New(errcode.CodeNoPermission)
+	}
+
+	queryBuilder := global.DB.WithContext(ctx).
+		Table("orgs AS o").
+		Select("o.id, o.name, o.org_type").
+		Where("o.tenant_id = ? AND o.org_type = ?", tenantID, req.OrgType)
+
+	if !isFactory && orgID != "" {
+		queryBuilder = queryBuilder.Where(`o.id IN (
+			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+		)`, tenantID, orgID)
+	}
+
+	var rows []model.AppOrgOptionResp
+	if err := queryBuilder.Order("o.created_at ASC").Scan(&rows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+	return rows, nil
 }
