@@ -52,6 +52,56 @@ type appBatteryOtaCheckRow struct {
 	BatteryModelName *string `gorm:"column:battery_model_name"`
 }
 
+func canAccessOrgDevice(ctx context.Context, tenantID, userID, deviceID string) (bool, error) {
+	orgID, err := getUserOrgID(userID)
+	if err != nil {
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user_org_id",
+			"user_id":   userID,
+			"error":     err.Error(),
+		})
+	}
+
+	orgType := ""
+	if userID != "" {
+		if t, ok, err := GroupApp.OrgTypePermission.GetUserOrgType(ctx, tenantID, userID); err != nil {
+			return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_org_type",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		} else if ok {
+			orgType = strings.TrimSpace(t)
+		}
+	}
+
+	isFactory := orgType == model.OrgTypeBMSFactory || strings.TrimSpace(orgID) == ""
+	if isFactory {
+		return true, nil
+	}
+
+	var ownerOrgID *string
+	if err := global.DB.WithContext(ctx).
+		Table("device_batteries AS dbat").
+		Select("dbat.owner_org_id").
+		Joins("JOIN devices AS d ON d.id = dbat.device_id").
+		Where("d.id = ? AND d.tenant_id = ?", deviceID, tenantID).
+		Limit(1).
+		Scan(&ownerOrgID).Error; err != nil {
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_device_owner_org",
+			"device_id": deviceID,
+			"error":     err.Error(),
+		})
+	}
+
+	if ownerOrgID == nil || strings.TrimSpace(*ownerOrgID) == "" {
+		return false, nil
+	}
+
+	return canAccessOrg(tenantID, orgID, strings.TrimSpace(*ownerOrgID)), nil
+}
+
 // GetBatteryDetailForApp 获取APP端电池设备详情（要求设备已绑定到当前用户）
 func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, claims *utils.UserClaims) (*model.AppBatteryDetailResp, error) {
 	if deviceID == "" {
@@ -64,16 +114,34 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 	// 终端用户默认要求绑定；管理员允许跨设备查看（仍受 tenant 约束）
 	isAdmin := strings.Contains(strings.ToUpper(claims.Authority), "ADMIN")
 	if !isAdmin {
-		q := query.Use(global.DB)
-		if _, err := q.DeviceUserBinding.WithContext(ctx).
-			Where(
-				q.DeviceUserBinding.DeviceID.Eq(deviceID),
-				q.DeviceUserBinding.UserID.Eq(claims.ID),
-			).First(); err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not bound to current user")
+		userKind, err := GroupApp.OrgTypePermission.GetUserKind(ctx, claims.TenantID, claims.ID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_kind",
+				"user_id":   claims.ID,
+				"error":     err.Error(),
+			})
+		}
+		if userKind == model.UserKindOrgUser {
+			ok, err := canAccessOrgDevice(ctx, claims.TenantID, claims.ID, deviceID)
+			if err != nil {
+				return nil, err
 			}
-			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			if !ok {
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+		} else {
+			q := query.Use(global.DB)
+			if _, err := q.DeviceUserBinding.WithContext(ctx).
+				Where(
+					q.DeviceUserBinding.DeviceID.Eq(deviceID),
+					q.DeviceUserBinding.UserID.Eq(claims.ID),
+				).First(); err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not bound to current user")
+				}
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
 		}
 	}
 
