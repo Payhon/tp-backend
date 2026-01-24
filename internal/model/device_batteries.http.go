@@ -20,6 +20,9 @@ type BatteryListReq struct {
 	// 持有方组织ID（替代 DealerID）
 	OwnerOrgID *string `form:"owner_org_id"`
 
+	// 持有方组织类型（PACK_FACTORY/DEALER/STORE）
+	OwnerOrgType *string `form:"owner_org_type" binding:"omitempty,oneof=BMS_FACTORY PACK_FACTORY DEALER STORE"`
+
 	// 经销商（已废弃，保留兼容）
 	DealerID *string `form:"dealer_id"`
 
@@ -121,8 +124,14 @@ type BatteryExportReq struct {
 	// 激活状态：ACTIVE/INACTIVE
 	ActivationStatus *string `form:"activation_status" binding:"omitempty,oneof=ACTIVE INACTIVE"`
 
+	// 持有方组织ID
+	OwnerOrgID *string `form:"owner_org_id"`
+
 	// 经销商
 	DealerID *string `form:"dealer_id"`
+
+	// 持有方组织类型（PACK_FACTORY/DEALER/STORE）
+	OwnerOrgType *string `form:"owner_org_type" binding:"omitempty,oneof=BMS_FACTORY PACK_FACTORY DEALER STORE"`
 
 	// 出厂日期范围（YYYY-MM-DD）
 	ProductionDateStart *string `form:"production_date_start"`

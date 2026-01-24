@@ -58,7 +58,9 @@ func (*BatteryApi) CreateSingleBattery(c *gin.Context) {
 // @Param battery_model_id query string false "电池型号ID"
 // @Param is_online query int false "在线状态(1在线/0离线)"
 // @Param activation_status query string false "激活状态(ACTIVE/INACTIVE)"
-// @Param dealer_id query string false "经销商ID"
+// @Param owner_org_id query string false "归属组织ID"
+// @Param owner_org_type query string false "归属组织类型"
+// @Param dealer_id query string false "经销商ID(已废弃)"
 // @Param production_date_start query string false "出厂日期开始(YYYY-MM-DD)"
 // @Param production_date_end query string false "出厂日期结束(YYYY-MM-DD)"
 // @Param warranty_status query string false "质保状态(IN在保/OVER过保)"
@@ -72,11 +74,9 @@ func (*BatteryApi) GetBatteryList(c *gin.Context) {
 
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
 
-	// 经销商上下文（由 DealerAuthMiddleware 注入）
-	dealerIDVal, _ := c.Get(middleware.DealerIDContextKey)
-	dealerID, _ := dealerIDVal.(string)
+	orgID := middleware.GetOrgID(c)
 
-	data, err := service.GroupApp.Battery.GetBatteryList(context.Background(), req, userClaims, dealerID)
+	data, err := service.GroupApp.Battery.GetBatteryList(context.Background(), req, userClaims, orgID)
 	if err != nil {
 		c.Error(err)
 		return
@@ -95,7 +95,9 @@ func (*BatteryApi) GetBatteryList(c *gin.Context) {
 // @Param battery_model_id query string false "电池型号ID"
 // @Param is_online query int false "在线状态(1在线/0离线)"
 // @Param activation_status query string false "激活状态(ACTIVE/INACTIVE)"
-// @Param dealer_id query string false "经销商ID"
+// @Param owner_org_id query string false "归属组织ID"
+// @Param owner_org_type query string false "归属组织类型"
+// @Param dealer_id query string false "经销商ID(已废弃)"
 // @Param production_date_start query string false "出厂日期开始(YYYY-MM-DD)"
 // @Param production_date_end query string false "出厂日期结束(YYYY-MM-DD)"
 // @Param warranty_status query string false "质保状态(IN在保/OVER过保)"
@@ -108,10 +110,9 @@ func (*BatteryApi) ExportBatteryList(c *gin.Context) {
 	}
 
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
-	dealerIDVal, _ := c.Get(middleware.DealerIDContextKey)
-	dealerID, _ := dealerIDVal.(string)
+	orgID := middleware.GetOrgID(c)
 
-	filePath, err := service.GroupApp.Battery.ExportBatteryList(context.Background(), req, userClaims, dealerID)
+	filePath, err := service.GroupApp.Battery.ExportBatteryList(context.Background(), req, userClaims, orgID)
 	if err != nil {
 		c.Error(err)
 		return

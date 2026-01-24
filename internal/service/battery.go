@@ -267,11 +267,25 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 		Joins(`LEFT JOIN users AS u ON u.id = dub.user_id`).
 		Where("d.tenant_id = ?", claims.TenantID)
 
-	// 组织数据隔离：orgID 不为空时只看子树内设备
+	// 组织数据隔离：orgID 不为空时只看子树内设备（BMS_FACTORY 同时包含未归属库存）
 	if orgID != "" {
-		queryBuilder = queryBuilder.Where(`dbat.owner_org_id IN (
-			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
-		)`, claims.TenantID, orgID)
+		var orgType string
+		_ = global.DB.Table("orgs").
+			Select("org_type").
+			Where("id = ? AND tenant_id = ?", orgID, claims.TenantID).
+			Scan(&orgType).Error
+		orgType = strings.TrimSpace(orgType)
+		if orgType == model.OrgTypeBMSFactory {
+			queryBuilder = queryBuilder.Where(`(
+				dbat.owner_org_id IS NULL OR dbat.owner_org_id IN (
+					SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+				)
+			)`, claims.TenantID, orgID)
+		} else {
+			queryBuilder = queryBuilder.Where(`dbat.owner_org_id IN (
+				SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+			)`, claims.TenantID, orgID)
+		}
 	}
 
 	// 条件筛选
@@ -290,6 +304,9 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 	if req.OwnerOrgID != nil && *req.OwnerOrgID != "" {
 		// 按指定组织筛选（厂家侧可用）
 		queryBuilder = queryBuilder.Where("dbat.owner_org_id = ?", *req.OwnerOrgID)
+	}
+	if req.OwnerOrgType != nil && *req.OwnerOrgType != "" {
+		queryBuilder = queryBuilder.Where("org.org_type = ?", *req.OwnerOrgType)
 	}
 
 	// 出厂日期范围（YYYY-MM-DD）
@@ -391,7 +408,7 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 }
 
 // buildBatteryQuery 构建电池查询（复用逻辑）
-func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *utils.UserClaims, dealerID string) *gorm.DB {
+func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *utils.UserClaims, orgID string) *gorm.DB {
 	db := global.DB.WithContext(ctx)
 
 	queryBuilder := db.Table("devices AS d").
@@ -403,6 +420,9 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 			bm.name AS battery_model_name,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
+			dbat.owner_org_id AS owner_org_id,
+			org.name AS owner_org_name,
+			org.org_type AS owner_org_type,
 			dbat.dealer_id AS dealer_id,
 			de.name AS dealer_name,
 			u.id AS user_id,
@@ -418,14 +438,31 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 		`).
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
 		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN orgs AS org ON org.id = dbat.owner_org_id`).
 		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`).
 		Joins(`LEFT JOIN device_user_bindings AS dub ON dub.device_id = d.id AND dub.is_owner = true`).
 		Joins(`LEFT JOIN users AS u ON u.id = dub.user_id`).
 		Where("d.tenant_id = ?", claims.TenantID)
 
-	// 经销商数据隔离
-	if dealerID != "" {
-		queryBuilder = queryBuilder.Where("dbat.dealer_id = ?", dealerID)
+	// 组织数据隔离（BMS_FACTORY 同时包含未归属库存）
+	if orgID != "" {
+		var orgType string
+		_ = global.DB.Table("orgs").
+			Select("org_type").
+			Where("id = ? AND tenant_id = ?", orgID, claims.TenantID).
+			Scan(&orgType).Error
+		orgType = strings.TrimSpace(orgType)
+		if orgType == model.OrgTypeBMSFactory {
+			queryBuilder = queryBuilder.Where(`(
+				dbat.owner_org_id IS NULL OR dbat.owner_org_id IN (
+					SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+				)
+			)`, claims.TenantID, orgID)
+		} else {
+			queryBuilder = queryBuilder.Where(`dbat.owner_org_id IN (
+				SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+			)`, claims.TenantID, orgID)
+		}
 	}
 
 	// 条件筛选
@@ -440,6 +477,12 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 	}
 	if req.ActivationStatus != nil && *req.ActivationStatus != "" {
 		queryBuilder = queryBuilder.Where("dbat.activation_status = ?", *req.ActivationStatus)
+	}
+	if req.OwnerOrgID != nil && *req.OwnerOrgID != "" {
+		queryBuilder = queryBuilder.Where("dbat.owner_org_id = ?", *req.OwnerOrgID)
+	}
+	if req.OwnerOrgType != nil && *req.OwnerOrgType != "" {
+		queryBuilder = queryBuilder.Where("org.org_type = ?", *req.OwnerOrgType)
 	}
 	if req.DealerID != nil && *req.DealerID != "" {
 		queryBuilder = queryBuilder.Where("dbat.dealer_id = ?", *req.DealerID)
@@ -498,7 +541,7 @@ func (*Battery) ExportBatteryList(ctx context.Context, req model.BatteryExportRe
 	f.SetActiveSheet(index)
 
 	// 设置表头
-	headers := []string{"序列号", "设备名称", "电池型号", "出厂日期", "质保到期", "经销商", "终端用户", "用户电话", "激活状态", "激活时间", "在线状态", "SOC(%)", "SOH(%)", "固件版本", "流转状态"}
+	headers := []string{"序列号", "设备名称", "电池型号", "出厂日期", "质保到期", "归属机构", "终端用户", "用户电话", "激活状态", "激活时间", "在线状态", "SOC(%)", "SOH(%)", "固件版本", "流转状态"}
 	for i, h := range headers {
 		cell := fmt.Sprintf("%c1", 'A'+i)
 		f.SetCellValue(sheetName, cell, h)
@@ -536,10 +579,12 @@ func (*Battery) ExportBatteryList(ctx context.Context, req model.BatteryExportRe
 		} else {
 			setCell("")
 		}
-		if r.DealerName != nil {
+		if r.OwnerOrgName != nil && *r.OwnerOrgName != "" {
+			setCell(*r.OwnerOrgName)
+		} else if r.DealerName != nil && *r.DealerName != "" {
 			setCell(*r.DealerName)
 		} else {
-			setCell("厂家")
+			setCell("厂家库存")
 		}
 		if r.UserName != nil {
 			setCell(*r.UserName)
