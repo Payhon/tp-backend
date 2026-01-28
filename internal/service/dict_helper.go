@@ -44,3 +44,33 @@ func GetDictValueByConfigKey(configKey, tenantID string) (string, error) {
 	}
 	return "", nil
 }
+
+// GetDictValueByKey 直接按字典KEY读取（优先租户，其次全局）
+func GetDictValueByKey(dictKey, tenantID string) (string, error) {
+	key := strings.TrimSpace(dictKey)
+	if key == "" {
+		return "", nil
+	}
+
+	tenantIDs := []string{"0"}
+	preferTenant := "0"
+	if strings.TrimSpace(tenantID) != "" && tenantID != "0" {
+		tenantIDs = []string{"0", tenantID}
+		preferTenant = tenantID
+	}
+
+	list, err := dal.GetDictListByCode(key, tenantIDs, preferTenant)
+	if err != nil {
+		return "", err
+	}
+	for _, item := range list {
+		if item == nil {
+			continue
+		}
+		val := strings.TrimSpace(item.DictValue)
+		if val != "" {
+			return val, nil
+		}
+	}
+	return "", nil
+}

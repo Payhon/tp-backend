@@ -28,29 +28,37 @@ Fjia Cloud平台支持通过 MQTT 协议接入BMS设备，支持以下四种数�
 
 ### 1.2 连接信息获取
 
-设备接入前，需要通过平台 API 获取连接信息：
+设备接入前，需要通过平台 API 获取连接信息（PUBLIC，无需登录）：
 
 **API Host**: https://fjiacloud.com/api  (待定)
 
-**API 端点**: `/api/device/connect`
-
-**请求参数**:
-```json
-{
-  "device_id": "设备ID"
-}
+**API 端点**:
 ```
+GET /api/v1/device/conn_info?device_id={device_id}&sk={DC_INFO_SK}&tenant_id={tenant_id}
+```
+
+**参数说明**:
+- `device_id`：设备唯一编号，对应 `device_batteries.item_uuid`
+- `sk`：设备连接安全 KEY，与租户字典 KEY `DC_INFO_SK` 必须完全一致
+- `tenant_id`：租户 ID
 
 **响应示例**:
 ```json
 {
-  "500001": "127.0.0.1:1883",           // MQTT Broker 地址
-  "500002": "mqtt_abc123def4",          // ClientID（建议格式：mqtt_ + 设备ID前12位）
-  "500003": "devices/telemetry",        // 遥测数据上报 Topic
-  "500004": "devices/telemetry/control/{device_number}",  // 遥测控制订阅 Topic
-  "500005": "{\"switch\":1}"            // 示例数据
+  "dtu_domain_port": "tcp://fjbms.yz6688.cn:1883",
+  "client_id": "bms_abc12345",
+  "username": "mqtt_user",
+  "password": "mqtt_password",
+  "tx_topic": "device/socket/tx/{device_id}",
+  "rx_topic": "device/socket/rx/{device_id}"
 }
 ```
+
+**字段来源说明**:
+- `dtu_domain_port`：取租户字典 KEY `DTU_DOMAIN_PORT`；如未配置则使用后端配置 `bms.dtu_domain_port`（或 `bms.provision.dtu_domain_port`）
+- `client_id`：固定为 `bms_{device.id}`（`devices` 表主键）
+- `username` / `password`：来自 `devices.voucher`（JSON 字段）；若 `voucher` 内无 `password` 字段，则返回空字符串
+- `tx_topic` / `rx_topic`：优先取租户字典 KEY `TX_TOPIC` / `RX_TOPIC`；未配置则使用后端默认配置 `bms.tx_topic` / `bms.rx_topic`（默认 `device/socket/tx/{device_id}`、`device/socket/rx/{device_id}`），并将 `{device_id}` 替换为 `device_batteries.item_uuid`
 
 ---
 

@@ -552,6 +552,24 @@ func (*DeviceApi) DeviceConnect(c *gin.Context) {
 	c.Set("data", list)
 }
 
+// DeviceConnInfo
+// @AUTHOR:zxq
+// @DATE: 2025-01-28
+// @DESCRIPTIONS: BMS 设备连接信息（PUBLIC）
+// /api/v1/device/conn_info
+func (*DeviceApi) DeviceConnInfo(c *gin.Context) {
+	var param model.DeviceConnInfoReq
+	if !BindAndValidate(c, &param) {
+		return
+	}
+	data, err := service.GroupApp.Device.GetBMSDeviceConnInfo(c, &param)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // UpdateDeviceVoucher
 // @AUTHOR:zxq
 // @DATE: 2024-04-15 16:04

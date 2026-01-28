@@ -225,6 +225,23 @@ type DeviceConnectFormReq struct {
 	DeviceID string `query:"device_id" form:"device_id" json:"device_id" validate:"required,max=36"`
 }
 
+// BMS 设备连接信息查询（PUBLIC）
+type DeviceConnInfoReq struct {
+	DeviceID string `query:"device_id" form:"device_id" json:"device_id" validate:"required,max=64"` // device_batteries.item_uuid
+	SK       string `query:"sk" form:"sk" json:"sk" validate:"required,max=128"`                     // 安全 KEY（DC_INFO_SK）
+	TenantID string `query:"tenant_id" form:"tenant_id" json:"tenant_id" validate:"required,max=36"` // 租户 ID
+}
+
+// BMS 设备连接信息响应
+type DeviceConnInfoResp struct {
+	DTUDomainPort string `json:"dtu_domain_port"`
+	ClientID      string `json:"client_id"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	TxTopic       string `json:"tx_topic"`
+	RxTopic       string `json:"rx_topic"`
+}
+
 type DeviceConnectFormRes struct {
 	DataKey     string                       `json:"dataKey"`
 	Label       string                       `json:"label"`

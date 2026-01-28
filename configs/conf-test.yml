@@ -145,6 +145,9 @@ bms:
   provision:
     # 写入设备寄存器 0x53A~0x56F（108字节 ASCII）："domain:port"
     dtu_domain_port: "fjbms.yz6688.cn:1883"
+  # BMS 设备 MQTT 透传默认 Topic（可被租户字典 TX_TOPIC/RX_TOPIC 覆盖）
+  tx_topic: "device/socket/tx/{device_id}"
+  rx_topic: "device/socket/rx/{device_id}"
     
 automation_task_confg:
   once_task_limit: 100
