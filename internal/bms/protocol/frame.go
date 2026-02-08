@@ -10,6 +10,7 @@ const (
 
 const (
 	FuncReadHoldingRegisters byte = 0x03
+	FuncSocketRead           byte = 0x0F
 	FuncWriteMultipleRegs    byte = 0x10
 	FuncAssignSlaveAddr      byte = 0x11
 	FuncReadUUID             byte = 0xFF

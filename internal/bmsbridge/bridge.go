@@ -236,21 +236,41 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			"byteCount":     f.ByteCount,
 		}).Debug("bms bridge parsed read frame")
 
-		if f.FunctionCode != b.cfg.Report.FunctionCode {
+		if f.FunctionCode != b.cfg.Report.FunctionCode && f.FunctionCode != 0x0F {
 			// Ignore normal request/response traffic; focus on report frames.
 			return nil
 		}
 
-		registers, err := protocol.SplitIntoRegistersBE(f.Data)
+		reportStart := b.cfg.Report.StatusStartAddress
+		payload := f.Data
+		if f.FunctionCode == 0x0F {
+			startAddress, quantity, rest, err := protocol.ParseSocketReadPayload(f.Data)
+			if err != nil {
+				return err
+			}
+			reportStart = startAddress
+			payload = rest
+			if quantity > 0 && int(quantity)*2 != len(rest) {
+				b.log.WithFields(logrus.Fields{
+					"device_id": msg.deviceID,
+					"quantity":  quantity,
+					"byteLen":   len(rest),
+				}).Debug("socket payload length mismatch")
+			}
+		}
+
+		registers, err := protocol.SplitIntoRegistersBE(payload)
 		if err != nil {
 			return err
 		}
 
-		reportStart := b.cfg.Report.StatusStartAddress
 		flat := make(map[string]any, 256)
 		flat["report.startAddress"] = int(reportStart)
 		flat["report.quantity"] = len(registers)
 		flat = merge(flat, flattenRegisters(reportStart, registers))
+		if extra := decodeSocketRegisters(reportStart, registers); extra != nil {
+			flat = merge(flat, extra)
+		}
 
 		// If it's a status block report, decode semantic status and merge.
 		if reportStart == 0x100 {
@@ -292,6 +312,9 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 		flat["report.startAddress"] = int(reportStart)
 		flat["report.quantity"] = len(registers)
 		flat = merge(flat, flattenRegisters(reportStart, registers))
+		if extra := decodeSocketRegisters(reportStart, registers); extra != nil {
+			flat = merge(flat, extra)
+		}
 
 		if reportStart == 0x100 {
 			if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
@@ -433,11 +456,21 @@ func (b *Bridge) publishJSON(topic string, qos byte, payload any) error {
 }
 
 var allowedDeviceBatteryColumns = map[string]struct{}{
-	"soc":          {},
-	"soh":          {},
-	"ble_mac":      {},
-	"item_uuid":    {},
-	"comm_chip_id": {},
+	"soc":               {},
+	"soh":               {},
+	"ble_mac":           {},
+	"item_uuid":         {},
+	"comm_chip_id":      {},
+	"longitude":         {},
+	"latitude":          {},
+	"speed":             {},
+	"altitude":          {},
+	"rssi":              {},
+	"tac":               {},
+	"cell_id":           {},
+	"imei":              {},
+	"iccid":             {},
+	"module_sw_version": {},
 }
 
 func (b *Bridge) syncDeviceBatteries(ctx context.Context, deviceID string, flat map[string]any, mapping map[string]string) error {

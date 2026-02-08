@@ -320,6 +320,10 @@ func main() {
 					regs[i] = store.get(f.StartAddress + uint16(i))
 				}
 				data := regsToBEBytes(regs)
+				if f.FunctionCode == 0x0F {
+					prefix := []byte{byte(f.StartAddress >> 8), byte(f.StartAddress & 0xFF), byte(f.Quantity >> 8), byte(f.Quantity & 0xFF)}
+					data = append(prefix, data...)
+				}
 
 				resp := protocol.BuildReadResponseFrame(byte(*bmsAddr), f.SourceAddress, f.FunctionCode, data)
 				out := socketPayload{Hex: protocol.BytesToHexUpper(resp)}
@@ -388,6 +392,10 @@ func main() {
 					switch strings.ToLower(strings.TrimSpace(*reportFormat)) {
 					case "read":
 						data := regsToBEBytes(regs)
+						if funcCode == 0x0F {
+							prefix := []byte{byte(start >> 8), byte(start & 0xFF), byte(qty >> 8), byte(qty & 0xFF)}
+							data = append(prefix, data...)
+						}
 						// read response style does NOT carry start address; bms_bridge will use its configured status_start_address.
 						frame = protocol.BuildReadResponseFrame(byte(*bmsAddr), 0xFE, funcCode, data)
 					default:

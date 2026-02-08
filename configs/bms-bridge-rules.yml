@@ -43,10 +43,19 @@ default:
       soh: energy.sohPct
       ble_mac: identity.bluetoothMac
       item_uuid: identity.boardCode
+      longitude: socket.longitude
+      latitude: socket.latitude
+      speed: socket.speedKmh
+      altitude: socket.altitudeM
+      rssi: socket.rssi
+      tac: socket.tac
+      cell_id: socket.cellId
+      imei: socket.imei
+      iccid: socket.iccid
+      module_sw_version: socket.moduleVersion
 
 # Per-device overrides (optional):
 # by_device:
 #   "abc123-def456-ghi789-jkl012":
 #     telemetry:
 #       soc: energy.socPct
-

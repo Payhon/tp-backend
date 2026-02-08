@@ -26,6 +26,16 @@ type DeviceBattery struct {
 	BatchNumber        *string    `gorm:"column:batch_number" json:"batch_number"`
 	Soc                *float64   `gorm:"column:soc" json:"soc"`
 	Soh                *float64   `gorm:"column:soh" json:"soh"`
+	Longitude          *float64   `gorm:"column:longitude" json:"longitude"`
+	Latitude           *float64   `gorm:"column:latitude" json:"latitude"`
+	Speed              *float64   `gorm:"column:speed" json:"speed"`
+	Altitude           *int       `gorm:"column:altitude" json:"altitude"`
+	Rssi               *int       `gorm:"column:rssi" json:"rssi"`
+	Tac                *int       `gorm:"column:tac" json:"tac"`
+	CellID             *int64     `gorm:"column:cell_id" json:"cell_id"`
+	Imei               *string    `gorm:"column:imei" json:"imei"`
+	Iccid              *string    `gorm:"column:iccid" json:"iccid"`
+	ModuleSwVersion    *string    `gorm:"column:module_sw_version" json:"module_sw_version"`
 	UpdatedAt          *time.Time `gorm:"column:updated_at;default:now()" json:"updated_at"`
 }
 

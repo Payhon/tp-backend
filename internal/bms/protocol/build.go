@@ -76,3 +76,14 @@ func BuildWriteResponseFrame(sourceAddress, targetAddress, functionCode byte, st
 	frame = append(frame, byte(crc&0xFF), byte((crc>>8)&0xFF), FrameTail)
 	return frame
 }
+
+// ParseSocketReadPayload parses 4G socket read/report payload.
+// Data layout: [startHi,startLo,qtyHi,qtyLo, data...]
+func ParseSocketReadPayload(data []byte) (startAddress uint16, quantity uint16, payload []byte, err error) {
+	if len(data) < 4 {
+		return 0, 0, nil, &ProtocolError{Message: "socket payload too short", Extra: map[string]any{"length": len(data)}}
+	}
+	startAddress = uint16(data[0])<<8 | uint16(data[1])
+	quantity = uint16(data[2])<<8 | uint16(data[3])
+	return startAddress, quantity, data[4:], nil
+}
