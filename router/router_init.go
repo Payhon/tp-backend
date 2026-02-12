@@ -118,6 +118,13 @@ func RouterInit() *gin.Engine {
 				appContentPublic.GET("faqs", controllers.AppContentApi.ListFaqsForApp)
 			}
 
+			// APP升级（无需登录）：APP端检查更新（替代 uniCloud）
+			appUpgrade := v1.Group("app/upgrade")
+			appUpgrade.Use(middleware.RequireTenantHeader())
+			{
+				appUpgrade.POST("check", controllers.AppUpgradeApi.CheckVersion)
+			}
+
 			// 设备遥测（ws）
 			v1.GET("telemetry/datas/current/ws", controllers.TelemetryDataApi.ServeCurrentDataByWS)
 			// 设备在线离线状态（ws）
