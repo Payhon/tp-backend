@@ -21,13 +21,13 @@ func (*OpenAPIKeyApi) CreateOpenAPIKey(c *gin.Context) {
 
 	var userClaims = c.MustGet("claims").(*utils.UserClaims)
 
-	err := service.GroupApp.OpenAPIKey.CreateOpenAPIKey(&createReq, userClaims)
+	data, err := service.GroupApp.OpenAPIKey.CreateOpenAPIKey(&createReq, userClaims)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.Set("data", nil)
+	c.Set("data", data)
 }
 
 // GetOpenAPIKeyList 获取API密钥列表
@@ -59,13 +59,13 @@ func (*OpenAPIKeyApi) UpdateOpenAPIKey(c *gin.Context) {
 
 	var userClaims = c.MustGet("claims").(*utils.UserClaims)
 
-	err := service.GroupApp.OpenAPIKey.UpdateOpenAPIKey(&updateReq, userClaims)
+	data, err := service.GroupApp.OpenAPIKey.UpdateOpenAPIKey(&updateReq, userClaims)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.Set("data", nil)
+	c.Set("data", data)
 }
 
 // DeleteOpenAPIKey 删除API密钥

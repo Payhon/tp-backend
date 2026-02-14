@@ -6,6 +6,15 @@ import (
 	"fmt"
 )
 
+// GenerateAppID 生成对外可见的 AppID
+func GenerateAppID() (string, error) {
+	bytes := make([]byte, 12)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("生成AppID失败: %v", err)
+	}
+	return fmt.Sprintf("app_%s", hex.EncodeToString(bytes)), nil
+}
+
 // GenerateAPIKey 生成一个 API Key
 func GenerateAPIKey() (string, error) {
 	// 生成32字节的随机数

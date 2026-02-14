@@ -146,6 +146,13 @@ func RouterInit() *gin.Engine {
 			v1.POST("/device/gateway-sub-register", controllers.DeviceApi.GatewaySubRegister)
 			// BMS 设备连接信息（PUBLIC）
 			v1.GET("device/conn_info", controllers.DeviceApi.DeviceConnInfo)
+			// 第三方 MES OpenAPI（AppId + SecretKey）
+			mesOpenAPI := v1.Group("openapi/mes")
+			mesOpenAPI.Use(middleware.OpenAPIAppSecretAuth())
+			{
+				mesOpenAPI.POST("battery", controllers.OpenBatteryApi.CreateBattery)
+				mesOpenAPI.GET("battery/:serial_number", controllers.OpenBatteryApi.GetBatteryBySerial)
+			}
 			// 获取系统版本
 			v1.GET("sys_version", controllers.SystemApi.HandleSysVersion)
 			// 设备动态认证（一型一密）

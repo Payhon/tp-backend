@@ -146,6 +146,9 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 		if err != nil {
 			logrus.Error(err)
 		}
+		if err := GroupApp.OpenAPIKey.EnsureTenantDefaultOpenAPIKey(context.Background(), *user.TenantID, user.ID); err != nil {
+			logrus.Errorf("create default open api key failed, tenant_id=%s err=%v", *user.TenantID, err)
+		}
 	}
 
 	// 绑定角色
@@ -849,6 +852,11 @@ func (u *User) EmailRegister(ctx context.Context, req *model.EmailRegisterReq) (
 			"tenant_id": tenantID,
 			"error":     err.Error(),
 		})
+	}
+
+	// 租户初始化时自动关联默认 OpenAPI 密钥（用于第三方 MES 对接）
+	if err := GroupApp.OpenAPIKey.EnsureTenantDefaultOpenAPIKey(ctx, tenantID, userInfo.ID); err != nil {
+		logrus.Errorf("create default open api key failed, tenant_id=%s err=%v", tenantID, err)
 	}
 
 	return u.UserLoginAfter(userInfo)

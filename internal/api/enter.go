@@ -52,6 +52,7 @@ type Controller struct {
 	ServiceAccessApi              // 服务接入管理
 	ExpectedDataApi               // 预期数据
 	OpenAPIKeyApi                 // OpenAPI密钥
+	OpenBatteryApi                // 第三方 MES 电池接口
 	MessagePushApi
 	SystemMonitorApi
 	DeviceAuthApi // 设备动态认证
