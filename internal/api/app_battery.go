@@ -89,6 +89,32 @@ func (*AppBatteryApi) CheckBatteryOta(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// ReportBatteryData APP端BMS数据上报（BLE 经 App 上云）
+// @Summary APP端BMS数据上报
+// @Description BLE连接场景下，APP将读取到的BMS核心数据/快照上报到云端
+// @Tags APP-Battery
+// @Accept json
+// @Produce json
+// @Param body body model.AppBatteryReportReq true "上报请求"
+// @Success 200 {object} model.AppBatteryReportResp
+// @Router /api/v1/app/battery/report [post]
+func (*AppBatteryApi) ReportBatteryData(c *gin.Context) {
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	var req model.AppBatteryReportReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errcode.NewWithMessage(errcode.CodeParamError, "invalid request body"))
+		return
+	}
+
+	data, err := service.GroupApp.AppBattery.ReportBatteryDataForApp(context.Background(), req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // ServeBatterySocketByWS APP端：MQTT透传(WebSocket桥接)
 // 客户端首次消息需发送 JSON：{"device_id":"...","token":"..."}
 // 随后发送：

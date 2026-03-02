@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 	global "project/pkg/global"
 	"project/pkg/utils"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AppBattery APP端：电池设备详情/透传（仅提供基础数据）
@@ -50,6 +53,38 @@ type appBatteryOtaCheckRow struct {
 	TenantID         *string `gorm:"column:tenant_id"`
 	BatteryModelID   *string `gorm:"column:battery_model_id"`
 	BatteryModelName *string `gorm:"column:battery_model_name"`
+}
+
+const (
+	appBatterySnapshotKey      = "bms.snapshot"
+	appBatterySnapshotMaxBytes = 64 * 1024
+)
+
+var appBatteryCoreKeyWhitelist = map[string]struct{}{
+	"soc":                   {},
+	"soh":                   {},
+	"vPackV":                {},
+	"currentA":              {},
+	"avgCellVoltageMv":      {},
+	"highestCellVoltageMv":  {},
+	"lowestCellVoltageMv":   {},
+	"maxCellVoltageDiffMv":  {},
+	"chargeMosC":            {},
+	"dischargeMosC":         {},
+	"ambientC":              {},
+	"cycleCount":            {},
+	"chargeRemainingMin":    {},
+	"dischargeRemainingMin": {},
+	"chargeFetOn":           {},
+	"dischargeFetOn":        {},
+	"charging":              {},
+	"discharging":           {},
+	"balancingOn":           {},
+	"protectOn":             {},
+	"alarmCount":            {},
+	"protectCount":          {},
+	"faultCount":            {},
+	"seriesCount":           {},
 }
 
 func canAccessOrgDevice(ctx context.Context, tenantID, userID, deviceID string) (bool, error) {
@@ -412,6 +447,390 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 	resp.Remark = selected.Remark
 
 	return resp, nil
+}
+
+// ReportBatteryDataForApp APP端BMS上报（BLE 经 App 上云）
+func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBatteryReportReq, claims *utils.UserClaims) (*model.AppBatteryReportResp, error) {
+	if claims == nil || claims.ID == "" || claims.TenantID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
+	}
+
+	deviceID := strings.TrimSpace(req.DeviceID)
+	if deviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+	if req.Ts <= 0 {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "ts must be a valid millisecond timestamp")
+	}
+	if len(req.Core) == 0 {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "core is required")
+	}
+
+	connType := strings.ToLower(strings.TrimSpace(req.ConnType))
+	if connType == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "conn_type is required")
+	}
+	platform := strings.ToLower(strings.TrimSpace(req.Platform))
+	if platform == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "platform is required")
+	}
+
+	enabled := true
+	if viper.IsSet("bms.app_report.enabled") {
+		enabled = viper.GetBool("bms.app_report.enabled")
+	}
+	if !enabled {
+		return &model.AppBatteryReportResp{
+			DeviceID:      deviceID,
+			Ts:            req.Ts,
+			Accepted:      false,
+			IgnoredReason: "feature_disabled",
+		}, nil
+	}
+
+	bluetoothOnly := true
+	if viper.IsSet("bms.app_report.bluetooth_only") {
+		bluetoothOnly = viper.GetBool("bms.app_report.bluetooth_only")
+	}
+	if bluetoothOnly && connType != "bluetooth" {
+		return &model.AppBatteryReportResp{
+			DeviceID:      deviceID,
+			Ts:            req.Ts,
+			Accepted:      false,
+			IgnoredReason: "bluetooth_only",
+		}, nil
+	}
+
+	// 复用现有APP设备权限校验（绑定/组织/租户）
+	if _, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims); err != nil {
+		return nil, err
+	}
+
+	coreValues, err := normalizeAppBatteryCore(req.Core)
+	if err != nil {
+		return nil, err
+	}
+
+	var snapshotRaw *string
+	if req.Snapshot != nil {
+		s, err := normalizeAppBatterySnapshot(req.Snapshot)
+		if err != nil {
+			return nil, err
+		}
+		snapshotRaw = &s
+	}
+
+	reportTs := req.Ts
+	reportAt := time.UnixMilli(reportTs).UTC()
+	tenantID := claims.TenantID
+
+	historyRows := make([]model.TelemetryData, 0, len(coreValues)+1)
+	currentRows := make([]model.TelemetryCurrentData, 0, len(coreValues)+1)
+	wsPayload := make(map[string]interface{}, len(coreValues)+1)
+
+	for key, value := range coreValues {
+		boolV, numberV, stringV := toTelemetryColumns(value)
+		historyRows = append(historyRows, model.TelemetryData{
+			DeviceID: deviceID,
+			Key:      key,
+			T:        reportTs,
+			BoolV:    boolV,
+			NumberV:  numberV,
+			StringV:  stringV,
+			TenantID: &tenantID,
+		})
+		currentRows = append(currentRows, model.TelemetryCurrentData{
+			DeviceID: deviceID,
+			Key:      key,
+			T:        reportAt,
+			BoolV:    boolV,
+			NumberV:  numberV,
+			StringV:  stringV,
+			TenantID: &tenantID,
+		})
+		wsPayload[key] = value
+	}
+
+	if snapshotRaw != nil {
+		historyRows = append(historyRows, model.TelemetryData{
+			DeviceID: deviceID,
+			Key:      appBatterySnapshotKey,
+			T:        reportTs,
+			StringV:  snapshotRaw,
+			TenantID: &tenantID,
+		})
+		currentRows = append(currentRows, model.TelemetryCurrentData{
+			DeviceID: deviceID,
+			Key:      appBatterySnapshotKey,
+			T:        reportAt,
+			StringV:  snapshotRaw,
+			TenantID: &tenantID,
+		})
+		wsPayload[appBatterySnapshotKey] = *snapshotRaw
+	}
+
+	err = global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(historyRows) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "device_id"}, {Name: "key"}, {Name: "ts"}},
+				DoNothing: true,
+			}).Create(&historyRows).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(currentRows) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"ts", "bool_v", "number_v", "string_v", "tenant_id",
+				}),
+				Where: clause.Where{
+					Exprs: []clause.Expression{clause.Expr{SQL: "telemetry_current_datas.ts <= EXCLUDED.ts"}},
+				},
+			}).Create(&currentRows).Error; err != nil {
+				return err
+			}
+		}
+
+		var soc *float64
+		var soh *float64
+		var bleMac *string
+		if v, ok := coreValues["soc"]; ok {
+			if n, ok := toFloat64(v); ok {
+				soc = &n
+			}
+		}
+		if v, ok := coreValues["soh"]; ok {
+			if n, ok := toFloat64(v); ok {
+				soh = &n
+			}
+		}
+		if req.Snapshot != nil {
+			if identity, ok := req.Snapshot["identity"].(map[string]interface{}); ok {
+				if s, ok := toNonEmptyString(identity["bluetoothMac"]); ok {
+					bleMac = &s
+				}
+				if bleMac == nil {
+					if s, ok := toNonEmptyString(identity["bluetooth_mac"]); ok {
+						bleMac = &s
+					}
+				}
+			}
+		}
+
+		if soc != nil || soh != nil || bleMac != nil {
+			if err := tx.Exec(
+				`INSERT INTO device_batteries (device_id, soc, soh, ble_mac, updated_at)
+				 VALUES (?, ?, ?, ?, NOW())
+				 ON CONFLICT (device_id) DO UPDATE
+				 SET soc = COALESCE(EXCLUDED.soc, device_batteries.soc),
+				     soh = COALESCE(EXCLUDED.soh, device_batteries.soh),
+				     ble_mac = COALESCE(NULLIF(EXCLUDED.ble_mac, ''), device_batteries.ble_mac),
+				     updated_at = NOW()`,
+				deviceID, soc, soh, bleMac,
+			).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	publishAppBatteryWSEvent(deviceID, tenantID, wsPayload)
+
+	logrus.WithFields(logrus.Fields{
+		"device_id": deviceID,
+		"tenant_id": tenantID,
+		"conn_type": connType,
+		"platform":  platform,
+		"core_keys": len(coreValues),
+		"snapshot":  snapshotRaw != nil,
+	}).Debug("app battery telemetry report accepted")
+
+	return &model.AppBatteryReportResp{
+		DeviceID: deviceID,
+		Ts:       reportTs,
+		Accepted: true,
+	}, nil
+}
+
+func normalizeAppBatteryCore(core map[string]interface{}) (map[string]interface{}, error) {
+	out := make(map[string]interface{}, len(core))
+	for rawKey, rawVal := range core {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "core key is empty")
+		}
+		if _, ok := appBatteryCoreKeyWhitelist[key]; !ok {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "core key not allowed: "+key)
+		}
+		val, ok := normalizeCoreValue(rawVal)
+		if !ok {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "invalid core value type for key: "+key)
+		}
+		out[key] = val
+	}
+	return out, nil
+}
+
+func normalizeCoreValue(v interface{}) (interface{}, bool) {
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case float64:
+		return t, true
+	case float32:
+		return float64(t), true
+	case int:
+		return float64(t), true
+	case int8:
+		return float64(t), true
+	case int16:
+		return float64(t), true
+	case int32:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case uint:
+		return float64(t), true
+	case uint8:
+		return float64(t), true
+	case uint16:
+		return float64(t), true
+	case uint32:
+		return float64(t), true
+	case uint64:
+		return float64(t), true
+	case json.Number:
+		if f, err := t.Float64(); err == nil {
+			return f, true
+		}
+		return nil, false
+	case string:
+		return strings.TrimSpace(t), true
+	default:
+		return nil, false
+	}
+}
+
+func normalizeAppBatterySnapshot(snapshot map[string]interface{}) (string, error) {
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return "", errcode.NewWithMessage(errcode.CodeParamError, "snapshot is not valid json object")
+	}
+	if len(raw) > appBatterySnapshotMaxBytes {
+		return "", errcode.NewWithMessage(errcode.CodeParamError, "snapshot payload exceeds 64KB")
+	}
+	return string(raw), nil
+}
+
+func toTelemetryColumns(v interface{}) (*bool, *float64, *string) {
+	switch t := v.(type) {
+	case bool:
+		return &t, nil, nil
+	case float64:
+		return nil, &t, nil
+	case string:
+		return nil, nil, &t
+	default:
+		s := strings.TrimSpace(toString(v))
+		return nil, nil, &s
+	}
+}
+
+func toFloat64(v interface{}) (float64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return t, true
+	case float32:
+		return float64(t), true
+	case int:
+		return float64(t), true
+	case int8:
+		return float64(t), true
+	case int16:
+		return float64(t), true
+	case int32:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case uint:
+		return float64(t), true
+	case uint8:
+		return float64(t), true
+	case uint16:
+		return float64(t), true
+	case uint32:
+		return float64(t), true
+	case uint64:
+		return float64(t), true
+	case json.Number:
+		f, err := t.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func toNonEmptyString(v interface{}) (string, bool) {
+	s := strings.TrimSpace(toString(v))
+	if s == "" {
+		return "", false
+	}
+	return s, true
+}
+
+func toString(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case json.Number:
+		return t.String()
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
+}
+
+func publishAppBatteryWSEvent(deviceID, tenantID string, data map[string]interface{}) {
+	if len(data) == 0 || global.REDIS == nil {
+		return
+	}
+	ctx := context.Background()
+	exists, err := global.REDIS.Exists(ctx, "ws:sub:"+deviceID).Result()
+	if err != nil {
+		logrus.WithError(err).WithField("device_id", deviceID).Debug("app report ws exists check failed")
+		return
+	}
+	if exists == 0 {
+		return
+	}
+
+	event := global.WSEvent{
+		DeviceID:  deviceID,
+		TenantID:  tenantID,
+		Timestamp: time.Now().UnixMilli(),
+		Data:      data,
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		logrus.WithError(err).WithField("device_id", deviceID).Error("marshal app report ws event failed")
+		return
+	}
+	if err := global.REDIS.Publish(ctx, "ws:device:"+deviceID, payload).Err(); err != nil {
+		logrus.WithError(err).WithField("device_id", deviceID).Error("publish app report ws event failed")
+	}
 }
 
 func buildOtaDownloadURL(packageURL *string) *string {

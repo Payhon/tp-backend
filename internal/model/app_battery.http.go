@@ -56,3 +56,21 @@ type AppBatteryOtaCheckReq struct {
 	Model    *string `json:"model,omitempty"`
 	Version  *string `json:"version,omitempty"`
 }
+
+// AppBatteryReportReq APP端BMS上报请求
+type AppBatteryReportReq struct {
+	DeviceID string                 `json:"device_id" binding:"required"`
+	Ts       int64                  `json:"ts" binding:"required"` // 毫秒时间戳
+	ConnType string                 `json:"conn_type" binding:"required"`
+	Platform string                 `json:"platform" binding:"required"`
+	Core     map[string]interface{} `json:"core" binding:"required"`
+	Snapshot map[string]interface{} `json:"snapshot,omitempty"`
+}
+
+// AppBatteryReportResp APP端BMS上报响应
+type AppBatteryReportResp struct {
+	DeviceID      string `json:"device_id"`
+	Ts            int64  `json:"ts"`
+	Accepted      bool   `json:"accepted"`
+	IgnoredReason string `json:"ignored_reason,omitempty"`
+}
