@@ -81,3 +81,71 @@ func TestBuildLatestDeviceAlarmsBase_WithOrgFilter_NoDevicesAliasD(t *testing.T)
 		t.Fatalf("expected device_batteries in org filter subquery: %s", sql)
 	}
 }
+
+func TestBuildBatteryScopeBase_NoWhereLeakAcrossCounts(t *testing.T) {
+	db := newDryRunPostgresDB(t)
+	scope := buildBatteryScopeBase(db, "tenant-1", "org-1")
+
+	var n1 int64
+	res1 := scope().
+		Where("d.is_online = ?", 1).
+		Distinct("d.id").
+		Count(&n1)
+	if res1.Error != nil {
+		t.Fatalf("build online sql: %v", res1.Error)
+	}
+	sqlOnline := res1.Statement.SQL.String()
+	if !strings.Contains(sqlOnline, "d.is_online") {
+		t.Fatalf("expected online condition in sql: %s", sqlOnline)
+	}
+
+	var n2 int64
+	res2 := scope().
+		Where("dbat.activation_status = ?", "ACTIVE").
+		Distinct("d.id").
+		Count(&n2)
+	if res2.Error != nil {
+		t.Fatalf("build activation sql: %v", res2.Error)
+	}
+	sqlActivated := res2.Statement.SQL.String()
+	if !strings.Contains(sqlActivated, "dbat.activation_status") {
+		t.Fatalf("expected activation condition in sql: %s", sqlActivated)
+	}
+	if strings.Contains(sqlActivated, "d.is_online") {
+		t.Fatalf("unexpected leaked online condition in activation sql: %s", sqlActivated)
+	}
+}
+
+func TestBuildBatteryScopeByOrgType_NoWhereLeakAcrossCounts(t *testing.T) {
+	db := newDryRunPostgresDB(t)
+	scope := buildBatteryScopeByOrgType(db, "tenant-1", "DEALER")
+
+	var n1 int64
+	res1 := scope().
+		Where("d.is_online = ?", 1).
+		Distinct("d.id").
+		Count(&n1)
+	if res1.Error != nil {
+		t.Fatalf("build online sql: %v", res1.Error)
+	}
+	sqlOnline := res1.Statement.SQL.String()
+	if !strings.Contains(sqlOnline, "d.is_online") {
+		t.Fatalf("expected online condition in sql: %s", sqlOnline)
+	}
+
+	var n2 int64
+	res2 := scope().
+		Where("dbat.activation_status = ?", "ACTIVE").
+		Distinct("d.id").
+		Count(&n2)
+	if res2.Error != nil {
+		t.Fatalf("build activation sql: %v", res2.Error)
+	}
+	sqlActivated := res2.Statement.SQL.String()
+	if !strings.Contains(sqlActivated, "dbat.activation_status") {
+		t.Fatalf("expected activation condition in sql: %s", sqlActivated)
+	}
+	if strings.Contains(sqlActivated, "d.is_online") {
+		t.Fatalf("unexpected leaked online condition in activation sql: %s", sqlActivated)
+	}
+}

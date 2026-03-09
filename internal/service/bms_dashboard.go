@@ -16,6 +16,32 @@ import (
 // BmsDashboard BMS: 首页看板（指标/告警概览/趋势）
 type BmsDashboard struct{}
 
+func buildBatteryScopeBase(db *gorm.DB, tenantID, orgID string) func() *gorm.DB {
+	return func() *gorm.DB {
+		// 设备范围：按 tenant + 可选 org 子树（device_batteries.owner_org_id）
+		base := db.Table("devices AS d").
+			Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
+			Where("d.tenant_id = ?", tenantID)
+		if orgID != "" {
+			base = base.Where(`dbat.owner_org_id IN (
+				SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+			)`, tenantID, orgID)
+		}
+		return base
+	}
+}
+
+func buildBatteryScopeByOrgType(db *gorm.DB, tenantID, orgType string) func() *gorm.DB {
+	return func() *gorm.DB {
+		return db.Table("devices AS d").
+			Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
+			Where("d.tenant_id = ?", tenantID).
+			Where(`dbat.owner_org_id IN (
+				SELECT id FROM orgs WHERE tenant_id = ? AND org_type = ?
+			)`, tenantID, orgType)
+	}
+}
+
 func buildLatestDeviceAlarmsBase(db *gorm.DB, tenantID string, orgID string, start time.Time) *gorm.DB {
 	q := db.Table("latest_device_alarms AS lda").
 		Where("lda.tenant_id = ?", tenantID).
@@ -38,29 +64,21 @@ func buildLatestDeviceAlarmsBase(db *gorm.DB, tenantID string, orgID string, sta
 func (*BmsDashboard) GetKpi(ctx context.Context, claims *utils.UserClaims, orgID string) (*model.BmsDashboardKpiResp, error) {
 	db := global.DB.WithContext(ctx)
 
-	// 设备范围：按 tenant + 可选 org 子树（device_batteries.owner_org_id）
-	base := db.Table("devices AS d").
-		Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
-		Where("d.tenant_id = ?", claims.TenantID)
-	if orgID != "" {
-		base = base.Where(`dbat.owner_org_id IN (
-			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
-		)`, claims.TenantID, orgID)
-	}
+	base := buildBatteryScopeBase(db, claims.TenantID, orgID)
 
 	var deviceTotal int64
-	if err := base.Distinct("d.id").Count(&deviceTotal).Error; err != nil {
+	if err := base().Distinct("d.id").Count(&deviceTotal).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
 	var deviceOnline int64
-	if err := base.Where("d.is_online = ?", 1).Distinct("d.id").Count(&deviceOnline).Error; err != nil {
+	if err := base().Where("d.is_online = ?", 1).Distinct("d.id").Count(&deviceOnline).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
 	// 激活口径：device_batteries.activation_status = ACTIVE
 	var deviceActivated int64
-	if err := base.Where("dbat.activation_status = ?", "ACTIVE").Distinct("d.id").Count(&deviceActivated).Error; err != nil {
+	if err := base().Where("dbat.activation_status = ?", "ACTIVE").Distinct("d.id").Count(&deviceActivated).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
