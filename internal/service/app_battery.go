@@ -14,6 +14,8 @@ import (
 	global "project/pkg/global"
 	"project/pkg/utils"
 
+	"github.com/go-basic/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
@@ -58,6 +60,8 @@ type appBatteryOtaCheckRow struct {
 const (
 	appBatterySnapshotKey      = "bms.snapshot"
 	appBatterySnapshotMaxBytes = 64 * 1024
+	appBatteryStatusOnline     = int16(1)
+	appBatteryStatusOffline    = int16(0)
 )
 
 var appBatteryCoreKeyWhitelist = map[string]struct{}{
@@ -502,7 +506,8 @@ func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBat
 	}
 
 	// 复用现有APP设备权限校验（绑定/组织/租户）
-	if _, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims); err != nil {
+	batteryDetail, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims)
+	if err != nil {
 		return nil, err
 	}
 
@@ -609,11 +614,15 @@ func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBat
 		if req.Snapshot != nil {
 			if identity, ok := req.Snapshot["identity"].(map[string]interface{}); ok {
 				if s, ok := toNonEmptyString(identity["bluetoothMac"]); ok {
-					bleMac = &s
+					if normalized, ok := normalizeBleMac12ForStore(s); ok {
+						bleMac = &normalized
+					}
 				}
 				if bleMac == nil {
 					if s, ok := toNonEmptyString(identity["bluetooth_mac"]); ok {
-						bleMac = &s
+						if normalized, ok := normalizeBleMac12ForStore(s); ok {
+							bleMac = &normalized
+						}
 					}
 				}
 			}
@@ -640,6 +649,15 @@ func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBat
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
+	if shouldSyncDeviceOnlineByApp(batteryDetail) {
+		if _, err := syncDeviceStatusFromApp(ctx, deviceID, tenantID, appBatteryStatusOnline, "app_report"); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"device_id": deviceID,
+				"tenant_id": tenantID,
+			}).Warn("sync online status by app report failed")
+		}
+	}
+
 	publishAppBatteryWSEvent(deviceID, tenantID, wsPayload)
 
 	logrus.WithFields(logrus.Fields{
@@ -656,6 +674,289 @@ func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBat
 		Ts:       reportTs,
 		Accepted: true,
 	}, nil
+}
+
+// ReportBatteryConnectionStatusForApp APP端蓝牙连接状态同步
+func (*AppBattery) ReportBatteryConnectionStatusForApp(ctx context.Context, req model.AppBatteryConnectionStatusReq, claims *utils.UserClaims) (*model.AppBatteryConnectionStatusResp, error) {
+	if claims == nil || claims.ID == "" || claims.TenantID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
+	}
+
+	deviceID := strings.TrimSpace(req.DeviceID)
+	if deviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+
+	ts := req.Ts
+	if ts <= 0 {
+		ts = time.Now().UnixMilli()
+	}
+
+	connType := strings.ToLower(strings.TrimSpace(req.ConnType))
+	if connType == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "conn_type is required")
+	}
+
+	if !isAppReportEnabled() {
+		return &model.AppBatteryConnectionStatusResp{
+			DeviceID:      deviceID,
+			Ts:            ts,
+			BleConnected:  req.BleConnected,
+			Accepted:      false,
+			IgnoredReason: "feature_disabled",
+		}, nil
+	}
+
+	if connType != "bluetooth" {
+		return &model.AppBatteryConnectionStatusResp{
+			DeviceID:      deviceID,
+			Ts:            ts,
+			BleConnected:  req.BleConnected,
+			Accepted:      false,
+			IgnoredReason: "non_bluetooth",
+		}, nil
+	}
+
+	batteryDetail, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims)
+	if err != nil {
+		return nil, err
+	}
+
+	if !shouldSyncDeviceOnlineByApp(batteryDetail) {
+		return &model.AppBatteryConnectionStatusResp{
+			DeviceID:      deviceID,
+			Ts:            ts,
+			BleConnected:  req.BleConnected,
+			Accepted:      false,
+			IgnoredReason: "not_ble_relay_device",
+		}, nil
+	}
+
+	targetStatus := appBatteryStatusOffline
+	source := "app_connection_disconnected"
+	if req.BleConnected {
+		targetStatus = appBatteryStatusOnline
+		source = "app_connection_connected"
+	}
+
+	changed := false
+	if targetStatus == appBatteryStatusOnline {
+		var err error
+		changed, err = syncDeviceStatusFromApp(ctx, deviceID, claims.TenantID, targetStatus, source)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		before, err := query.Device.WithContext(ctx).
+			Select(query.Device.IsOnline).
+			Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
+			First()
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		if err := syncDeviceStatusOfflineIfNoRelayOwner(ctx, deviceID, claims.TenantID, source); err != nil {
+			return nil, err
+		}
+		after, err := query.Device.WithContext(ctx).
+			Select(query.Device.IsOnline).
+			Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
+			First()
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		changed = before.IsOnline != after.IsOnline
+	}
+
+	return &model.AppBatteryConnectionStatusResp{
+		DeviceID:      deviceID,
+		Ts:            ts,
+		BleConnected:  req.BleConnected,
+		Accepted:      true,
+		StatusChanged: changed,
+	}, nil
+}
+
+func isAppReportEnabled() bool {
+	enabled := true
+	if viper.IsSet("bms.app_report.enabled") {
+		enabled = viper.GetBool("bms.app_report.enabled")
+	}
+	return enabled
+}
+
+func isAppReportOnlineSyncEnabled() bool {
+	enabled := true
+	if viper.IsSet("bms.app_report.sync_device_online") {
+		enabled = viper.GetBool("bms.app_report.sync_device_online")
+	}
+	return enabled
+}
+
+func isAppReportOfflineSyncEnabled() bool {
+	enabled := true
+	if viper.IsSet("bms.app_report.offline_on_ble_disconnect") {
+		enabled = viper.GetBool("bms.app_report.offline_on_ble_disconnect")
+	}
+	return enabled
+}
+
+func appReportOnlineTTL() time.Duration {
+	ttlSec := 45
+	if viper.IsSet("bms.app_report.online_ttl_sec") {
+		ttlSec = viper.GetInt("bms.app_report.online_ttl_sec")
+	}
+	if ttlSec < 5 {
+		ttlSec = 5
+	}
+	return time.Duration(ttlSec) * time.Second
+}
+
+func shouldSyncDeviceOnlineByApp(detail *model.AppBatteryDetailResp) bool {
+	if detail == nil {
+		return true
+	}
+	if detail.BmsCommType != nil && *detail.BmsCommType == 1 {
+		return true
+	}
+	commChipID := strings.TrimSpace(derefString(detail.CommChipID))
+	if commChipID == "" {
+		return true
+	}
+	return false
+}
+
+func syncDeviceStatusFromApp(ctx context.Context, deviceID, tenantID string, status int16, source string) (bool, error) {
+	if status == appBatteryStatusOnline && !isAppReportOnlineSyncEnabled() {
+		return false, nil
+	}
+	if status == appBatteryStatusOffline && !isAppReportOfflineSyncEnabled() {
+		return false, nil
+	}
+
+	changed, err := dal.UpdateDeviceStatus(deviceID, status)
+	if err != nil {
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	if status == appBatteryStatusOnline {
+		refreshAppReportOnlineKey(ctx, deviceID)
+	} else {
+		clearAppReportOnlineKey(ctx, deviceID)
+	}
+
+	if changed {
+		publishAppDeviceStatus(ctx, deviceID, status)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"device_id":      deviceID,
+		"tenant_id":      tenantID,
+		"status":         status,
+		"status_changed": changed,
+		"source":         source,
+	}).Debug("app sync device online status")
+
+	return changed, nil
+}
+
+func refreshAppReportOnlineKey(ctx context.Context, deviceID string) {
+	if global.REDIS == nil {
+		return
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return
+	}
+	key := "device:" + deviceID + ":heartbeat"
+	if err := global.REDIS.Set(ctx, key, 1, appReportOnlineTTL()).Err(); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"device_id": deviceID,
+			"key":       key,
+		}).Warn("refresh app report online key failed")
+	}
+}
+
+func clearAppReportOnlineKey(ctx context.Context, deviceID string) {
+	if global.REDIS == nil {
+		return
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return
+	}
+	heartbeatKey := "device:" + deviceID + ":heartbeat"
+	timeoutKey := "device:" + deviceID + ":timeout"
+	if err := global.REDIS.Del(ctx, heartbeatKey, timeoutKey).Err(); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"device_id": deviceID,
+		}).Warn("clear app report online key failed")
+	}
+}
+
+func publishAppDeviceStatus(ctx context.Context, deviceID string, status int16) {
+	if global.REDIS == nil {
+		return
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return
+	}
+	raw, err := json.Marshal(map[string]interface{}{
+		"is_online": int(status),
+	})
+	if err != nil {
+		return
+	}
+	channel := "device:" + deviceID + ":status"
+	if err := global.REDIS.Publish(ctx, channel, string(raw)).Err(); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"device_id": deviceID,
+			"channel":   channel,
+		}).Warn("publish app device status failed")
+	}
+}
+
+func syncDeviceStatusOfflineIfNoRelayOwner(ctx context.Context, deviceID, tenantID, source string) error {
+	if !isAppReportOfflineSyncEnabled() {
+		return nil
+	}
+	owner, found, err := loadRelayOwnerState(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	if found && owner != nil && owner.TenantID == tenantID {
+		return nil
+	}
+	canSync, err := canSyncDeviceOnlineByAppDevice(ctx, deviceID, tenantID)
+	if err != nil {
+		return err
+	}
+	if !canSync {
+		return nil
+	}
+	_, err = syncDeviceStatusFromApp(ctx, deviceID, tenantID, appBatteryStatusOffline, source)
+	return err
+}
+
+func canSyncDeviceOnlineByAppDevice(ctx context.Context, deviceID, tenantID string) (bool, error) {
+	type row struct {
+		BmsCommType *int    `gorm:"column:bms_comm_type"`
+		CommChipID  *string `gorm:"column:comm_chip_id"`
+	}
+	var r row
+	err := global.DB.WithContext(ctx).
+		Table("devices AS d").
+		Select("dbat.bms_comm_type AS bms_comm_type, dbat.comm_chip_id AS comm_chip_id").
+		Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
+		Where("d.id = ? AND d.tenant_id = ?", strings.TrimSpace(deviceID), strings.TrimSpace(tenantID)).
+		Scan(&r).Error
+	if err != nil {
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return shouldSyncDeviceOnlineByApp(&model.AppBatteryDetailResp{
+		BmsCommType: r.BmsCommType,
+		CommChipID:  r.CommChipID,
+	}), nil
 }
 
 func normalizeAppBatteryCore(core map[string]interface{}) (map[string]interface{}, error) {
@@ -965,4 +1266,633 @@ func stringPtrOrNil(s string) *string {
 		return nil
 	}
 	return &out
+}
+
+const (
+	appBatteryRelayOwnerTTL   = 45 * time.Second
+	appBatteryRelaySessionTTL = 60 * time.Second
+	appBatteryRelayCommandTTL = 10 * time.Minute
+
+	appBatteryRelayStatusPending = "PENDING"
+	appBatteryRelayStatusSent    = "SENT"
+	appBatteryRelayStatusSuccess = "SUCCESS"
+	appBatteryRelayStatusFailed  = "FAILED"
+	appBatteryRelayStatusTimeout = "TIMEOUT"
+)
+
+type appBatteryRelayOwnerState struct {
+	DeviceID    string `json:"device_id"`
+	SessionID   string `json:"session_id"`
+	UserID      string `json:"user_id"`
+	TenantID    string `json:"tenant_id"`
+	Platform    string `json:"platform"`
+	ConnType    string `json:"conn_type"`
+	LastSeenTs  int64  `json:"last_seen_ts"`
+	ExpiresAtTs int64  `json:"expires_at_ts"`
+}
+
+type appBatteryRelaySessionState struct {
+	SessionID    string `json:"session_id"`
+	DeviceID     string `json:"device_id"`
+	UserID       string `json:"user_id"`
+	TenantID     string `json:"tenant_id"`
+	Platform     string `json:"platform"`
+	ConnType     string `json:"conn_type"`
+	BleConnected bool   `json:"ble_connected"`
+	LastSeenTs   int64  `json:"last_seen_ts"`
+	CreatedAtTs  int64  `json:"created_at_ts"`
+}
+
+type appBatteryRelayCommandState struct {
+	CommandID      string      `json:"command_id"`
+	DeviceID       string      `json:"device_id"`
+	SessionID      string      `json:"session_id"`
+	TenantID       string      `json:"tenant_id"`
+	RequestUserID  string      `json:"request_user_id"`
+	CommandType    string      `json:"command_type"`
+	ParamKey       *string     `json:"param_key,omitempty"`
+	Value          interface{} `json:"value,omitempty"`
+	StartAddress   *int        `json:"start_address,omitempty"`
+	RegisterValues []int       `json:"register_values,omitempty"`
+	Status         string      `json:"status"`
+	ErrorMessage   *string     `json:"error_message,omitempty"`
+	Result         interface{} `json:"result,omitempty"`
+	CreatedAtTs    int64       `json:"created_at_ts"`
+	UpdatedAtTs    int64       `json:"updated_at_ts"`
+	FinishedAtTs   *int64      `json:"finished_at_ts,omitempty"`
+}
+
+type appBatteryRelayCommandEnvelope struct {
+	Type           string      `json:"type"`
+	CommandID      string      `json:"cmd_id"`
+	DeviceID       string      `json:"device_id"`
+	CommandType    string      `json:"command_type"`
+	ParamKey       *string     `json:"param_key,omitempty"`
+	Value          interface{} `json:"value,omitempty"`
+	StartAddress   *int        `json:"start_address,omitempty"`
+	RegisterValues []int       `json:"register_values,omitempty"`
+	Ts             int64       `json:"ts"`
+}
+
+func appBatteryRelayOwnerKey(deviceID string) string {
+	return "bms:relay:owner:" + strings.TrimSpace(deviceID)
+}
+
+func appBatteryRelaySessionKey(sessionID string) string {
+	return "bms:relay:session:" + strings.TrimSpace(sessionID)
+}
+
+func appBatteryRelayCommandKey(commandID string) string {
+	return "bms:relay:cmd:" + strings.TrimSpace(commandID)
+}
+
+// AppBatteryRelayCommandChannel APP Relay session 指令通道
+func AppBatteryRelayCommandChannel(sessionID string) string {
+	return "bms:relay:cmd:session:" + strings.TrimSpace(sessionID)
+}
+
+func ensureWebBatteryDeviceAccess(ctx context.Context, deviceID string, claims *utils.UserClaims, orgID string) error {
+	if claims == nil || claims.ID == "" || claims.TenantID == "" {
+		return errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+
+	_, err := query.Device.WithContext(ctx).
+		Where(query.Device.ID.Eq(deviceID), query.Device.TenantID.Eq(claims.TenantID)).
+		First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "device not found"})
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	if err := checkDeviceOrgAccess(ctx, deviceID, claims.TenantID, strings.TrimSpace(orgID)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (*AppBattery) OpenRelaySessionForApp(ctx context.Context, deviceID, platform, connType string, bleConnected bool, claims *utils.UserClaims) (*appBatteryRelaySessionState, error) {
+	if global.REDIS == nil {
+		return nil, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+	platform = strings.TrimSpace(strings.ToLower(platform))
+	if platform == "" {
+		platform = "unknown"
+	}
+	connType = strings.TrimSpace(strings.ToLower(connType))
+	if connType == "" {
+		connType = "bluetooth"
+	}
+
+	batteryDetail, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims)
+	if err != nil {
+		return nil, err
+	}
+
+	nowMs := time.Now().UnixMilli()
+	session := &appBatteryRelaySessionState{
+		SessionID:    uuid.New(),
+		DeviceID:     deviceID,
+		UserID:       claims.ID,
+		TenantID:     claims.TenantID,
+		Platform:     platform,
+		ConnType:     connType,
+		BleConnected: bleConnected,
+		LastSeenTs:   nowMs,
+		CreatedAtTs:  nowMs,
+	}
+	if err := saveRelaySessionState(ctx, session); err != nil {
+		return nil, err
+	}
+	if bleConnected {
+		if err := setRelayOwnerState(ctx, session); err != nil {
+			return nil, err
+		}
+		if shouldSyncDeviceOnlineByApp(batteryDetail) {
+			if _, err := syncDeviceStatusFromApp(ctx, session.DeviceID, session.TenantID, appBatteryStatusOnline, "relay_session_open"); err != nil {
+				logrus.WithError(err).WithFields(logrus.Fields{
+					"device_id":  session.DeviceID,
+					"session_id": session.SessionID,
+				}).Warn("sync online status on relay open failed")
+			}
+		}
+	}
+	return session, nil
+}
+
+func (*AppBattery) RefreshRelaySessionForApp(ctx context.Context, sessionID string, bleConnected bool) (*appBatteryRelaySessionState, error) {
+	if global.REDIS == nil {
+		return nil, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+	session, found, err := loadRelaySessionState(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "relay session not found")
+	}
+
+	session.BleConnected = bleConnected
+	session.LastSeenTs = time.Now().UnixMilli()
+	if err := saveRelaySessionState(ctx, session); err != nil {
+		return nil, err
+	}
+
+	if bleConnected {
+		if err := setRelayOwnerState(ctx, session); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := clearRelayOwnerIfMatched(ctx, session.DeviceID, session.SessionID); err != nil {
+			return nil, err
+		}
+		if err := syncDeviceStatusOfflineIfNoRelayOwner(ctx, session.DeviceID, session.TenantID, "relay_heartbeat_disconnected"); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"device_id":  session.DeviceID,
+				"session_id": session.SessionID,
+			}).Warn("sync offline status on relay heartbeat failed")
+		}
+	}
+
+	return session, nil
+}
+
+func (*AppBattery) CloseRelaySessionForApp(ctx context.Context, sessionID string) {
+	if global.REDIS == nil {
+		return
+	}
+	session, found, err := loadRelaySessionState(ctx, sessionID)
+	if err != nil {
+		logrus.WithError(err).WithField("session_id", sessionID).Warn("close relay session load failed")
+		return
+	}
+	if !found {
+		return
+	}
+	if err := clearRelayOwnerIfMatched(ctx, session.DeviceID, session.SessionID); err != nil {
+		logrus.WithError(err).WithField("session_id", sessionID).Warn("close relay session clear owner failed")
+	}
+	if err := global.REDIS.Del(ctx, appBatteryRelaySessionKey(sessionID)).Err(); err != nil {
+		logrus.WithError(err).WithField("session_id", sessionID).Warn("close relay session delete session key failed")
+	}
+	if err := syncDeviceStatusOfflineIfNoRelayOwner(ctx, session.DeviceID, session.TenantID, "relay_session_closed"); err != nil {
+		logrus.WithError(err).WithField("session_id", sessionID).Warn("sync offline status on relay close failed")
+	}
+}
+
+func (*AppBattery) GetRelayStatusForWeb(ctx context.Context, deviceID string, claims *utils.UserClaims, orgID string) (*model.AppBatteryRelayStatusResp, error) {
+	if global.REDIS == nil {
+		return nil, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+	if err := ensureWebBatteryDeviceAccess(ctx, deviceID, claims, orgID); err != nil {
+		return nil, err
+	}
+
+	owner, found, err := loadRelayOwnerState(ctx, deviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &model.AppBatteryRelayStatusResp{
+		DeviceID:    strings.TrimSpace(deviceID),
+		OwnerOnline: false,
+	}
+	if !found {
+		return resp, nil
+	}
+	if owner.TenantID != claims.TenantID {
+		return resp, nil
+	}
+
+	resp.OwnerOnline = true
+	resp.SessionID = stringPtrOrNil(owner.SessionID)
+	resp.Platform = stringPtrOrNil(owner.Platform)
+	resp.ConnType = stringPtrOrNil(owner.ConnType)
+	resp.OwnerUserID = stringPtrOrNil(owner.UserID)
+	resp.OwnerTenantID = stringPtrOrNil(owner.TenantID)
+	resp.LastSeenTs = &owner.LastSeenTs
+	resp.ExpiresAtTs = &owner.ExpiresAtTs
+	return resp, nil
+}
+
+func (*AppBattery) SendRelayCommandForWeb(ctx context.Context, req model.AppBatteryRelayCommandReq, claims *utils.UserClaims, orgID string) (*model.AppBatteryRelayCommandResp, error) {
+	if global.REDIS == nil {
+		return nil, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+
+	deviceID := strings.TrimSpace(req.DeviceID)
+	commandType := strings.ToLower(strings.TrimSpace(req.CommandType))
+	if err := ensureWebBatteryDeviceAccess(ctx, deviceID, claims, orgID); err != nil {
+		return nil, err
+	}
+
+	owner, found, err := loadRelayOwnerState(ctx, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	if !found || owner.TenantID != claims.TenantID {
+		return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			"message": "无可用 BLE 中继连接，请先在APP中蓝牙连接设备",
+		})
+	}
+
+	var paramKey *string
+	var startAddress *int
+	var registerValues []int
+	value := req.Value
+
+	switch commandType {
+	case "read_param":
+		if req.ParamKey == nil || strings.TrimSpace(*req.ParamKey) == "" {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "param_key is required")
+		}
+		normalized := strings.TrimSpace(*req.ParamKey)
+		paramKey = &normalized
+	case "write_param":
+		if req.ParamKey == nil || strings.TrimSpace(*req.ParamKey) == "" {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "param_key is required")
+		}
+		if req.Value == nil {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "value is required")
+		}
+		normalized := strings.TrimSpace(*req.ParamKey)
+		paramKey = &normalized
+	case "write_registers":
+		if req.StartAddress == nil {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "start_address is required")
+		}
+		if *req.StartAddress < 0 || *req.StartAddress > 0xFFFF {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "start_address out of range")
+		}
+		if len(req.RegisterValues) == 0 {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "register_values is required")
+		}
+		if len(req.RegisterValues) > 120 {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "register_values exceeds 120")
+		}
+		registerValues = make([]int, 0, len(req.RegisterValues))
+		for _, v := range req.RegisterValues {
+			if v < 0 || v > 0xFFFF {
+				return nil, errcode.NewWithMessage(errcode.CodeParamError, "register value out of range")
+			}
+			registerValues = append(registerValues, v)
+		}
+		sa := *req.StartAddress
+		startAddress = &sa
+	default:
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "command_type not supported")
+	}
+
+	waitMs := int64(15000)
+	if req.WaitMs != nil {
+		waitMs = *req.WaitMs
+	}
+	if waitMs < 0 {
+		waitMs = 0
+	}
+	if waitMs > 30000 {
+		waitMs = 30000
+	}
+
+	nowMs := time.Now().UnixMilli()
+	state := &appBatteryRelayCommandState{
+		CommandID:      uuid.New(),
+		DeviceID:       deviceID,
+		SessionID:      owner.SessionID,
+		TenantID:       claims.TenantID,
+		RequestUserID:  claims.ID,
+		CommandType:    commandType,
+		ParamKey:       paramKey,
+		Value:          value,
+		StartAddress:   startAddress,
+		RegisterValues: registerValues,
+		Status:         appBatteryRelayStatusPending,
+		CreatedAtTs:    nowMs,
+		UpdatedAtTs:    nowMs,
+	}
+	if err := saveRelayCommandState(ctx, state); err != nil {
+		return nil, err
+	}
+
+	envelope := appBatteryRelayCommandEnvelope{
+		Type:           "relay_command",
+		CommandID:      state.CommandID,
+		DeviceID:       state.DeviceID,
+		CommandType:    state.CommandType,
+		ParamKey:       state.ParamKey,
+		Value:          state.Value,
+		StartAddress:   state.StartAddress,
+		RegisterValues: state.RegisterValues,
+		Ts:             nowMs,
+	}
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+
+	if err := global.REDIS.Publish(ctx, AppBatteryRelayCommandChannel(owner.SessionID), payload).Err(); err != nil {
+		msg := "relay command publish failed"
+		state.Status = appBatteryRelayStatusFailed
+		state.ErrorMessage = &msg
+		finish := time.Now().UnixMilli()
+		state.UpdatedAtTs = finish
+		state.FinishedAtTs = &finish
+		_ = saveRelayCommandState(ctx, state)
+		return toRelayCommandResp(state), nil
+	}
+
+	state.Status = appBatteryRelayStatusSent
+	state.UpdatedAtTs = time.Now().UnixMilli()
+	if err := saveRelayCommandState(ctx, state); err != nil {
+		return nil, err
+	}
+
+	if waitMs == 0 {
+		return toRelayCommandResp(state), nil
+	}
+
+	deadline := time.Now().Add(time.Duration(waitMs) * time.Millisecond)
+	for {
+		cur, found, err := loadRelayCommandState(ctx, state.CommandID)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			msg := "relay command state not found"
+			state.Status = appBatteryRelayStatusFailed
+			state.ErrorMessage = &msg
+			finish := time.Now().UnixMilli()
+			state.UpdatedAtTs = finish
+			state.FinishedAtTs = &finish
+			return toRelayCommandResp(state), nil
+		}
+		if cur.Status == appBatteryRelayStatusSuccess || cur.Status == appBatteryRelayStatusFailed || cur.Status == appBatteryRelayStatusTimeout {
+			return toRelayCommandResp(cur), nil
+		}
+		if time.Now().After(deadline) {
+			timeoutMsg := "relay command timeout"
+			cur.Status = appBatteryRelayStatusTimeout
+			cur.ErrorMessage = &timeoutMsg
+			finish := time.Now().UnixMilli()
+			cur.UpdatedAtTs = finish
+			cur.FinishedAtTs = &finish
+			_ = saveRelayCommandState(ctx, cur)
+			return toRelayCommandResp(cur), nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func (*AppBattery) GetRelayCommandForWeb(ctx context.Context, commandID string, claims *utils.UserClaims, orgID string) (*model.AppBatteryRelayCommandResp, error) {
+	if global.REDIS == nil {
+		return nil, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "command_id is required")
+	}
+
+	state, found, err := loadRelayCommandState(ctx, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "relay command not found"})
+	}
+	if state.TenantID != claims.TenantID {
+		return nil, errcode.New(errcode.CodeNoPermission)
+	}
+	if err := ensureWebBatteryDeviceAccess(ctx, state.DeviceID, claims, orgID); err != nil {
+		return nil, err
+	}
+	return toRelayCommandResp(state), nil
+}
+
+func (*AppBattery) AcceptRelayCommandResultForApp(ctx context.Context, sessionID, commandID string, ok bool, result interface{}, errorMessage *string) (*model.AppBatteryRelayCommandResp, error) {
+	if global.REDIS == nil {
+		return nil, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+	session, found, err := loadRelaySessionState(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "relay session not found")
+	}
+
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "cmd_id is required")
+	}
+
+	state, found, err := loadRelayCommandState(ctx, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "relay command not found"})
+	}
+	if state.SessionID != session.SessionID || state.DeviceID != session.DeviceID {
+		return nil, errcode.New(errcode.CodeNoPermission)
+	}
+	if state.Status == appBatteryRelayStatusSuccess || state.Status == appBatteryRelayStatusFailed || state.Status == appBatteryRelayStatusTimeout {
+		return toRelayCommandResp(state), nil
+	}
+
+	finish := time.Now().UnixMilli()
+	state.UpdatedAtTs = finish
+	state.FinishedAtTs = &finish
+	if ok {
+		state.Status = appBatteryRelayStatusSuccess
+		state.Result = result
+		state.ErrorMessage = nil
+	} else {
+		state.Status = appBatteryRelayStatusFailed
+		state.Result = nil
+		msg := strings.TrimSpace(derefString(errorMessage))
+		if msg == "" {
+			msg = "relay command execution failed"
+		}
+		state.ErrorMessage = &msg
+	}
+	if err := saveRelayCommandState(ctx, state); err != nil {
+		return nil, err
+	}
+	return toRelayCommandResp(state), nil
+}
+
+func saveRelaySessionState(ctx context.Context, session *appBatteryRelaySessionState) error {
+	raw, err := json.Marshal(session)
+	if err != nil {
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	if err := global.REDIS.Set(ctx, appBatteryRelaySessionKey(session.SessionID), raw, appBatteryRelaySessionTTL).Err(); err != nil {
+		return errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	return nil
+}
+
+func loadRelaySessionState(ctx context.Context, sessionID string) (*appBatteryRelaySessionState, bool, error) {
+	raw, err := global.REDIS.Get(ctx, appBatteryRelaySessionKey(sessionID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, false, nil
+		}
+		return nil, false, errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	var out appBatteryRelaySessionState
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, false, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	return &out, true, nil
+}
+
+func setRelayOwnerState(ctx context.Context, session *appBatteryRelaySessionState) error {
+	nowMs := time.Now().UnixMilli()
+	owner := appBatteryRelayOwnerState{
+		DeviceID:    session.DeviceID,
+		SessionID:   session.SessionID,
+		UserID:      session.UserID,
+		TenantID:    session.TenantID,
+		Platform:    session.Platform,
+		ConnType:    session.ConnType,
+		LastSeenTs:  nowMs,
+		ExpiresAtTs: nowMs + appBatteryRelayOwnerTTL.Milliseconds(),
+	}
+	raw, err := json.Marshal(owner)
+	if err != nil {
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	if err := global.REDIS.Set(ctx, appBatteryRelayOwnerKey(session.DeviceID), raw, appBatteryRelayOwnerTTL).Err(); err != nil {
+		return errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	return nil
+}
+
+func clearRelayOwnerIfMatched(ctx context.Context, deviceID, sessionID string) error {
+	owner, found, err := loadRelayOwnerState(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	if !found || owner.SessionID != sessionID {
+		return nil
+	}
+	if err := global.REDIS.Del(ctx, appBatteryRelayOwnerKey(deviceID)).Err(); err != nil {
+		return errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	return nil
+}
+
+func loadRelayOwnerState(ctx context.Context, deviceID string) (*appBatteryRelayOwnerState, bool, error) {
+	raw, err := global.REDIS.Get(ctx, appBatteryRelayOwnerKey(deviceID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, false, nil
+		}
+		return nil, false, errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	var owner appBatteryRelayOwnerState
+	if err := json.Unmarshal([]byte(raw), &owner); err != nil {
+		return nil, false, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	return &owner, true, nil
+}
+
+func saveRelayCommandState(ctx context.Context, state *appBatteryRelayCommandState) error {
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	if err := global.REDIS.Set(ctx, appBatteryRelayCommandKey(state.CommandID), raw, appBatteryRelayCommandTTL).Err(); err != nil {
+		return errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	return nil
+}
+
+func loadRelayCommandState(ctx context.Context, commandID string) (*appBatteryRelayCommandState, bool, error) {
+	raw, err := global.REDIS.Get(ctx, appBatteryRelayCommandKey(commandID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, false, nil
+		}
+		return nil, false, errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	var out appBatteryRelayCommandState
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, false, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	return &out, true, nil
+}
+
+func toRelayCommandResp(state *appBatteryRelayCommandState) *model.AppBatteryRelayCommandResp {
+	return &model.AppBatteryRelayCommandResp{
+		CommandID:    state.CommandID,
+		DeviceID:     state.DeviceID,
+		CommandType:  state.CommandType,
+		Status:       state.Status,
+		ErrorMessage: state.ErrorMessage,
+		Result:       state.Result,
+		CreatedAtTs:  state.CreatedAtTs,
+		UpdatedAtTs:  state.UpdatedAtTs,
+		FinishedAtTs: state.FinishedAtTs,
+	}
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

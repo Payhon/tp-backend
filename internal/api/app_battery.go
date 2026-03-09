@@ -115,6 +115,32 @@ func (*AppBatteryApi) ReportBatteryData(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// ReportBatteryConnectionStatus APP端蓝牙连接状态同步
+// @Summary APP端蓝牙连接状态同步
+// @Description 手机端蓝牙连接/断开时主动同步设备在线状态
+// @Tags APP-Battery
+// @Accept json
+// @Produce json
+// @Param body body model.AppBatteryConnectionStatusReq true "连接状态同步请求"
+// @Success 200 {object} model.AppBatteryConnectionStatusResp
+// @Router /api/v1/app/battery/connection-status [post]
+func (*AppBatteryApi) ReportBatteryConnectionStatus(c *gin.Context) {
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	var req model.AppBatteryConnectionStatusReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errcode.NewWithMessage(errcode.CodeParamError, "invalid request body"))
+		return
+	}
+
+	data, err := service.GroupApp.AppBattery.ReportBatteryConnectionStatusForApp(context.Background(), req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // ServeBatterySocketByWS APP端：MQTT透传(WebSocket桥接)
 // 客户端首次消息需发送 JSON：{"device_id":"...","token":"..."}
 // 随后发送：

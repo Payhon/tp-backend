@@ -153,6 +153,9 @@ bms:
   app_report:
     enabled: true
     bluetooth_only: true
+    sync_device_online: true
+    offline_on_ble_disconnect: true
+    online_ttl_sec: 45
   # BMS 设备 MQTT 透传默认 Topic（可被租户字典 TX_TOPIC/RX_TOPIC 覆盖）
   tx_topic: "device/socket/tx/{device_id}"
   rx_topic: "device/socket/rx/{device_id}"

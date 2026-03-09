@@ -74,3 +74,59 @@ type AppBatteryReportResp struct {
 	Accepted      bool   `json:"accepted"`
 	IgnoredReason string `json:"ignored_reason,omitempty"`
 }
+
+// AppBatteryConnectionStatusReq APP 端连接状态同步请求
+type AppBatteryConnectionStatusReq struct {
+	DeviceID     string `json:"device_id" binding:"required"`
+	ConnType     string `json:"conn_type" binding:"required"`
+	Platform     string `json:"platform,omitempty"`
+	BleConnected bool   `json:"ble_connected"`
+	Ts           int64  `json:"ts,omitempty"`
+}
+
+// AppBatteryConnectionStatusResp APP 端连接状态同步响应
+type AppBatteryConnectionStatusResp struct {
+	DeviceID      string `json:"device_id"`
+	Ts            int64  `json:"ts"`
+	BleConnected  bool   `json:"ble_connected"`
+	Accepted      bool   `json:"accepted"`
+	StatusChanged bool   `json:"status_changed"`
+	IgnoredReason string `json:"ignored_reason,omitempty"`
+}
+
+// AppBatteryRelayStatusResp BLE Relay 在线状态（WEB 查询）
+type AppBatteryRelayStatusResp struct {
+	DeviceID      string  `json:"device_id"`
+	OwnerOnline   bool    `json:"owner_online"`
+	SessionID     *string `json:"session_id,omitempty"`
+	Platform      *string `json:"platform,omitempty"`
+	ConnType      *string `json:"conn_type,omitempty"`
+	LastSeenTs    *int64  `json:"last_seen_ts,omitempty"`
+	ExpiresAtTs   *int64  `json:"expires_at_ts,omitempty"`
+	OwnerUserID   *string `json:"owner_user_id,omitempty"`
+	OwnerTenantID *string `json:"owner_tenant_id,omitempty"`
+}
+
+// AppBatteryRelayCommandReq WEB->APP(BLE) Relay 指令请求
+type AppBatteryRelayCommandReq struct {
+	DeviceID       string      `json:"device_id" validate:"required,max=36"`
+	CommandType    string      `json:"command_type" validate:"required,oneof=read_param write_param write_registers"`
+	ParamKey       *string     `json:"param_key,omitempty"`
+	Value          interface{} `json:"value,omitempty"`
+	StartAddress   *int        `json:"start_address,omitempty"`
+	RegisterValues []int       `json:"register_values,omitempty"`
+	WaitMs         *int64      `json:"wait_ms,omitempty"`
+}
+
+// AppBatteryRelayCommandResp Relay 指令执行结果
+type AppBatteryRelayCommandResp struct {
+	CommandID    string      `json:"command_id"`
+	DeviceID     string      `json:"device_id"`
+	CommandType  string      `json:"command_type"`
+	Status       string      `json:"status"`
+	ErrorMessage *string     `json:"error_message,omitempty"`
+	Result       interface{} `json:"result,omitempty"`
+	CreatedAtTs  int64       `json:"created_at_ts"`
+	UpdatedAtTs  int64       `json:"updated_at_ts"`
+	FinishedAtTs *int64      `json:"finished_at_ts,omitempty"`
+}
