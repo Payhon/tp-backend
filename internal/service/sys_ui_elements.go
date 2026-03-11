@@ -103,27 +103,6 @@ func (*UiElements) ServeUiElementsListByPage(Params *model.ServeUiElementsListBy
 	return UiElementsListRsp, err
 }
 
-func filterMenuTreeByAllowedCodes(nodes []*model.UiElementsListRsp, allowed map[string]struct{}) []*model.UiElementsListRsp {
-	if len(nodes) == 0 {
-		return nodes
-	}
-	out := make([]*model.UiElementsListRsp, 0, len(nodes))
-	for _, n := range nodes {
-		if n == nil {
-			continue
-		}
-		if len(n.Children) > 0 {
-			n.Children = filterMenuTreeByAllowedCodes(n.Children, allowed)
-		}
-
-		_, ok := allowed[n.ElementCode]
-		if ok || len(n.Children) > 0 {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
 func (*UiElements) ServeUiElementsListByAuthority(ctx context.Context, u *utils.UserClaims) (map[string]interface{}, error) {
 	total, list, err := dal.ServeUiElementsListByAuthority(u)
 	if err != nil {
@@ -135,27 +114,25 @@ func (*UiElements) ServeUiElementsListByAuthority(ctx context.Context, u *utils.
 		})
 	}
 
-	// 机构类型菜单权限：仅对归属 PACK/经销商/门店 的业务账号生效
-	// - 菜单来源仍然是用户原有菜单（casbin/authority）
-	// - 在返回前按 org_type_permissions.ui_codes 做一次裁剪，保证不同机构类型看到的菜单一致
-	if u.Authority != "SYS_ADMIN" && u.Authority != "TENANT_ADMIN" && strings.TrimSpace(u.TenantID) != "" && strings.TrimSpace(u.ID) != "" {
-		orgType, ok, err := GroupApp.OrgTypePermission.GetUserOrgType(ctx, u.TenantID, u.ID)
-		if err == nil && ok {
-			switch orgType {
-			case model.OrgTypePACKFactory, model.OrgTypeDealer, model.OrgTypeStore:
-				allowed, exists, err := GroupApp.OrgTypePermission.GetAllowedUICodes(ctx, u.TenantID, orgType)
-				if err == nil && exists {
-					if typed, ok := list.([]*model.UiElementsListRsp); ok {
-						allowedSet := make(map[string]struct{}, len(allowed))
-						for _, code := range allowed {
-							code = strings.TrimSpace(code)
-							if code == "" {
-								continue
-							}
-							allowedSet[code] = struct{}{}
-						}
-						list = filterMenuTreeByAllowedCodes(typed, allowedSet)
-					}
+	// 非管理员：若命中机构类型菜单配置，则按配置菜单树直接返回（兼容历史 casbin 仅首页问题）
+	if u.Authority != "SYS_ADMIN" && u.Authority != "TENANT_ADMIN" &&
+		strings.TrimSpace(u.TenantID) != "" && strings.TrimSpace(u.ID) != "" {
+		menuOrgType, ok, resolveErr := resolveMenuOrgType(ctx, strings.TrimSpace(u.TenantID), strings.TrimSpace(u.ID))
+		if resolveErr != nil {
+			logrus.WithError(resolveErr).WithField("user_id", u.ID).Warn("[ServeUiElementsListByAuthority] resolve menu org type failed")
+		} else if ok {
+			allowed, exists, allowedErr := GroupApp.OrgTypePermission.GetAllowedUICodes(ctx, u.TenantID, menuOrgType)
+			if allowedErr != nil {
+				logrus.WithError(allowedErr).WithField("org_type", menuOrgType).Warn("[ServeUiElementsListByAuthority] load allowed ui codes failed")
+			} else if exists {
+				menuTotal, menuList, menuErr := dal.ServeUiElementsListByCodes(allowed)
+				if menuErr != nil {
+					logrus.WithError(menuErr).Warn("[ServeUiElementsListByAuthority] build menu tree by ui codes failed")
+				} else if len(allowed) > 0 && menuTotal == 0 {
+					logrus.WithField("org_type", menuOrgType).Warn("[ServeUiElementsListByAuthority] menu tree is empty by ui codes, fallback to casbin result")
+				} else {
+					total = menuTotal
+					list = menuList
 				}
 			}
 		}
@@ -181,4 +158,35 @@ func (*UiElements) GetTenantUiElementsList() (map[string]interface{}, error) {
 	UiElementsListRsp["list"] = list
 
 	return UiElementsListRsp, err
+}
+
+func resolveMenuOrgType(ctx context.Context, tenantID, userID string) (string, bool, error) {
+	userKind, err := GroupApp.OrgTypePermission.GetUserKind(ctx, tenantID, userID)
+	if err != nil {
+		return "", false, err
+	}
+
+	// 终端用户菜单权限走 APP_USER 配置
+	if userKind == model.UserKindEndUser {
+		return model.OrgTypeAppUser, true, nil
+	}
+
+	if userKind != model.UserKindOrgUser {
+		return "", false, nil
+	}
+
+	orgType, ok, err := GroupApp.OrgTypePermission.GetUserOrgType(ctx, tenantID, userID)
+	if err != nil {
+		return "", false, err
+	}
+	if !ok {
+		return "", false, nil
+	}
+
+	switch strings.TrimSpace(orgType) {
+	case model.OrgTypePACKFactory, model.OrgTypeDealer, model.OrgTypeStore:
+		return strings.TrimSpace(orgType), true, nil
+	default:
+		return "", false, nil
+	}
 }

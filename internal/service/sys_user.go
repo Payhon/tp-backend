@@ -22,11 +22,37 @@ import (
 	utils "project/pkg/utils"
 
 	"github.com/go-basic/uuid"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 type User struct{}
+
+const (
+	tenantIDNanoAlphabet       = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	tenantIDNanoSize           = 8
+	tenantIDGenerateMaxAttempt = 20
+)
+
+func (*User) generateTenantID(ctx context.Context) (string, error) {
+	for i := 0; i < tenantIDGenerateMaxAttempt; i++ {
+		tenantID, err := gonanoid.Generate(tenantIDNanoAlphabet, tenantIDNanoSize)
+		if err != nil {
+			return "", err
+		}
+
+		var exists int64
+		if err := global.DB.WithContext(ctx).Model(&model.User{}).Where("tenant_id = ?", tenantID).Count(&exists).Error; err != nil {
+			return "", err
+		}
+		if exists == 0 {
+			return tenantID, nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to generate unique tenant_id after %d attempts", tenantIDGenerateMaxAttempt)
+}
 
 // @description  创建用户
 func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.UserClaims) error {
@@ -70,7 +96,14 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 	switch claims.Authority {
 	case "SYS_ADMIN": // 系统管理员创建租户管理员
 		user.Authority = StringPtr("TENANT_ADMIN")
-		user.TenantID = StringPtr(strings.Split(uuid.New(), "-")[0])
+		tenantID, err := u.generateTenantID(context.Background())
+		if err != nil {
+			return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+				"error":  "failed to generate tenant_id",
+				"detail": err.Error(),
+			})
+		}
+		user.TenantID = StringPtr(tenantID)
 	case "TENANT_ADMIN": // 租户管理员创建租户用户/租户管理员（BMS：经销商管理员/厂家管理员）
 		desired := "TENANT_USER"
 		if createUserReq.Authority != nil && *createUserReq.Authority != "" {
@@ -475,7 +508,9 @@ func (*User) UpdateUser(updateUserReq *model.UpdateUserReq, claims *utils.UserCl
 	if updateUserReq.PhoneNumber != nil {
 		user.PhoneNumber = *updateUserReq.PhoneNumber
 	}
-	user.AdditionalInfo = updateUserReq.AdditionalInfo
+	if updateUserReq.AdditionalInfo != nil {
+		user.AdditionalInfo = updateUserReq.AdditionalInfo
+	}
 	user.Status = updateUserReq.Status
 	user.Remark = updateUserReq.Remark
 
@@ -496,31 +531,30 @@ func (*User) UpdateUser(updateUserReq *model.UpdateUserReq, claims *utils.UserCl
 	// 关联经销商（仅租户用户；传空字符串表示解绑）
 	if updateUserReq.DealerID != nil {
 		if user.Authority != nil && *user.Authority == "TENANT_ADMIN" {
-			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
-				"error": "TENANT_ADMIN cannot bind dealer",
-			})
-		}
-		val := *updateUserReq.DealerID
-		// 兼容“清空”：传空字符串则置 NULL
-		if val == "" {
-			if err := global.DB.Table("users").
-				Where("id = ?", user.ID).
-				Update("dealer_id", nil).Error; err != nil {
-				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-					"operation": "clear_user_dealer_id",
-					"user_id":   user.ID,
-					"sql_error": err.Error(),
-				})
-			}
+			logrus.WithField("user_id", user.ID).Warn("ignore dealer_id update for TENANT_ADMIN")
 		} else {
-			if err := global.DB.Table("users").
-				Where("id = ?", user.ID).
-				Update("dealer_id", val).Error; err != nil {
-				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-					"operation": "update_user_dealer_id",
-					"user_id":   user.ID,
-					"sql_error": err.Error(),
-				})
+			val := *updateUserReq.DealerID
+			// 兼容“清空”：传空字符串则置 NULL
+			if val == "" {
+				if err := global.DB.Table("users").
+					Where("id = ?", user.ID).
+					Update("dealer_id", nil).Error; err != nil {
+					return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+						"operation": "clear_user_dealer_id",
+						"user_id":   user.ID,
+						"sql_error": err.Error(),
+					})
+				}
+			} else {
+				if err := global.DB.Table("users").
+					Where("id = ?", user.ID).
+					Update("dealer_id", val).Error; err != nil {
+					return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+						"operation": "update_user_dealer_id",
+						"user_id":   user.ID,
+						"sql_error": err.Error(),
+					})
+				}
 			}
 		}
 	}
@@ -812,10 +846,13 @@ func (u *User) EmailRegister(ctx context.Context, req *model.EmailRegisterReq) (
 	req.Password = utils.BcryptHash(req.Password)
 
 	now := time.Now().UTC()
-	tenantID, err := common.GenerateRandomString(8)
+	tenantID, err := u.generateTenantID(ctx)
 	if err != nil {
 		logrus.Error("生成租户ID失败", err)
-		return nil, errcode.New(errcode.CodeSystemError)
+		return nil, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+			"error":  "failed to generate tenant_id",
+			"detail": err.Error(),
+		})
 	}
 
 	// 构建用户信息

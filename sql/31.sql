@@ -1,30 +1,81 @@
 -- Version: 31
 -- Description: Battery model link device_config + battery operation logs + battery import jobs
 
--- 1) battery_models link device_configs
+-- 1) battery model link device_configs
+-- 兼容两种结构：
+-- - 旧结构：battery_models（后续会被 41.sql 重命名为 battery_bms_models）
+-- - 新结构：battery_bms_models（1.sql 已拆分）
 DO $$
+DECLARE
+    target_table text;
 BEGIN
+    IF to_regclass('public.battery_bms_models') IS NOT NULL THEN
+        target_table := 'battery_bms_models';
+    ELSIF to_regclass('public.battery_models') IS NOT NULL
+        AND EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'battery_models'
+              AND column_name = 'voltage_rated'
+        ) THEN
+        -- 仅对旧版 battery_models（BMS 板型号）补充字段，避免污染新电池型号表
+        target_table := 'battery_models';
+    END IF;
+
+    IF target_table IS NULL THEN
+        RETURN;
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'battery_models' AND column_name = 'device_config_id'
+        WHERE table_schema = 'public'
+          AND table_name = target_table
+          AND column_name = 'device_config_id'
     ) THEN
-        ALTER TABLE public.battery_models
-            ADD COLUMN device_config_id varchar(36) NULL;
-        COMMENT ON COLUMN public.battery_models.device_config_id IS '关联设备模板ID(device_configs.id)';
-
-        CREATE INDEX IF NOT EXISTS idx_battery_models_device_config_id ON public.battery_models(device_config_id);
+        EXECUTE format('ALTER TABLE public.%I ADD COLUMN device_config_id varchar(36) NULL', target_table);
     END IF;
+
+    EXECUTE format(
+        'COMMENT ON COLUMN public.%I.device_config_id IS %L',
+        target_table,
+        '关联设备模板ID(device_configs.id)'
+    );
+
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_battery_models_device_config_id ON public.%I(device_config_id)', target_table);
 END $$;
 
 DO $$
+DECLARE
+    target_table text;
 BEGIN
+    IF to_regclass('public.battery_bms_models') IS NOT NULL THEN
+        target_table := 'battery_bms_models';
+    ELSIF to_regclass('public.battery_models') IS NOT NULL
+        AND EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'battery_models'
+              AND column_name = 'voltage_rated'
+        ) THEN
+        target_table := 'battery_models';
+    END IF;
+
+    IF target_table IS NULL THEN
+        RETURN;
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name = 'battery_models' AND constraint_name = 'fk_battery_models_device_config_id'
+        WHERE table_schema = 'public'
+          AND table_name = target_table
+          AND constraint_name = 'fk_battery_models_device_config_id'
     ) THEN
-        ALTER TABLE public.battery_models
-            ADD CONSTRAINT fk_battery_models_device_config_id
-            FOREIGN KEY (device_config_id) REFERENCES public.device_configs(id) ON DELETE RESTRICT;
+        EXECUTE format(
+            'ALTER TABLE public.%I ADD CONSTRAINT fk_battery_models_device_config_id FOREIGN KEY (device_config_id) REFERENCES public.device_configs(id) ON DELETE RESTRICT',
+            target_table
+        );
     END IF;
 END $$;
 

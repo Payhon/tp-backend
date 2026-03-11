@@ -38,6 +38,8 @@ type apps struct {
 	Dealer             // BMS: 经销商管理
 	BmsDashboard       // BMS: Dashboard
 	Battery            // BMS: 电池管理
+	CellBrand          // BMS: 电芯品牌管理
+	BatteryBmsModel    // BMS: BMS型号管理
 	BatteryModel       // BMS: 电池型号管理
 	DeviceTransfer     // BMS: 设备转移
 	DeviceBinding      // BMS: APP设备绑定

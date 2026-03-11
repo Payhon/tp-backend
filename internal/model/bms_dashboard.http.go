@@ -48,3 +48,33 @@ type BmsDashboardOnlineTrendPoint struct {
 type BmsDashboardOnlineTrendResp struct {
 	Points []BmsDashboardOnlineTrendPoint `json:"points"`
 }
+
+// BmsDashboardActivationTrendPoint 激活趋势点（按天）
+type BmsDashboardActivationTrendPoint struct {
+	Date  string `json:"date"` // YYYY-MM-DD
+	Count int64  `json:"count"`
+}
+
+// BmsInstitutionHomeSummaryResp 机构首页汇总
+type BmsInstitutionHomeSummaryResp struct {
+	BatteryTotal         int64                              `json:"battery_total"`
+	OnlineCount          int64                              `json:"online_count"`
+	OfflineCount         int64                              `json:"offline_count"`
+	ActivatedCount       int64                              `json:"activated_count"`
+	InactiveCount        int64                              `json:"inactive_count"`
+	ActivationTrendWeek  []BmsDashboardActivationTrendPoint `json:"activation_trend_week"`
+	ActivationTrendMonth []BmsDashboardActivationTrendPoint `json:"activation_trend_month"`
+}
+
+// BmsEndUserHomeSummaryResp 终端用户首页汇总
+type BmsEndUserHomeSummaryResp struct {
+	BatteryTotal int64 `json:"battery_total"`
+}
+
+// BmsHomeSummaryResp 首页汇总（按用户类型返回）
+type BmsHomeSummaryResp struct {
+	UserKind    string                         `json:"user_kind"`             // ORG_USER | END_USER
+	OrgType     string                         `json:"org_type"`              // PACK_FACTORY/DEALER/STORE/APP_USER
+	Institution *BmsInstitutionHomeSummaryResp `json:"institution,omitempty"` // 机构首页
+	EndUser     *BmsEndUserHomeSummaryResp     `json:"end_user,omitempty"`    // 终端用户首页
+}

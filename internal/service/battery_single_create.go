@@ -18,41 +18,75 @@ import (
 
 // CreateSingleBattery BMS：添加/更新单个电池信息（device_batteries）
 func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreateReq, claims *utils.UserClaims, orgID string) (*model.BatteryCreateResp, error) {
-	// 电池型号：支持 id 或 name
+	// 电池型号：兼容历史 PACK 型号与当前 BMS 型号
 	var batteryModelID *string
 	var batteryModelName *string
 	var warrantyMonths *int32
 	var deviceConfigID *string
+
+	resolveBmsModelMeta := func(packModelID, packModelName string) error {
+		if bmsModel, err := getBmsBatteryModelByID(ctx, claims.TenantID, packModelID); err == nil {
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+			return nil
+		} else if err != gorm.ErrRecordNotFound {
+			return err
+		}
+
+		if bmsModel, err := getBmsBatteryModelByName(ctx, claims.TenantID, packModelName); err == nil {
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+			return nil
+		} else if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		return nil
+	}
+
 	if req.BatteryModelID != nil && *req.BatteryModelID != "" {
-		bm, err := query.BatteryModel.WithContext(ctx).Where(
-			query.BatteryModel.ID.Eq(*req.BatteryModelID),
-			query.BatteryModel.TenantID.Eq(claims.TenantID),
-		).First()
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "电池型号不存在"})
-			}
+		if bmsModel, err := getBmsBatteryModelByID(ctx, claims.TenantID, *req.BatteryModelID); err == nil {
+			batteryModelID = &bmsModel.ID
+			batteryModelName = &bmsModel.Name
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+		} else if err != gorm.ErrRecordNotFound {
 			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		} else {
+			bm, err := getPackBatteryModelByID(ctx, claims.TenantID, *req.BatteryModelID)
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "BMS型号不存在"})
+				}
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+			batteryModelID = &bm.ID
+			batteryModelName = &bm.Name
+			if err := resolveBmsModelMeta(bm.ID, bm.Name); err != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
 		}
-		batteryModelID = &bm.ID
-		batteryModelName = &bm.Name
-		warrantyMonths = bm.WarrantyMonth
-		deviceConfigID = bm.DeviceConfigID
 	} else if req.BatteryModelName != nil && *req.BatteryModelName != "" {
-		bm, err := query.BatteryModel.WithContext(ctx).Where(
-			query.BatteryModel.Name.Eq(*req.BatteryModelName),
-			query.BatteryModel.TenantID.Eq(claims.TenantID),
-		).First()
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "电池型号不存在"})
-			}
+		if bmsModel, err := getBmsBatteryModelByName(ctx, claims.TenantID, *req.BatteryModelName); err == nil {
+			batteryModelID = &bmsModel.ID
+			batteryModelName = &bmsModel.Name
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+		} else if err != gorm.ErrRecordNotFound {
 			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		} else {
+			bm, err := getPackBatteryModelByName(ctx, claims.TenantID, *req.BatteryModelName)
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "BMS型号不存在"})
+				}
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+			batteryModelID = &bm.ID
+			batteryModelName = &bm.Name
+			if err := resolveBmsModelMeta(bm.ID, bm.Name); err != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
 		}
-		batteryModelID = &bm.ID
-		batteryModelName = &bm.Name
-		warrantyMonths = bm.WarrantyMonth
-		deviceConfigID = bm.DeviceConfigID
 	}
 
 	// item_uuid -> devices.device_number
@@ -70,7 +104,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "质保到期格式错误，应为 YYYY-MM-DD"})
 	}
 
-	// 若未传质保到期，且传了出厂日期 & 型号带质保月数，则自动推算
+	// 若未传质保到期，且传了出厂日期 & BMS 板型号带质保月数，则自动推算
 	if warrantyExpireDate == nil && productionDate != nil && warrantyMonths != nil && *warrantyMonths > 0 {
 		t := productionDate.AddDate(0, int(*warrantyMonths), 0)
 		warrantyExpireDate = &t
@@ -134,8 +168,9 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
 	}
 	_ = global.DB.WithContext(ctx).Table("device_batteries AS dbat").
-		Select(`dbat.battery_model_id, bm.name AS battery_model_name, dbat.item_uuid, dbat.batch_number, dbat.product_spec, dbat.order_number, dbat.bms_comm_type, dbat.ble_mac, dbat.comm_chip_id, dbat.production_date, dbat.warranty_expire_date`).
-		Joins(`LEFT JOIN battery_models bm ON bm.id = dbat.battery_model_id`).
+		Select(`dbat.battery_model_id, COALESCE(bm_pack.name, bm_bms.name) AS battery_model_name, dbat.item_uuid, dbat.batch_number, dbat.product_spec, dbat.order_number, dbat.bms_comm_type, dbat.ble_mac, dbat.comm_chip_id, dbat.production_date, dbat.warranty_expire_date`).
+		Joins(`LEFT JOIN battery_models bm_pack ON bm_pack.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN battery_bms_models bm_bms ON bm_bms.id = dbat.battery_model_id`).
 		Where("dbat.device_id = ?", device.ID).
 		Scan(&row).Error
 

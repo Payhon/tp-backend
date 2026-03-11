@@ -31,7 +31,7 @@ type DealerUpdateReq struct {
 // DealerListReq 经销商列表查询请求
 type DealerListReq struct {
 	Page     int     `form:"page" binding:"required,min=1"`
-	PageSize int     `form:"page_size" binding:"required,min=1,max=1000"`
+	PageSize int     `form:"page_size" binding:"required,min=1,max=10000"`
 	Name     *string `form:"name"`
 	Phone    *string `form:"phone"`
 	Province *string `form:"province"`

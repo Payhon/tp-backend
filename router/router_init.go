@@ -91,6 +91,11 @@ func RouterInit() *gin.Engine {
 			v1.POST("plugin/devices", controllers.HandleDeviceConfigForProtocolPluginByProtocolType)
 			v1.POST("plugin/service/access/list", controllers.HandlePluginServiceAccessList)
 			v1.POST("plugin/service/access", controllers.HandlePluginServiceAccess)
+			v1.GET("login/captcha", controllers.UserApi.GetLoginCaptcha)
+			v1.GET("files/*filepath", func(c *gin.Context) {
+				filepath := c.Param("filepath")
+				c.File("./files" + filepath)
+			})
 			v1.POST("login", controllers.Login)
 			v1.GET("verification/code", controllers.HandleVerificationCode)
 			v1.POST("reset/password", controllers.ResetPassword)
@@ -133,6 +138,8 @@ func RouterInit() *gin.Engine {
 			v1.GET("telemetry/datas/current/keys/ws", controllers.TelemetryDataApi.ServeCurrentDataByKey)
 			// APP端电池设备：MQTT透传（ws桥接）
 			v1.GET("app/battery/socket/ws", controllers.AppBatteryApi.ServeBatterySocketByWS)
+			// APP端电池设备：BLE Relay 实时通道（ws）
+			v1.GET("app/battery/relay/ws", controllers.AppBatteryApi.ServeBatteryRelayByWS)
 			v1.GET("ota/download/files/upgradePackage/:path/:file", controllers.OTAApi.DownloadOTAUpgradePackage)
 			// 获取系统时间
 			v1.GET("systime", controllers.SystemApi.HandleSystime)
@@ -277,6 +284,8 @@ func RouterInit() *gin.Engine {
 			apps.Model.Dealer.InitDealer(bmsRouter)                         // 经销商管理（已废弃，保留兼容）
 			apps.Model.Org.InitOrg(bmsRouter)                               // 组织管理（多层级）
 			apps.Model.Battery.InitBattery(bmsRouter)                       // 电池管理
+			apps.Model.CellBrand.InitCellBrand(bmsRouter)                   // 电芯品牌管理
+			apps.Model.BatteryBmsModel.InitBatteryBmsModel(bmsRouter)       // BMS型号管理
 			apps.Model.BatteryModel.InitBatteryModel(bmsRouter)             // 电池型号管理
 			apps.Model.DeviceTransfer.InitDeviceTransfer(bmsRouter)         // 设备转移
 			apps.Model.DeviceBinding.InitDeviceBinding(bmsRouter)           // APP设备绑定

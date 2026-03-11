@@ -2,49 +2,36 @@ package model
 
 // BatteryModelCreateReq 创建电池型号请求
 type BatteryModelCreateReq struct {
-	Name           string   `json:"name" binding:"required"`
-	DeviceConfigID string   `json:"device_config_id" binding:"required"`
-	VoltageRated   *float64 `json:"voltage_rated"`
-	CapacityRated  *float64 `json:"capacity_rated"`
-	CellCount      *int32   `json:"cell_count"`
-	NominalPower   *float64 `json:"nominal_power"`
-	WarrantyMonths *int32   `json:"warranty_months"`
-	Description    *string  `json:"description"`
+	SeqNo int16   `json:"seq_no" binding:"required,gte=1,lte=255"`
+	Name  string  `json:"name" binding:"required,max=64"`
+	OrgID *string `json:"org_id" binding:"omitempty,max=36"`
 }
 
 // BatteryModelUpdateReq 更新电池型号请求
 type BatteryModelUpdateReq struct {
-	Name           *string  `json:"name"`
-	DeviceConfigID *string  `json:"device_config_id"`
-	VoltageRated   *float64 `json:"voltage_rated"`
-	CapacityRated  *float64 `json:"capacity_rated"`
-	CellCount      *int32   `json:"cell_count"`
-	NominalPower   *float64 `json:"nominal_power"`
-	WarrantyMonths *int32   `json:"warranty_months"`
-	Description    *string  `json:"description"`
+	SeqNo *int16  `json:"seq_no" binding:"omitempty,gte=1,lte=255"`
+	Name  *string `json:"name" binding:"omitempty,max=64"`
+	OrgID *string `json:"org_id" binding:"omitempty,max=36"`
 }
 
 // BatteryModelListReq 电池型号列表查询请求
+// page/page_size 仅用于兼容历史调用；缺省时返回全量。
 type BatteryModelListReq struct {
-	Page     int     `form:"page" binding:"required,min=1"`
-	PageSize int     `form:"page_size" binding:"required,min=1,max=1000"`
+	Page     int     `form:"page"`
+	PageSize int     `form:"page_size"`
 	Name     *string `form:"name"`
+	OrgID    *string `form:"org_id"`
 }
 
 // BatteryModelResp 电池型号响应
 type BatteryModelResp struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name"`
-	DeviceConfigID   *string  `json:"device_config_id"`
-	DeviceConfigName *string  `json:"device_config_name"`
-	VoltageRated     *float64 `json:"voltage_rated"`
-	CapacityRated    *float64 `json:"capacity_rated"`
-	CellCount        *int32   `json:"cell_count"`
-	NominalPower     *float64 `json:"nominal_power"`
-	WarrantyMonths   *int32   `json:"warranty_months"`
-	Description      *string  `json:"description"`
-	DeviceCount      int64    `json:"device_count"` // 关联设备数
-	CreatedAt        string   `json:"created_at"`
+	ID          string  `json:"id"`
+	SeqNo       *int16  `json:"seq_no"`
+	Name        string  `json:"name"`
+	OrgID       *string `json:"org_id"`
+	OrgName     *string `json:"org_name"`
+	DeviceCount int64   `json:"device_count"`
+	CreatedAt   string  `json:"created_at"`
 }
 
 // BatteryModelListResp 电池型号列表响应

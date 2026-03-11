@@ -15,5 +15,6 @@ func (*BmsDashboard) InitBmsDashboard(Router *gin.RouterGroup) {
 		dashboardApi.GET("/kpi", api.Controllers.BmsDashboardApi.GetKpi)
 		dashboardApi.GET("/alarm/overview", api.Controllers.BmsDashboardApi.GetAlarmOverview)
 		dashboardApi.GET("/trend/online", api.Controllers.BmsDashboardApi.GetOnlineTrend)
+		dashboardApi.GET("/home/summary", api.Controllers.BmsDashboardApi.GetHomeSummary)
 	}
 }

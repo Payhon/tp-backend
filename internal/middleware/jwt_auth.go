@@ -35,6 +35,13 @@ func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 1. 优先检查 JWT token
 		token := c.Request.Header.Get("x-token")
+		// 浏览器 WebSocket 无法携带自定义 Header，允许通过 query 传 token。
+		if token == "" {
+			token = c.Query("x-token")
+		}
+		if token == "" {
+			token = c.Query("token")
+		}
 		if token != "" {
 			if isValidJWT(c, token) {
 				c.Next()

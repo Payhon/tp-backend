@@ -49,6 +49,8 @@ func RedisInit() (*redis.Client, error) {
 	go global.InitSSEManager()
 	// 启动WebSocket管理器
 	go global.InitWSManager()
+	// 启动 BMS 历史导出通知 WebSocket 管理器
+	go global.InitBMSHistoryExportWSManager()
 	return client, nil
 }
 

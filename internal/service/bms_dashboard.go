@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"project/internal/model"
@@ -114,8 +115,9 @@ func (*BmsDashboard) GetAlarmOverview(ctx context.Context, claims *utils.UserCla
 	}
 	db := global.DB.WithContext(ctx)
 	start := time.Now().AddDate(0, 0, -days)
-
-	base := buildLatestDeviceAlarmsBase(db, claims.TenantID, orgID, start)
+	newBase := func() *gorm.DB {
+		return buildLatestDeviceAlarmsBase(db, claims.TenantID, orgID, start)
+	}
 
 	// 状态分布（H/M/L/N）
 	type statusRow struct {
@@ -123,7 +125,8 @@ func (*BmsDashboard) GetAlarmOverview(ctx context.Context, claims *utils.UserCla
 		Cnt         int64  `gorm:"column:cnt"`
 	}
 	var statusRows []statusRow
-	if err := base.Select("lda.alarm_status AS alarm_status, COUNT(1) AS cnt").
+	if err := newBase().
+		Select("lda.alarm_status AS alarm_status, COUNT(1) AS cnt").
 		Group("lda.alarm_status").
 		Scan(&statusRows).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
@@ -139,7 +142,8 @@ func (*BmsDashboard) GetAlarmOverview(ctx context.Context, claims *utils.UserCla
 		Cnt  int64  `gorm:"column:cnt"`
 	}
 	var topRows []topRow
-	if err := base.Select("COALESCE(lda.name, '') AS name, COUNT(1) AS cnt").
+	if err := newBase().
+		Select("COALESCE(lda.name, '') AS name, COUNT(1) AS cnt").
 		Group("lda.name").
 		Order("cnt DESC").
 		Limit(3).
@@ -161,7 +165,8 @@ func (*BmsDashboard) GetAlarmOverview(ctx context.Context, claims *utils.UserCla
 		Cnt int64  `gorm:"column:cnt"`
 	}
 	var trendRows []trendRow
-	if err := base.Select("to_char(lda.create_at::date, 'YYYY-MM-DD') AS day, COUNT(1) AS cnt").
+	if err := newBase().
+		Select("to_char(lda.create_at::date, 'YYYY-MM-DD') AS day, COUNT(1) AS cnt").
 		Group("lda.create_at::date").
 		Order("day ASC").
 		Scan(&trendRows).Error; err != nil {
@@ -223,3 +228,298 @@ func (*BmsDashboard) GetOnlineTrend(ctx context.Context, claims *utils.UserClaim
 // 让 gorm/gen 的 query 引用被 go 编译器认为已使用（避免未来 refactor 误删）
 var _ = query.Device
 var _ = gorm.ErrRecordNotFound
+
+// GetHomeSummary 首页汇总（按用户类型）
+func (*BmsDashboard) GetHomeSummary(ctx context.Context, claims *utils.UserClaims, orgID string, viewAs string) (*model.BmsHomeSummaryResp, error) {
+	resp := &model.BmsHomeSummaryResp{
+		UserKind: model.UserKindEndUser,
+		OrgType:  model.OrgTypeAppUser,
+	}
+	if claims == nil || claims.ID == "" || claims.TenantID == "" {
+		return resp, nil
+	}
+
+	viewAs = strings.ToUpper(strings.TrimSpace(viewAs))
+	isAdmin := claims.Authority == "SYS_ADMIN" || claims.Authority == "TENANT_ADMIN"
+	if isAdmin && viewAs != "" && viewAs != "TENANT" {
+		switch viewAs {
+		case model.OrgTypePACKFactory, model.OrgTypeDealer, model.OrgTypeStore:
+			weekTrend, err := GroupApp.BmsDashboard.getActivationTrendByOrgType(ctx, claims.TenantID, viewAs, 7)
+			if err != nil {
+				return nil, err
+			}
+			monthTrend, err := GroupApp.BmsDashboard.getActivationTrendByOrgType(ctx, claims.TenantID, viewAs, 30)
+			if err != nil {
+				return nil, err
+			}
+			kpi, err := GroupApp.BmsDashboard.getKpiByOrgType(ctx, claims.TenantID, viewAs)
+			if err != nil {
+				return nil, err
+			}
+
+			resp.UserKind = model.UserKindOrgUser
+			resp.OrgType = viewAs
+			resp.Institution = &model.BmsInstitutionHomeSummaryResp{
+				BatteryTotal:         kpi.DeviceTotal,
+				OnlineCount:          kpi.DeviceOnline,
+				OfflineCount:         kpi.DeviceTotal - kpi.DeviceOnline,
+				ActivatedCount:       kpi.DeviceActivated,
+				InactiveCount:        kpi.DeviceTotal - kpi.DeviceActivated,
+				ActivationTrendWeek:  weekTrend,
+				ActivationTrendMonth: monthTrend,
+			}
+			return resp, nil
+		case model.OrgTypeAppUser:
+			total, err := GroupApp.BmsDashboard.getEndUserBatteryTotalByTenant(ctx, claims.TenantID)
+			if err != nil {
+				return nil, err
+			}
+			resp.UserKind = model.UserKindEndUser
+			resp.OrgType = model.OrgTypeAppUser
+			resp.EndUser = &model.BmsEndUserHomeSummaryResp{
+				BatteryTotal: total,
+			}
+			return resp, nil
+		}
+	}
+
+	userKind, err := GroupApp.OrgTypePermission.GetUserKind(ctx, claims.TenantID, claims.ID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user_kind",
+			"user_id":   claims.ID,
+			"error":     err.Error(),
+		})
+	}
+	resp.UserKind = userKind
+
+	if userKind == model.UserKindOrgUser {
+		orgType := ""
+		if t, ok, orgErr := GroupApp.OrgTypePermission.GetUserOrgType(ctx, claims.TenantID, claims.ID); orgErr != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_org_type",
+				"user_id":   claims.ID,
+				"error":     orgErr.Error(),
+			})
+		} else if ok {
+			orgType = t
+		}
+		resp.OrgType = orgType
+
+		kpi, err := GroupApp.BmsDashboard.GetKpi(ctx, claims, orgID)
+		if err != nil {
+			return nil, err
+		}
+		weekTrend, err := GroupApp.BmsDashboard.GetActivationTrend(ctx, claims, orgID, 7)
+		if err != nil {
+			return nil, err
+		}
+		monthTrend, err := GroupApp.BmsDashboard.GetActivationTrend(ctx, claims, orgID, 30)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Institution = &model.BmsInstitutionHomeSummaryResp{
+			BatteryTotal:         kpi.DeviceTotal,
+			OnlineCount:          kpi.DeviceOnline,
+			OfflineCount:         kpi.DeviceTotal - kpi.DeviceOnline,
+			ActivatedCount:       kpi.DeviceActivated,
+			InactiveCount:        kpi.DeviceTotal - kpi.DeviceActivated,
+			ActivationTrendWeek:  weekTrend,
+			ActivationTrendMonth: monthTrend,
+		}
+		return resp, nil
+	}
+
+	total, err := GroupApp.BmsDashboard.GetEndUserBatteryTotal(ctx, claims)
+	if err != nil {
+		return nil, err
+	}
+	resp.OrgType = model.OrgTypeAppUser
+	resp.EndUser = &model.BmsEndUserHomeSummaryResp{
+		BatteryTotal: total,
+	}
+	return resp, nil
+}
+
+// GetActivationTrend 激活趋势（按天）
+func (*BmsDashboard) GetActivationTrend(ctx context.Context, claims *utils.UserClaims, orgID string, days int) ([]model.BmsDashboardActivationTrendPoint, error) {
+	if days <= 0 {
+		days = 7
+	}
+	if days > 365 {
+		days = 365
+	}
+
+	now := time.Now()
+	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(days - 1))
+
+	db := global.DB.WithContext(ctx)
+	q := db.Table("device_batteries AS dbat").
+		Select("to_char(dbat.activation_date::date, 'YYYY-MM-DD') AS day, COUNT(DISTINCT dbat.device_id) AS cnt").
+		Joins("JOIN devices AS d ON d.id = dbat.device_id").
+		Where("d.tenant_id = ?", claims.TenantID).
+		Where("dbat.activation_status = ?", "ACTIVE").
+		Where("dbat.activation_date IS NOT NULL").
+		Where("dbat.activation_date >= ?", startDate)
+
+	if orgID != "" {
+		q = q.Where(`dbat.owner_org_id IN (
+			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+		)`, claims.TenantID, orgID)
+	}
+
+	type dayCountRow struct {
+		Day string `gorm:"column:day"`
+		Cnt int64  `gorm:"column:cnt"`
+	}
+	var rows []dayCountRow
+	if err := q.Group("dbat.activation_date::date").Order("day ASC").Scan(&rows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_activation_trend",
+			"error":     err.Error(),
+		})
+	}
+
+	countMap := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		countMap[row.Day] = row.Cnt
+	}
+
+	result := make([]model.BmsDashboardActivationTrendPoint, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i).Format("2006-01-02")
+		result = append(result, model.BmsDashboardActivationTrendPoint{
+			Date:  day,
+			Count: countMap[day],
+		})
+	}
+	return result, nil
+}
+
+// GetEndUserBatteryTotal 获取终端用户持有电池总数
+func (*BmsDashboard) GetEndUserBatteryTotal(ctx context.Context, claims *utils.UserClaims) (int64, error) {
+	var total int64
+	if err := global.DB.WithContext(ctx).
+		Table("device_user_bindings AS dub").
+		Distinct("dub.device_id").
+		Joins("JOIN devices AS d ON d.id = dub.device_id").
+		Where("dub.user_id = ? AND d.tenant_id = ?", claims.ID, claims.TenantID).
+		Count(&total).Error; err != nil {
+		return 0, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_end_user_battery_total",
+			"error":     err.Error(),
+		})
+	}
+	return total, nil
+}
+
+func (*BmsDashboard) getKpiByOrgType(ctx context.Context, tenantID, orgType string) (*model.BmsDashboardKpiResp, error) {
+	db := global.DB.WithContext(ctx)
+
+	base := buildBatteryScopeByOrgType(db, tenantID, orgType)
+
+	var deviceTotal int64
+	if err := base().Distinct("d.id").Count(&deviceTotal).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	var deviceOnline int64
+	if err := base().Where("d.is_online = ?", 1).Distinct("d.id").Count(&deviceOnline).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	var deviceActivated int64
+	if err := base().Where("dbat.activation_status = ?", "ACTIVE").Distinct("d.id").Count(&deviceActivated).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	orgDeviceSubQ := db.Table("device_batteries AS dbat").
+		Select("DISTINCT dbat.device_id").
+		Where(`dbat.owner_org_id IN (
+			SELECT id FROM orgs WHERE tenant_id = ? AND org_type = ?
+		)`, tenantID, orgType)
+	alarmQ := db.Table("latest_device_alarms AS lda").
+		Where("lda.tenant_id = ?", tenantID).
+		Where("lda.alarm_status IS NOT NULL AND lda.alarm_status <> ?", "N").
+		Joins("JOIN (?) AS org_dev ON org_dev.device_id = lda.device_id", orgDeviceSubQ)
+
+	var alarmActive int64
+	if err := alarmQ.Count(&alarmActive).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	return &model.BmsDashboardKpiResp{
+		DeviceTotal:     deviceTotal,
+		DeviceOnline:    deviceOnline,
+		DeviceActivated: deviceActivated,
+		AlarmActive:     alarmActive,
+	}, nil
+}
+
+func (*BmsDashboard) getActivationTrendByOrgType(ctx context.Context, tenantID, orgType string, days int) ([]model.BmsDashboardActivationTrendPoint, error) {
+	if days <= 0 {
+		days = 7
+	}
+	if days > 365 {
+		days = 365
+	}
+
+	now := time.Now()
+	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(days - 1))
+
+	db := global.DB.WithContext(ctx)
+	q := db.Table("device_batteries AS dbat").
+		Select("to_char(dbat.activation_date::date, 'YYYY-MM-DD') AS day, COUNT(DISTINCT dbat.device_id) AS cnt").
+		Joins("JOIN devices AS d ON d.id = dbat.device_id").
+		Where("d.tenant_id = ?", tenantID).
+		Where("dbat.activation_status = ?", "ACTIVE").
+		Where("dbat.activation_date IS NOT NULL").
+		Where("dbat.activation_date >= ?", startDate).
+		Where(`dbat.owner_org_id IN (
+			SELECT id FROM orgs WHERE tenant_id = ? AND org_type = ?
+		)`, tenantID, orgType)
+
+	type dayCountRow struct {
+		Day string `gorm:"column:day"`
+		Cnt int64  `gorm:"column:cnt"`
+	}
+	var rows []dayCountRow
+	if err := q.Group("dbat.activation_date::date").Order("day ASC").Scan(&rows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_activation_trend_by_org_type",
+			"error":     err.Error(),
+		})
+	}
+
+	countMap := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		countMap[row.Day] = row.Cnt
+	}
+
+	result := make([]model.BmsDashboardActivationTrendPoint, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i).Format("2006-01-02")
+		result = append(result, model.BmsDashboardActivationTrendPoint{
+			Date:  day,
+			Count: countMap[day],
+		})
+	}
+	return result, nil
+}
+
+func (*BmsDashboard) getEndUserBatteryTotalByTenant(ctx context.Context, tenantID string) (int64, error) {
+	var total int64
+	if err := global.DB.WithContext(ctx).
+		Table("device_user_bindings AS dub").
+		Distinct("dub.device_id").
+		Joins("JOIN devices AS d ON d.id = dub.device_id").
+		Where("d.tenant_id = ?", tenantID).
+		Count(&total).Error; err != nil {
+		return 0, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_end_user_battery_total_by_tenant",
+			"error":     err.Error(),
+		})
+	}
+	return total, nil
+}

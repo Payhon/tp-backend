@@ -28,6 +28,11 @@ func (*UserApi) Login(c *gin.Context) {
 		return
 	}
 
+	if err := service.GroupApp.User.VerifyAndConsumeLoginCaptcha(c.Request.Context(), loginReq.CaptchaID, loginReq.CaptchaCode); err != nil {
+		c.Error(err)
+		return
+	}
+
 	result := utils.ValidateInput(loginReq.Email)
 	if !result.IsValid {
 		c.Error(errcode.WithData(200013, map[string]interface{}{
@@ -64,6 +69,22 @@ func (*UserApi) Login(c *gin.Context) {
 	}
 	_ = loginLock.LoginSuccess(c, loginReq.Email)
 	c.Set("data", loginRsp)
+}
+
+// GetLoginCaptcha
+// @Summary 获取登录图形验证码
+// @Tags 用户认证
+// @Produce json
+// @Success 200 {object} model.LoginCaptchaRsp "成功"
+// @Failure 400 {object} errcode.Error "错误响应"
+// @Router /api/v1/login/captcha [get]
+func (*UserApi) GetLoginCaptcha(c *gin.Context) {
+	captcha, err := service.GroupApp.User.CreateLoginCaptcha(c.Request.Context())
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", captcha)
 }
 
 // GET /api/v1/user/logout

@@ -22,14 +22,22 @@ type CreateUserReq struct {
 }
 
 type LoginReq struct {
-	Email    string `json:"email" validate:"required" example:"test@test.cn"`            // 登录账号(输入邮箱或者手机号)
-	Password string `json:"password" validate:"required,min=6,max=512" example:"123456"` // 密码
-	Salt     string `json:"salt" validate:"omitempty,max=512"`                           // 随机盐(如果在超管设置了前端RSA加密则需要上送)
+	Email       string `json:"email" validate:"required" example:"test@test.cn"`            // 登录账号(输入邮箱或者手机号)
+	Password    string `json:"password" validate:"required,min=6,max=512" example:"123456"` // 密码
+	Salt        string `json:"salt" validate:"omitempty,max=512"`                           // 随机盐(如果在超管设置了前端RSA加密则需要上送)
+	CaptchaID   string `json:"captcha_id" validate:"required,max=64"`                       // 图形验证码ID
+	CaptchaCode string `json:"captcha_code" validate:"required,min=4,max=8"`                // 图形验证码内容
 }
 
 type LoginRsp struct {
 	Token     *string `gorm:"column:token" json:"token"` // 登录凭证
 	ExpiresIn int64   `json:"expires_in"`                // 过期时间(单位:秒)
+}
+
+type LoginCaptchaRsp struct {
+	CaptchaID    string `json:"captcha_id"`    // 图形验证码ID
+	CaptchaImage string `json:"captcha_image"` // 图形验证码图片(data URI)
+	ExpiresIn    int64  `json:"expires_in"`    // 过期时间(单位:秒)
 }
 
 type UserListReq struct {

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"strings"
-	"unicode"
 
 	"project/internal/model"
 	"project/pkg/errcode"
@@ -27,20 +26,8 @@ type deviceProvisionRow struct {
 }
 
 func normalizeMac12(input string) (string, error) {
-	s := strings.TrimSpace(input)
-	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
-		s = s[2:]
-	}
-
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if unicode.IsDigit(r) || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') {
-			b.WriteRune(unicode.ToUpper(r))
-		}
-	}
-	out := b.String()
-	if len(out) != 12 {
+	out, ok := normalizeBleMac12ForStore(input)
+	if !ok {
 		return "", errcode.NewWithMessage(errcode.CodeParamError, "invalid ble_mac, expected 12 hex chars")
 	}
 	return out, nil
@@ -142,15 +129,27 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 			return nil, err
 		}
 
+		shouldRepairMac := false
 		if row.BleMac != nil && strings.TrimSpace(*row.BleMac) != "" {
 			existingMac, err := normalizeMac12(*row.BleMac)
-			if err == nil && existingMac != newMac {
-				return nil, errcode.NewWithMessage(errcode.CodeParamError, "ble_mac mismatch with existing record")
+			if err == nil {
+				if existingMac != newMac {
+					return nil, errcode.NewWithMessage(errcode.CodeParamError, "ble_mac mismatch with existing record")
+				}
+				if strings.TrimSpace(*row.BleMac) != newMac {
+					// 旧值可能包含分隔符/小写/尾部补零，统一修正为 12 位大写 HEX。
+					shouldRepairMac = true
+				}
+			} else {
+				// 旧值格式异常（例如尾部补零的 10-byte 展示串），用本次提交的合法 MAC 修复。
+				shouldRepairMac = true
 			}
 		} else {
-			// 只在空值时写入，避免覆盖后台维护数据
+			shouldRepairMac = true
+		}
+		if shouldRepairMac {
 			if err := global.DB.WithContext(ctx).
-				Exec("UPDATE device_batteries SET ble_mac = ? WHERE device_id = ? AND (ble_mac IS NULL OR ble_mac = '')", newMac, row.DeviceID).Error; err != nil {
+				Exec("UPDATE device_batteries SET ble_mac = ? WHERE device_id = ?", newMac, row.DeviceID).Error; err != nil {
 				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 			}
 		}

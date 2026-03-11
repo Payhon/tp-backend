@@ -235,7 +235,7 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			d.device_number AS device_number,
 			d.name AS device_name,
 			dbat.battery_model_id AS battery_model_id,
-			bm.name AS battery_model_name,
+			COALESCE(bm_pack.name, bm_bms.name) AS battery_model_name,
 			dbat.item_uuid AS item_uuid,
 			dbat.batch_number AS batch_number,
 			dbat.ble_mac AS ble_mac,
@@ -259,7 +259,8 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			dbat.transfer_status AS transfer_status
 		`).
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
-		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN battery_models AS bm_pack ON bm_pack.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN battery_bms_models AS bm_bms ON bm_bms.id = dbat.battery_model_id`).
 		Joins(`LEFT JOIN orgs AS org ON org.id = dbat.owner_org_id`).
 		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`). // 兼容旧字段
 		// 仅取主用户（is_owner=true），若无则为空
@@ -417,7 +418,7 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 			d.device_number AS device_number,
 			d.name AS device_name,
 			dbat.battery_model_id AS battery_model_id,
-			bm.name AS battery_model_name,
+			COALESCE(bm_pack.name, bm_bms.name) AS battery_model_name,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
 			dbat.owner_org_id AS owner_org_id,
@@ -437,7 +438,8 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 			dbat.transfer_status AS transfer_status
 		`).
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
-		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN battery_models AS bm_pack ON bm_pack.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN battery_bms_models AS bm_bms ON bm_bms.id = dbat.battery_model_id`).
 		Joins(`LEFT JOIN orgs AS org ON org.id = dbat.owner_org_id`).
 		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`).
 		Joins(`LEFT JOIN device_user_bindings AS dub ON dub.device_id = d.id AND dub.is_owner = true`).

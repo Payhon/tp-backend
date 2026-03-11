@@ -39,7 +39,7 @@ type OrgUpdateReq struct {
 // OrgListReq 组织列表查询请求
 type OrgListReq struct {
 	Page     int     `form:"page" binding:"required,min=1"`
-	PageSize int     `form:"page_size" binding:"required,min=1,max=100"`
+	PageSize int     `form:"page_size" binding:"required,min=1,max=1000"`
 	OrgType  *string `form:"org_type"`  // 按类型筛选
 	Name     *string `form:"name"`      // 按名称模糊搜索
 	Status   *string `form:"status"`    // 按状态筛选

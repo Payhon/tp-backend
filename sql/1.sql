@@ -2031,3 +2031,286 @@ BEGIN
 		);
 	END IF;
 END $$;
+
+-- FEAT-0012: 电芯品牌管理 + 电池型号管理（机构维度）
+CREATE TABLE IF NOT EXISTS public.battery_cell_brands (
+	id varchar(36) PRIMARY KEY,
+	tenant_id varchar(36) NOT NULL,
+	seq_no smallint NOT NULL CHECK (seq_no BETWEEN 1 AND 255),
+	name varchar(16) NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT NOW(),
+	updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.battery_bms_models (
+	id varchar(36) PRIMARY KEY,
+	name varchar(100) NOT NULL,
+	device_config_id varchar(36),
+	voltage_rated float,
+	capacity_rated float,
+	cell_count int,
+	nominal_power float,
+	warranty_months int,
+	description text,
+	tenant_id varchar(36) NOT NULL,
+	created_at timestamptz DEFAULT NOW(),
+	updated_at timestamptz DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.battery_models (
+	id varchar(36) PRIMARY KEY,
+	seq_no smallint CHECK (seq_no BETWEEN 1 AND 255),
+	name varchar(64) NOT NULL,
+	org_id varchar(36),
+	tenant_id varchar(36) NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT NOW(),
+	updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_battery_models_tenant_org_id ON public.battery_models(tenant_id, org_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_battery_models_tenant_org_seq_no ON public.battery_models(tenant_id, org_id, seq_no) WHERE org_id IS NOT NULL AND seq_no IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_battery_models_tenant_org_name ON public.battery_models(tenant_id, org_id, name) WHERE org_id IS NOT NULL;
+
+DO $$
+DECLARE
+	bms_root_id varchar(36);
+	bms_battery_id varchar(36);
+BEGIN
+	SELECT id INTO bms_root_id FROM public.sys_ui_elements WHERE element_code = 'bms' LIMIT 1;
+	IF bms_root_id IS NULL THEN
+		bms_root_id := 'a753c525-780f-415f-a2b6-3d909c79f7f6';
+	END IF;
+
+	SELECT id INTO bms_battery_id FROM public.sys_ui_elements WHERE element_code = 'bms_battery' LIMIT 1;
+	IF bms_battery_id IS NULL THEN
+		bms_battery_id := bms_root_id;
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_cell_brand') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description,
+			created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1011',
+			bms_battery_id,
+			'bms_battery_cell_brand',
+			3,
+			13014,
+			'/bms/battery/cell-brand',
+			'mdi:alpha-c-circle-outline',
+			'self',
+			'["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'电芯品牌管理',
+			NOW(),
+			'FEAT-0012',
+			'route.bms_battery_cell_brand',
+			'view.bms_battery_cell_brand'
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_bms_model') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description,
+			created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1014',
+			bms_battery_id,
+			'bms_battery_bms_model',
+			3,
+			13015,
+			'/bms/battery/bms-model',
+			'mdi:chip',
+			'self',
+			'["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'BMS型号管理',
+			NOW(),
+			'FEAT-0012',
+			'route.bms_battery_bms_model',
+			'view.bms_battery_bms_model'
+		);
+	END IF;
+
+	UPDATE public.sys_ui_elements
+	SET description = '新增BMS', multilingual = 'perm.bms_battery_list_add'
+	WHERE element_code = 'bms_battery_list_add';
+END $$;
+
+-- FEAT-0011: 电池列表详情路由与页面元素权限
+DO $$
+DECLARE
+	bms_root_id varchar(36);
+	battery_list_id varchar(36);
+BEGIN
+	SELECT id INTO bms_root_id
+	FROM public.sys_ui_elements
+	WHERE element_code = 'bms'
+	LIMIT 1;
+
+	IF bms_root_id IS NULL THEN
+		bms_root_id := 'a753c525-780f-415f-a2b6-3d909c79f7f6';
+	END IF;
+
+	SELECT id INTO battery_list_id
+	FROM public.sys_ui_elements
+	WHERE element_code = 'bms_battery_list'
+	LIMIT 1;
+
+	IF battery_list_id IS NULL THEN
+		battery_list_id := 'f0f4c9b7-9e9c-4f3b-a3f0-1b8c2d6c7c10';
+	END IF;
+
+	-- 历史数据兼容：电池列表必须是页面路由，避免被当成目录导致页面空白
+	UPDATE public.sys_ui_elements
+	SET
+		element_type = 3,
+		param1 = '/bms/battery/list',
+		route_path = 'view.bms_battery_list'
+	WHERE element_code = 'bms_battery_list';
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_detail') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1001', bms_root_id, 'bms_battery_list_detail', 3, 13001,
+			'/device/details', 'mdi:file-document-outline', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'电池详情页', NOW(), '电池列表操作->查看详情路由权限', 'route.device_details', 'view.device_details'
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_export') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1002', battery_list_id, 'bms_battery_list_export', 4, 13011,
+			'bms_battery_list_export', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'导出', NOW(), '页面元素权限', 'perm.bms_battery_list_export', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_add') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1003', battery_list_id, 'bms_battery_list_add', 4, 13012,
+			'bms_battery_list_add', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'新增BMS', NOW(), '页面元素权限', 'perm.bms_battery_list_add', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_import') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1004', battery_list_id, 'bms_battery_list_import', 4, 13013,
+			'bms_battery_list_import', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'导入', NOW(), '页面元素权限', 'perm.bms_battery_list_import', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_params') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1005', battery_list_id, 'bms_battery_list_action_params', 4, 13021,
+			'bms_battery_list_action_params', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'参数', NOW(), '页面元素权限', 'perm.bms_battery_list_action_params', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_offline_command') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1006', battery_list_id, 'bms_battery_list_action_offline_command', 4, 13022,
+			'bms_battery_list_action_offline_command', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'离线指令', NOW(), '页面元素权限', 'perm.bms_battery_list_action_offline_command', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_lifecycle_factory') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1007', battery_list_id, 'bms_battery_list_action_lifecycle_factory', 4, 13031,
+			'bms_battery_list_action_lifecycle_factory', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'生命周期-出厂', NOW(), '页面元素权限', 'perm.bms_battery_list_action_lifecycle_factory', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_lifecycle_activate') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1008', battery_list_id, 'bms_battery_list_action_lifecycle_activate', 4, 13032,
+			'bms_battery_list_action_lifecycle_activate', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'生命周期-激活', NOW(), '页面元素权限', 'perm.bms_battery_list_action_lifecycle_activate', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_lifecycle_transfer') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1009', battery_list_id, 'bms_battery_list_action_lifecycle_transfer', 4, 13033,
+			'bms_battery_list_action_lifecycle_transfer', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'生命周期-调拨', NOW(), '页面元素权限', 'perm.bms_battery_list_action_lifecycle_transfer', ''
+		);
+	END IF;
+
+	UPDATE public.sys_ui_elements
+	SET
+		parent_id = bms_root_id,
+		element_type = 3,
+		orders = 13001,
+		param1 = '/device/details',
+		param2 = 'mdi:file-document-outline',
+		param3 = '1',
+		authority = '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+		description = '电池详情页',
+		multilingual = 'route.device_details',
+		route_path = 'view.device_details'
+	WHERE element_code = 'bms_battery_list_detail';
+
+	UPDATE public.sys_ui_elements
+	SET description = '导出', multilingual = 'perm.bms_battery_list_export'
+	WHERE element_code = 'bms_battery_list_export';
+
+	UPDATE public.sys_ui_elements
+	SET description = '新增BMS', multilingual = 'perm.bms_battery_list_add'
+	WHERE element_code = 'bms_battery_list_add';
+
+	UPDATE public.sys_ui_elements
+	SET description = '导入', multilingual = 'perm.bms_battery_list_import'
+	WHERE element_code = 'bms_battery_list_import';
+
+	UPDATE public.sys_ui_elements
+	SET description = '参数', multilingual = 'perm.bms_battery_list_action_params'
+	WHERE element_code = 'bms_battery_list_action_params';
+
+	UPDATE public.sys_ui_elements
+	SET description = '离线指令', multilingual = 'perm.bms_battery_list_action_offline_command'
+	WHERE element_code = 'bms_battery_list_action_offline_command';
+
+	UPDATE public.sys_ui_elements
+	SET description = '生命周期-出厂', multilingual = 'perm.bms_battery_list_action_lifecycle_factory'
+	WHERE element_code = 'bms_battery_list_action_lifecycle_factory';
+
+	UPDATE public.sys_ui_elements
+	SET description = '生命周期-激活', multilingual = 'perm.bms_battery_list_action_lifecycle_activate'
+	WHERE element_code = 'bms_battery_list_action_lifecycle_activate';
+
+	UPDATE public.sys_ui_elements
+	SET description = '生命周期-调拨', multilingual = 'perm.bms_battery_list_action_lifecycle_transfer'
+	WHERE element_code = 'bms_battery_list_action_lifecycle_transfer';
+END $$;

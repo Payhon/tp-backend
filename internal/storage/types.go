@@ -89,6 +89,23 @@ func (AttributeData) TableName() string {
 	return "attribute_datas"
 }
 
+// AttributeHistoryData 属性历史数据（明细）
+type AttributeHistoryData struct {
+	ID       int64     `gorm:"column:id;primaryKey"`
+	DeviceID string    `gorm:"column:device_id"`
+	Key      string    `gorm:"column:key"`
+	TS       time.Time `gorm:"column:ts"`
+	BoolV    *bool     `gorm:"column:bool_v"`
+	NumberV  *float64  `gorm:"column:number_v"`
+	StringV  *string   `gorm:"column:string_v"`
+	TenantID string    `gorm:"column:tenant_id"`
+	Created  time.Time `gorm:"column:created_at"`
+}
+
+func (AttributeHistoryData) TableName() string {
+	return "attribute_history_datas"
+}
+
 // EventDataModel 事件数据
 type EventDataModel struct {
 	ID       string          `gorm:"column:id;primaryKey"`

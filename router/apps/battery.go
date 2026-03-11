@@ -56,5 +56,18 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.POST("/params/pub", api.Controllers.BatteryApi.PutBatteryParams)
 		batteryApi.POST("/params/get", api.Controllers.BatteryApi.GetBatteryParamsFromDevice)
 		batteryApi.GET("/params/set/logs", api.Controllers.BatteryApi.GetBatteryParamSetLogs)
+
+		// BLE Relay（WEB -> APP -> BLE）
+		batteryApi.GET("/relay/status/:id", api.Controllers.BatteryApi.GetBatteryRelayStatus)
+		batteryApi.POST("/relay/command", api.Controllers.BatteryApi.SendBatteryRelayCommand)
+		batteryApi.GET("/relay/command/:id", api.Controllers.BatteryApi.GetBatteryRelayCommand)
+
+		// 历史数据（遥测 + 属性）与异步导出
+		batteryApi.GET("/history/devices", api.Controllers.BatteryApi.GetBMSHistoryDeviceList)
+		batteryApi.GET("/history", api.Controllers.BatteryApi.GetBMSHistoryData)
+		batteryApi.POST("/history/export", api.Controllers.BatteryApi.CreateBMSHistoryExportJob)
+		batteryApi.GET("/history/export/jobs/pending", api.Controllers.BatteryApi.GetBMSHistoryPendingExportJobs)
+		batteryApi.GET("/history/export/download", api.Controllers.BatteryApi.DownloadBMSHistoryExport)
+		batteryApi.GET("/history/export/ws", api.Controllers.BatteryApi.ServeBMSHistoryExportWS)
 	}
 }

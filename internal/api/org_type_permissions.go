@@ -76,6 +76,24 @@ func (*OrgTypePermissionApi) GetCurrentDeviceParamPermissions(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// GetCurrentUIPermissions 获取当前用户页面/元素权限
+// @Summary 获取当前用户页面/元素权限
+// @Tags 权限管理
+// @Accept json
+// @Produce json
+// @Success 200 {object} model.UIPermissionResp
+// @Router /api/v1/org_type_permissions/ui_codes/me [get]
+func (*OrgTypePermissionApi) GetCurrentUIPermissions(c *gin.Context) {
+	claims := c.MustGet("claims").(*utils.UserClaims)
+
+	data, err := service.GroupApp.OrgTypePermission.GetCurrentUIPermissions(c.Request.Context(), claims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // GetDeviceParamPermissionOptions 获取设备参数权限可选项
 // @Summary 获取设备参数权限可选项
 // @Tags 权限管理

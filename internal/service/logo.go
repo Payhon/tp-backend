@@ -18,6 +18,15 @@ func (*Logo) UpdateLogo(UpdateLogoReq *model.UpdateLogoReq) error {
 		})
 	}
 
+	if UpdateLogoReq.WxmpQrcode != nil || UpdateLogoReq.AppDownloadQrcode != nil {
+		if err = dal.EnsureLogoQrcodeColumns(); err != nil {
+			logrus.Error(err)
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"err": err.Error(),
+			})
+		}
+	}
+
 	err = dal.UpdateLogo(UpdateLogoReq.Id, condsMap)
 	if err != nil {
 		logrus.Error(err)

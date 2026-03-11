@@ -30,7 +30,7 @@ Fjia Cloud平台支持通过 MQTT 协议接入BMS设备，支持以下四种数�
 
 设备接入前，需要通过平台 API 获取连接信息（PUBLIC，无需登录）：
 
-**API Host**: https://fjbms.yz6688.cn  (待定)
+**API Host**: https://cloud.fjiaenergy.com
 
 **API 端点**:
 ```
@@ -45,7 +45,7 @@ GET /api/v1/device/conn_info?device_id={device_id}&sk={DC_INFO_SK}&tenant_id={te
 **响应示例**:
 ```json
 {
-  "dtu_domain_port": "tcp://fjbms.yz6688.cn:1883",
+  "dtu_domain_port": "tcp://cloud.fjiaenergy.com:1883",
   "client_id": "bms_abc12345",
   "username": "mqtt_user",
   "password": "mqtt_password",

@@ -21,6 +21,14 @@ type DeviceParamPermissionResp struct {
 	DeviceParamPermissions []string `json:"device_param_permissions"`
 }
 
+// UIPermissionResp 当前用户页面/元素权限
+type UIPermissionResp struct {
+	OrgType  string   `json:"org_type"`
+	OrgTypes []string `json:"org_types"`
+	AllowAll bool     `json:"allow_all"`
+	UICodes  []string `json:"ui_codes"`
+}
+
 // DeviceParamTreeNode 设备参数权限树节点
 type DeviceParamTreeNode struct {
 	Label string `json:"label"`

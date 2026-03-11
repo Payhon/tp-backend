@@ -33,6 +33,8 @@ func newLogo(db *gorm.DB, opts ...gen.DOOption) logo {
 	_logo.LogoBackground = field.NewString(tableName, "logo_background")
 	_logo.LogoLoading = field.NewString(tableName, "logo_loading")
 	_logo.HomeBackground = field.NewString(tableName, "home_background")
+	_logo.WxmpQrcode = field.NewString(tableName, "wxmp_qrcode")
+	_logo.AppDownloadQrcode = field.NewString(tableName, "app_download_qrcode")
 	_logo.Remark = field.NewString(tableName, "remark")
 
 	_logo.fillFieldMap()
@@ -43,14 +45,16 @@ func newLogo(db *gorm.DB, opts ...gen.DOOption) logo {
 type logo struct {
 	logoDo
 
-	ALL            field.Asterisk
-	ID             field.String // Id
-	SystemName     field.String // 系统名称
-	LogoCache      field.String // 站标Logo
-	LogoBackground field.String // 加载页面Logo
-	LogoLoading    field.String // 加载页面Logo
-	HomeBackground field.String // 首页背景
-	Remark         field.String
+	ALL               field.Asterisk
+	ID                field.String // Id
+	SystemName        field.String // 系统名称
+	LogoCache         field.String // 站标Logo
+	LogoBackground    field.String // 加载页面Logo
+	LogoLoading       field.String // 加载页面Logo
+	HomeBackground    field.String // 首页背景
+	WxmpQrcode        field.String // 微信小程序二维码
+	AppDownloadQrcode field.String // App下载页二维码
+	Remark            field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -73,6 +77,8 @@ func (l *logo) updateTableName(table string) *logo {
 	l.LogoBackground = field.NewString(table, "logo_background")
 	l.LogoLoading = field.NewString(table, "logo_loading")
 	l.HomeBackground = field.NewString(table, "home_background")
+	l.WxmpQrcode = field.NewString(table, "wxmp_qrcode")
+	l.AppDownloadQrcode = field.NewString(table, "app_download_qrcode")
 	l.Remark = field.NewString(table, "remark")
 
 	l.fillFieldMap()
@@ -90,13 +96,15 @@ func (l *logo) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (l *logo) fillFieldMap() {
-	l.fieldMap = make(map[string]field.Expr, 7)
+	l.fieldMap = make(map[string]field.Expr, 9)
 	l.fieldMap["id"] = l.ID
 	l.fieldMap["system_name"] = l.SystemName
 	l.fieldMap["logo_cache"] = l.LogoCache
 	l.fieldMap["logo_background"] = l.LogoBackground
 	l.fieldMap["logo_loading"] = l.LogoLoading
 	l.fieldMap["home_background"] = l.HomeBackground
+	l.fieldMap["wxmp_qrcode"] = l.WxmpQrcode
+	l.fieldMap["app_download_qrcode"] = l.AppDownloadQrcode
 	l.fieldMap["remark"] = l.Remark
 }
 

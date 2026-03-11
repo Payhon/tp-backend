@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"project/internal/bms/protocol"
 	"project/internal/dal"
 	"project/internal/model"
 	"project/internal/query"
@@ -67,6 +68,7 @@ const (
 var appBatteryCoreKeyWhitelist = map[string]struct{}{
 	"soc":                   {},
 	"soh":                   {},
+	"packCellSumVoltageV":   {},
 	"vPackV":                {},
 	"currentA":              {},
 	"avgCellVoltageMv":      {},
@@ -322,8 +324,7 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 			d.current_version AS current_version,
 			d.tenant_id AS tenant_id,
 			dbat.battery_model_id AS battery_model_id,
-			bm.name AS battery_model_name,
-			bm.device_config_id AS device_config_id
+			bm.name AS battery_model_name
 		`).
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
 		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
@@ -344,6 +345,17 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 
 	deviceConfigID := row.DeviceConfigID
 	if deviceConfigID == nil || strings.TrimSpace(*deviceConfigID) == "" {
+		if row.BatteryModelID != nil && strings.TrimSpace(*row.BatteryModelID) != "" {
+			bm, err := getBmsBatteryModelByID(ctx, claims.TenantID, strings.TrimSpace(*row.BatteryModelID))
+			if err != nil {
+				if err != gorm.ErrRecordNotFound {
+					return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+				}
+			} else if bm.DeviceConfigID != nil && strings.TrimSpace(*bm.DeviceConfigID) != "" {
+				deviceConfigID = bm.DeviceConfigID
+			}
+		}
+
 		modelName := ""
 		if req.Model != nil {
 			modelName = strings.TrimSpace(*req.Model)
@@ -351,7 +363,7 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 		if modelName == "" && row.BatteryModelName != nil {
 			modelName = strings.TrimSpace(*row.BatteryModelName)
 		}
-		if modelName != "" {
+		if modelName != "" && (deviceConfigID == nil || strings.TrimSpace(*deviceConfigID) == "") {
 			var bm model.BatteryModel
 			if err := global.DB.WithContext(ctx).
 				Where("name = ? AND tenant_id = ?", modelName, claims.TenantID).
@@ -1558,6 +1570,9 @@ func (*AppBattery) SendRelayCommandForWeb(ctx context.Context, req model.AppBatt
 			return nil, errcode.NewWithMessage(errcode.CodeParamError, "param_key is required")
 		}
 		normalized := strings.TrimSpace(*req.ParamKey)
+		if canonical, ok := protocol.NormalizeRWParamKey(normalized); ok {
+			normalized = canonical
+		}
 		paramKey = &normalized
 	case "write_param":
 		if req.ParamKey == nil || strings.TrimSpace(*req.ParamKey) == "" {
@@ -1567,6 +1582,9 @@ func (*AppBattery) SendRelayCommandForWeb(ctx context.Context, req model.AppBatt
 			return nil, errcode.NewWithMessage(errcode.CodeParamError, "value is required")
 		}
 		normalized := strings.TrimSpace(*req.ParamKey)
+		if canonical, ok := protocol.NormalizeRWParamKey(normalized); ok {
+			normalized = canonical
+		}
 		paramKey = &normalized
 	case "write_registers":
 		if req.StartAddress == nil {

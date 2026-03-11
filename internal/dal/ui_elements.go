@@ -2,6 +2,8 @@ package dal
 
 import (
 	"context"
+	"sort"
+	"strings"
 
 	model "project/internal/model"
 	query "project/internal/query"
@@ -70,7 +72,7 @@ func ServeUiElementsListByAuthority(u *utils.UserClaims) (int64, interface{}, er
 		var count int64
 		queryBuilder := q.WithContext(context.Background())
 		queryBuilder = queryBuilder.Where(gen.Cond(datatypes.JSONQuery("authority").HasKey(u.Authority))...)
-		uielementsList, err := queryBuilder.Where(q.ParentID.Eq("0")).Order(q.Order_).Find()
+		uielementsList, err := queryBuilder.Where(q.ParentID.Eq("0"), q.ElementType.In(1, 2, 3)).Order(q.Order_).Find()
 		if err != nil {
 			logrus.Error(err)
 			return count, uielementsList, err
@@ -97,7 +99,7 @@ func ServeUiElementsListByAuthority(u *utils.UserClaims) (int64, interface{}, er
 		 on crr.v1 = crp.v0 where crp.ptype ='p'
 		) t
 		left join sys_ui_elements tf on t.v1 = tf.id 
-		where tf.parent_id ='0' 
+		where tf.parent_id ='0' and tf.element_type in (1,2,3)
 		order by tf.orders desc`, u.ID).Scan(&uielementsList)
 		if err.Error != nil {
 			return 0, nil, err.Error
@@ -111,12 +113,79 @@ func ServeUiElementsListByAuthority(u *utils.UserClaims) (int64, interface{}, er
 	}
 }
 
+// ServeUiElementsListByCodes 按 element_code 构建菜单树（自动补齐祖先节点）
+func ServeUiElementsListByCodes(codes []string) (int64, []*model.UiElementsListRsp, error) {
+	normalized := normalizeMenuCodes(codes)
+	if len(normalized) == 0 {
+		return 0, []*model.UiElementsListRsp{}, nil
+	}
+
+	rows, err := query.SysUIElement.
+		Where(query.SysUIElement.ElementType.In(1, 2, 3)).
+		Order(query.SysUIElement.Order_).
+		Find()
+	if err != nil {
+		return 0, nil, err
+	}
+
+	idIndex := make(map[string]*model.SysUIElement, len(rows))
+	codeIndex := make(map[string]*model.SysUIElement, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		idIndex[row.ID] = row
+		if code := strings.TrimSpace(row.ElementCode); code != "" {
+			codeIndex[code] = row
+		}
+	}
+
+	included := make(map[string]struct{}, len(normalized))
+	for _, code := range normalized {
+		node, ok := codeIndex[code]
+		if !ok || node == nil {
+			continue
+		}
+		addAncestors(node.ID, idIndex, included)
+	}
+
+	if len(included) == 0 {
+		return 0, []*model.UiElementsListRsp{}, nil
+	}
+
+	childrenByParent := make(map[string][]*model.SysUIElement)
+	for id := range included {
+		node := idIndex[id]
+		if node == nil {
+			continue
+		}
+		parentID := strings.TrimSpace(node.ParentID)
+		if parentID == "" {
+			parentID = "0"
+		}
+		childrenByParent[parentID] = append(childrenByParent[parentID], node)
+	}
+
+	for parentID := range childrenByParent {
+		sort.Slice(childrenByParent[parentID], func(i, j int) bool {
+			return menuOrderValue(childrenByParent[parentID][i]) < menuOrderValue(childrenByParent[parentID][j])
+		})
+	}
+
+	roots := childrenByParent["0"]
+	result := make([]*model.UiElementsListRsp, 0, len(roots))
+	for _, root := range roots {
+		result = append(result, buildMenuNode(root, childrenByParent))
+	}
+	return int64(len(result)), result, nil
+}
+
 // 获取租户下权限配置表单树
 func GetTenantUiElementsList() (interface{}, error) {
 	q := query.SysUIElement
 	queryBuilder := q.WithContext(context.Background())
 	queryBuilder = queryBuilder.Where(gen.Cond(datatypes.JSONQuery("authority").HasKey("TENANT_ADMIN"))...)
-	uielementsList, err := queryBuilder.Where(q.ParentID.Eq("0"), q.ElementType.In(1, 2, 3)).Order(q.Order_).Find()
+	uielementsList, err := queryBuilder.Where(q.ParentID.Eq("0"), q.ElementType.In(1, 2, 3, 4)).Order(q.Order_).Find()
 	if err != nil {
 		logrus.Error(err)
 		return uielementsList, err
@@ -149,6 +218,7 @@ func queryChildrenByAuthority(parent *model.UiElementsListRsp, authority string)
 	var children []*model.SysUIElement
 	children, err := query.SysUIElement.Where(
 		query.SysUIElement.ParentID.Eq(parent.ID),
+		query.SysUIElement.ElementType.In(1, 2, 3),
 		query.SysUIElement.Where(gen.Cond(datatypes.JSONQuery("authority").HasKey(authority))...),
 	).Order(query.SysUIElement.Order_).Find()
 	if err != nil {
@@ -166,7 +236,7 @@ func queryChildrenByAuthority1(parent *model.UiElementsListRsp1, authority strin
 	var children []*model.SysUIElement
 	children, err := query.SysUIElement.Where(
 		query.SysUIElement.ParentID.Eq(parent.ID),
-		query.SysUIElement.ElementType.In(1, 2, 3),
+		query.SysUIElement.ElementType.In(1, 2, 3, 4),
 		query.SysUIElement.Where(gen.Cond(datatypes.JSONQuery("authority").HasKey(authority))...),
 	).Order(query.SysUIElement.Order_).Find()
 	if err != nil {
@@ -193,7 +263,7 @@ func queryChildrenByUserID(parent *model.UiElementsListRsp, userID string) {
 		 on crr.v1 = crp.v0 where crp.ptype ='p'
 		) t
 		left join sys_ui_elements tf on t.v1 = tf.id 
-		where tf.parent_id =? 
+		where tf.parent_id =? and tf.element_type in (1,2,3)
 		order by tf.orders desc`, userID, parent.ID).Scan(&children)
 	if err.Error != nil {
 		logrus.Error(err)
@@ -205,4 +275,69 @@ func queryChildrenByUserID(parent *model.UiElementsListRsp, userID string) {
 		parent.Children = append(parent.Children, children[i].ToRsp())
 		queryChildrenByUserID(parent.Children[i], userID)
 	}
+}
+
+func normalizeMenuCodes(codes []string) []string {
+	if len(codes) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(codes))
+	seen := make(map[string]struct{}, len(codes))
+	for _, code := range codes {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	return out
+}
+
+func addAncestors(id string, idIndex map[string]*model.SysUIElement, included map[string]struct{}) {
+	visited := map[string]struct{}{}
+	current := strings.TrimSpace(id)
+	for current != "" && current != "0" {
+		if _, ok := visited[current]; ok {
+			return
+		}
+		visited[current] = struct{}{}
+		included[current] = struct{}{}
+
+		node := idIndex[current]
+		if node == nil {
+			return
+		}
+		parentID := strings.TrimSpace(node.ParentID)
+		if parentID == "" || parentID == current {
+			return
+		}
+		current = parentID
+	}
+}
+
+func menuOrderValue(node *model.SysUIElement) int {
+	if node == nil || node.Order_ == nil {
+		return 0
+	}
+	return int(*node.Order_)
+}
+
+func buildMenuNode(node *model.SysUIElement, childrenByParent map[string][]*model.SysUIElement) *model.UiElementsListRsp {
+	if node == nil {
+		return nil
+	}
+	rsp := node.ToRsp()
+	children := childrenByParent[node.ID]
+	if len(children) == 0 {
+		return rsp
+	}
+	rsp.Children = make([]*model.UiElementsListRsp, 0, len(children))
+	for _, child := range children {
+		rsp.Children = append(rsp.Children, buildMenuNode(child, childrenByParent))
+	}
+	return rsp
 }

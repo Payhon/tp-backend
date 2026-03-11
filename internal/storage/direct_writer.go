@@ -28,12 +28,27 @@ func NewDirectWriter(db *gorm.DB, logger Logger) *DirectWriter {
 
 // WriteAttributeData 直接写入属性数据
 func (w *DirectWriter) WriteAttributeData(ctx context.Context, data *AttributeData) error {
-	if err := w.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"ts", "bool_v", "number_v", "string_v", "tenant_id",
-		}),
-	}).Create(data).Error; err != nil {
+	history := &AttributeHistoryData{
+		DeviceID: data.DeviceID,
+		Key:      data.Key,
+		TS:       data.TS,
+		BoolV:    data.BoolV,
+		NumberV:  data.NumberV,
+		StringV:  data.StringV,
+		TenantID: data.TenantID,
+	}
+
+	if err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"ts", "bool_v", "number_v", "string_v", "tenant_id",
+			}),
+		}).Create(data).Error; err != nil {
+			return err
+		}
+		return tx.Create(history).Error
+	}); err != nil {
 		w.logger.Errorf("insert attribute failed: %v", err)
 		if w.metrics != nil {
 			w.metrics.incAttributeFailed()
@@ -108,24 +123,41 @@ func (w *directWriter) writeAttribute(msg *Message) error {
 
 func (w *directWriter) insertAttribute(msg *Message, point AttributeDataPoint) error {
 	boolV, numberV, stringV := convertValue(point.Value)
+	ts := time.UnixMilli(msg.Timestamp)
 
 	data := AttributeData{
 		ID:       uuid.New().String(),
 		DeviceID: msg.DeviceID,
 		Key:      point.Key,
-		TS:       time.UnixMilli(msg.Timestamp),
+		TS:       ts,
 		BoolV:    boolV,
 		NumberV:  numberV,
 		StringV:  stringV,
 		TenantID: msg.TenantID,
 	}
 
-	return w.db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"ts", "bool_v", "number_v", "string_v", "tenant_id",
-		}),
-	}).Create(&data).Error
+	history := AttributeHistoryData{
+		DeviceID: msg.DeviceID,
+		Key:      point.Key,
+		TS:       ts,
+		BoolV:    boolV,
+		NumberV:  numberV,
+		StringV:  stringV,
+		TenantID: msg.TenantID,
+	}
+
+	return w.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"ts", "bool_v", "number_v", "string_v", "tenant_id",
+			}),
+		}).Create(&data).Error; err != nil {
+			return err
+		}
+
+		return tx.Create(&history).Error
+	})
 }
 
 func (w *directWriter) writeEvent(msg *Message) error {

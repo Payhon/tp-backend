@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -55,6 +56,109 @@ func normalizeUICodes(codes []string) []string {
 		out = append(out, code)
 	}
 	return out
+}
+
+type uiElementLite struct {
+	ID          string `gorm:"column:id"`
+	ParentID    string `gorm:"column:parent_id"`
+	ElementCode string `gorm:"column:element_code"`
+}
+
+func expandUICodesWithAncestors(ctx context.Context, codes []string) ([]string, error) {
+	normalized := normalizeUICodes(codes)
+	if len(normalized) == 0 {
+		return []string{}, nil
+	}
+
+	var rows []uiElementLite
+	if err := global.DB.WithContext(ctx).
+		Table("sys_ui_elements").
+		Select("id, parent_id, element_code").
+		Where("element_type IN (1,2,3,4)").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	idIndex := make(map[string]uiElementLite, len(rows))
+	codeIndex := make(map[string]uiElementLite, len(rows))
+	for _, row := range rows {
+		idIndex[row.ID] = row
+		code := strings.TrimSpace(row.ElementCode)
+		if code != "" {
+			codeIndex[code] = row
+		}
+	}
+
+	includedIDs := make(map[string]struct{}, len(normalized))
+	for _, code := range normalized {
+		row, ok := codeIndex[code]
+		if !ok {
+			continue
+		}
+		addAncestorIDs(row.ID, idIndex, includedIDs)
+	}
+
+	expanded := make([]string, 0, len(includedIDs))
+	seenCode := make(map[string]struct{}, len(includedIDs))
+
+	// 保留用户配置顺序
+	for _, code := range normalized {
+		if _, ok := seenCode[code]; ok {
+			continue
+		}
+		row, ok := codeIndex[code]
+		if !ok {
+			continue
+		}
+		if _, exists := includedIDs[row.ID]; !exists {
+			continue
+		}
+		seenCode[code] = struct{}{}
+		expanded = append(expanded, code)
+	}
+
+	// 追加祖先编码（按编码排序，确保输出稳定）
+	extra := make([]string, 0, len(includedIDs))
+	for _, row := range rows {
+		if _, ok := includedIDs[row.ID]; !ok {
+			continue
+		}
+		code := strings.TrimSpace(row.ElementCode)
+		if code == "" {
+			continue
+		}
+		if _, ok := seenCode[code]; ok {
+			continue
+		}
+		seenCode[code] = struct{}{}
+		extra = append(extra, code)
+	}
+	sort.Strings(extra)
+	expanded = append(expanded, extra...)
+
+	return expanded, nil
+}
+
+func addAncestorIDs(id string, idIndex map[string]uiElementLite, included map[string]struct{}) {
+	current := strings.TrimSpace(id)
+	visited := map[string]struct{}{}
+	for current != "" && current != "0" {
+		if _, ok := visited[current]; ok {
+			return
+		}
+		visited[current] = struct{}{}
+		included[current] = struct{}{}
+
+		row, ok := idIndex[current]
+		if !ok {
+			return
+		}
+		parentID := strings.TrimSpace(row.ParentID)
+		if parentID == "" || parentID == current {
+			return
+		}
+		current = parentID
+	}
 }
 
 func (s *OrgTypePermission) resolveTenantID(claims *utils.UserClaims, tenantID string) (string, error) {
@@ -120,7 +224,13 @@ func (s *OrgTypePermission) Upsert(ctx context.Context, claims *utils.UserClaims
 		})
 	}
 
-	uiCodes := normalizeUICodes(req.UICodes)
+	uiCodes, err := expandUICodesWithAncestors(ctx, req.UICodes)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "expand_ui_codes_with_ancestors",
+			"error":     err.Error(),
+		})
+	}
 	uiCodesJSON, _ := json.Marshal(uiCodes)
 
 	now := time.Now().UTC()
@@ -188,18 +298,10 @@ func (s *OrgTypePermission) Upsert(ctx context.Context, claims *utils.UserClaims
 		}
 	}
 
-	// 给当前租户下该机构类型的所有业务账号补齐该角色
-	var userIDs []string
-	if err := global.DB.WithContext(ctx).
-		Table("users AS u").
-		Select("u.id").
-		Joins("JOIN orgs AS o ON o.id = u.org_id").
-		Where("u.tenant_id = ? AND u.user_kind = ? AND o.org_type = ?", resolvedTenantID, model.UserKindOrgUser, orgType).
-		Scan(&userIDs).Error; err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"operation": "query_org_users",
-			"error":     err.Error(),
-		})
+	// 给当前租户下该机构类型对应账号补齐角色（ORG_USER 或 APP_USER=END_USER）
+	userIDs, err := getOrgTypeTargetUserIDs(ctx, resolvedTenantID, orgType)
+	if err != nil {
+		return nil, err
 	}
 	if len(userIDs) > 0 {
 		var gRules [][]string
@@ -214,6 +316,28 @@ func (s *OrgTypePermission) Upsert(ctx context.Context, claims *utils.UserClaims
 		UICodes:                uiCodes,
 		DeviceParamPermissions: devicePerm,
 	}, nil
+}
+
+func getOrgTypeTargetUserIDs(ctx context.Context, tenantID, orgType string) ([]string, error) {
+	db := global.DB.WithContext(ctx).Table("users AS u").Select("u.id").Where("u.tenant_id = ?", tenantID)
+
+	switch orgType {
+	case model.OrgTypeAppUser:
+		db = db.Where("u.user_kind = ?", model.UserKindEndUser)
+	default:
+		db = db.Joins("JOIN orgs AS o ON o.id = u.org_id").
+			Where("u.user_kind = ? AND o.org_type = ?", model.UserKindOrgUser, orgType)
+	}
+
+	var userIDs []string
+	if err := db.Scan(&userIDs).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_org_type_users",
+			"org_type":  orgType,
+			"error":     err.Error(),
+		})
+	}
+	return userIDs, nil
 }
 
 func (s *OrgTypePermission) GetAllowedUICodes(ctx context.Context, tenantID, orgType string) ([]string, bool, error) {
@@ -402,6 +526,99 @@ func (s *OrgTypePermission) GetCurrentDeviceParamPermissions(ctx context.Context
 		resp.AllowAll = false
 		resp.DeviceParamPermissions = merged
 	}
+	return resp, nil
+}
+
+func (s *OrgTypePermission) GetCurrentUIPermissions(ctx context.Context, claims *utils.UserClaims) (*model.UIPermissionResp, error) {
+	resp := &model.UIPermissionResp{
+		OrgType:  "",
+		OrgTypes: []string{},
+		AllowAll: true,
+		UICodes:  []string{},
+	}
+	if claims == nil {
+		return resp, nil
+	}
+	if claims.Authority == "SYS_ADMIN" || claims.Authority == "TENANT_ADMIN" {
+		return resp, nil
+	}
+
+	tenantID := strings.TrimSpace(claims.TenantID)
+	userID := strings.TrimSpace(claims.ID)
+	if tenantID == "" || userID == "" {
+		return resp, nil
+	}
+
+	userKind, err := s.GetUserKind(ctx, tenantID, userID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user_kind",
+			"user_id":   userID,
+			"error":     err.Error(),
+		})
+	}
+
+	orgTypes := []string{model.OrgTypeAppUser}
+	orgType := ""
+	if userKind == model.UserKindOrgUser {
+		var ok bool
+		orgType, ok, err = s.GetUserOrgType(ctx, tenantID, userID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_org_type",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		}
+		if ok {
+			orgType = strings.TrimSpace(orgType)
+			if orgType != "" {
+				orgTypes = append(orgTypes, orgType)
+			}
+		}
+	}
+
+	resp.OrgType = orgType
+	resp.OrgTypes = normalizeOrgTypes(orgTypes)
+
+	merged := make([]string, 0)
+	mergedSet := make(map[string]struct{})
+	hasConfig := false
+	for _, ot := range orgTypes {
+		ot = strings.TrimSpace(ot)
+		if ot == "" {
+			continue
+		}
+		allowed, exists, err := s.GetAllowedUICodes(ctx, tenantID, ot)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_ui_permissions",
+				"org_type":  ot,
+				"error":     err.Error(),
+			})
+		}
+		if !exists {
+			continue
+		}
+		hasConfig = true
+		for _, code := range allowed {
+			code = strings.TrimSpace(code)
+			if code == "" {
+				continue
+			}
+			if _, ok := mergedSet[code]; ok {
+				continue
+			}
+			mergedSet[code] = struct{}{}
+			merged = append(merged, code)
+		}
+	}
+
+	if hasConfig {
+		resp.AllowAll = false
+		resp.UICodes = merged
+	}
+
 	return resp, nil
 }
 

@@ -2,8 +2,11 @@ package dal
 
 import (
 	"context"
+	"fmt"
 
+	"project/internal/model"
 	query "project/internal/query"
+	"project/pkg/global"
 
 	"github.com/sirupsen/logrus"
 )
@@ -29,4 +32,23 @@ func GetLogoList() (int64, interface{}, error) {
 	}
 	count, err = queryBuilder.Count()
 	return count, logoList, err
+}
+
+func EnsureLogoQrcodeColumns() error {
+	if global.DB == nil {
+		return fmt.Errorf("db not initialized")
+	}
+
+	if !global.DB.Migrator().HasColumn(&model.Logo{}, "wxmp_qrcode") {
+		if err := global.DB.Exec("ALTER TABLE public.logo ADD COLUMN IF NOT EXISTS wxmp_qrcode varchar(255) NOT NULL DEFAULT ''").Error; err != nil {
+			return err
+		}
+	}
+	if !global.DB.Migrator().HasColumn(&model.Logo{}, "app_download_qrcode") {
+		if err := global.DB.Exec("ALTER TABLE public.logo ADD COLUMN IF NOT EXISTS app_download_qrcode varchar(255) NOT NULL DEFAULT ''").Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -77,3 +77,23 @@ func (*BmsDashboardApi) GetOnlineTrend(c *gin.Context) {
 	}
 	c.Set("data", data)
 }
+
+// GetHomeSummary BMS 首页汇总（按用户类型）
+// @Summary BMS 首页汇总
+// @Tags BMS-Dashboard
+// @Produce json
+// @Success 200 {object} model.BmsHomeSummaryResp
+// @Router /api/v1/dashboard/home/summary [get]
+func (*BmsDashboardApi) GetHomeSummary(c *gin.Context) {
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	dealerIDVal, _ := c.Get(middleware.DealerIDContextKey)
+	dealerID, _ := dealerIDVal.(string)
+	viewAs := c.Query("view_as")
+
+	data, err := service.GroupApp.BmsDashboard.GetHomeSummary(c, userClaims, dealerID, viewAs)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}

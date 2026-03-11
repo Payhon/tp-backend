@@ -6,6 +6,7 @@ default:
   telemetry:
     soc: energy.socPct
     soh: energy.sohPct
+    packCellSumVoltageV: electrical.packCellSumVoltageV
     vPackV: electrical.vPackV
     currentA: electrical.currentA
     ambientC: temperature.ambientC

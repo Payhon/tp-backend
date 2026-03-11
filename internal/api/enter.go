@@ -60,6 +60,8 @@ type Controller struct {
 	DealerApi             // BMS: 经销商管理
 	BmsDashboardApi       // BMS: Dashboard
 	BatteryApi            // BMS: 电池管理
+	CellBrandApi          // BMS: 电芯品牌管理
+	BatteryBmsModelApi    // BMS: BMS型号管理
 	BatteryModelApi       // BMS: 电池型号管理
 	DeviceTransferApi     // BMS: 设备转移
 	DeviceBindingApi      // BMS: 设备绑定(APP)

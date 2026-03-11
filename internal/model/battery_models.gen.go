@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-const TableNameBatteryModel = "battery_models"
+const TableNameBatteryModel = "battery_bms_models"
 
-// BatteryModel mapped from table <battery_models>
+// BatteryModel mapped from table <battery_bms_models>
 type BatteryModel struct {
 	ID             string     `gorm:"column:id;primaryKey" json:"id"`
 	Name           string     `gorm:"column:name;not null" json:"name"`

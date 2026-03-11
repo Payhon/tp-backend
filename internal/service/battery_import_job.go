@@ -391,10 +391,7 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 		var batteryModelID *string
 		var deviceConfigID *string
 		if modelName != "" {
-			bm, err := query.BatteryModel.WithContext(ctx).Where(
-				query.BatteryModel.TenantID.Eq(claims.TenantID),
-				query.BatteryModel.Name.Eq(modelName),
-			).First()
+			bm, err := getPackBatteryModelByName(ctx, claims.TenantID, modelName)
 			if err != nil {
 				failedRows++
 				if err == gorm.ErrRecordNotFound {
@@ -405,7 +402,20 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 				continue
 			}
 			batteryModelID = &bm.ID
-			deviceConfigID = bm.DeviceConfigID
+
+			if bmsModel, err := getBmsBatteryModelByID(ctx, claims.TenantID, bm.ID); err == nil {
+				deviceConfigID = bmsModel.DeviceConfigID
+			} else if err != gorm.ErrRecordNotFound {
+				failedRows++
+				appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "查询BMS板型号失败: "+err.Error())
+				continue
+			} else if bmsModel, err := getBmsBatteryModelByName(ctx, claims.TenantID, bm.Name); err == nil {
+				deviceConfigID = bmsModel.DeviceConfigID
+			} else if err != gorm.ErrRecordNotFound {
+				failedRows++
+				appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "查询BMS板型号失败: "+err.Error())
+				continue
+			}
 		}
 
 		// 查找或自动创建设备（item_uuid -> devices.device_number）
