@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -643,18 +642,5 @@ func normalizeOrgTypes(items []string) []string {
 }
 
 func (s *OrgTypePermission) GetDeviceParamOptions() ([]model.DeviceParamTreeNode, error) {
-	// 相对 backend 工作目录（与 messages.yaml 同级）
-	b, err := os.ReadFile("configs/device_param_permissions.json")
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []model.DeviceParamTreeNode{}, nil
-		}
-		return nil, err
-	}
-
-	var opts []model.DeviceParamTreeNode
-	if err := json.Unmarshal(b, &opts); err != nil {
-		return nil, err
-	}
-	return opts, nil
+	return buildDeviceParamPermissionTree(), nil
 }

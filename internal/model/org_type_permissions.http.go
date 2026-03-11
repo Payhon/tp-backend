@@ -31,8 +31,10 @@ type UIPermissionResp struct {
 
 // DeviceParamTreeNode 设备参数权限树节点
 type DeviceParamTreeNode struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
+	Label           string   `json:"label"`
+	Value           string   `json:"value"`
+	RegisterAddress string   `json:"register_address,omitempty"`
+	ParamKeys       []string `json:"param_keys,omitempty"`
 	// Children 为可选，支持层级结构；前端使用树形组件展示
 	Children []DeviceParamTreeNode `json:"children,omitempty"`
 }
