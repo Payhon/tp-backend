@@ -145,6 +145,8 @@ bms:
   provision:
     # 写入设备寄存器 0x53A~0x56F（108字节 ASCII）："domain:port"
     dtu_domain_port: "fjbms.yz6688.cn:1883"
+    # 是否允许对云端未预置的遗留 BMS 设备按 UUID 自动补建
+    allow_legacy_auto_register: false
   app_report:
     enabled: true
     bluetooth_only: true

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"project/internal/model"
@@ -9,8 +10,9 @@ import (
 	global "project/pkg/global"
 	"project/pkg/utils"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-basic/uuid"
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 )
 
 // DeviceProvision 移动端设备开通（扫码/蓝牙绑定）
@@ -45,16 +47,44 @@ func getDTUDomainPortFromConfig() string {
 	return ""
 }
 
-// GetProvisionConfig 获取移动端开通配置
-func (*DeviceProvision) GetProvisionConfig(_ context.Context, _ string) (*model.DeviceProvisionConfigResp, error) {
-	dtu := getDTUDomainPortFromConfig()
-	if dtu == "" {
-		return nil, errcode.NewWithMessage(errcode.CodeNotFound, "dtu_domain_port not configured")
-	}
-	return &model.DeviceProvisionConfigResp{DTUDomainPort: dtu}, nil
+func allowLegacyAutoRegister() bool {
+	return viper.GetBool("bms.provision.allow_legacy_auto_register")
 }
 
-func (*DeviceProvision) findDeviceByItemUUID(ctx context.Context, itemUUID string, claims *utils.UserClaims) (*deviceProvisionRow, error) {
+func isNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	e, ok := err.(*errcode.Error)
+	return ok && e.Code == errcode.CodeNotFound
+}
+
+func isDuplicateKeyErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "unique constraint")
+}
+
+func autoRegisterReasonPtr() *string {
+	v := "legacy_ble_device_not_preset"
+	return &v
+}
+
+func autoRegisterDeviceName(itemUUID string) string {
+	s := strings.TrimSpace(itemUUID)
+	if len(s) > 8 {
+		s = s[len(s)-8:]
+	}
+	return "BMS-" + strings.ToUpper(s)
+}
+
+func defaultDeviceVoucher() string {
+	return `{"default":"` + uuid.New() + `"}`
+}
+
+func (*DeviceProvision) findDeviceByItemUUIDWithDB(ctx context.Context, db *gorm.DB, itemUUID string, claims *utils.UserClaims) (*deviceProvisionRow, error) {
 	itemUUID = strings.TrimSpace(itemUUID)
 	if itemUUID == "" {
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "item_uuid is required")
@@ -64,7 +94,7 @@ func (*DeviceProvision) findDeviceByItemUUID(ctx context.Context, itemUUID strin
 	}
 
 	var row deviceProvisionRow
-	err := global.DB.WithContext(ctx).
+	err := db.WithContext(ctx).
 		Table("device_batteries AS dbat").
 		Select(`
 			d.id AS device_id,
@@ -87,11 +117,224 @@ func (*DeviceProvision) findDeviceByItemUUID(ctx context.Context, itemUUID strin
 	return &row, nil
 }
 
+// GetProvisionConfig 获取移动端开通配置
+func (*DeviceProvision) GetProvisionConfig(_ context.Context, _ string) (*model.DeviceProvisionConfigResp, error) {
+	dtu := getDTUDomainPortFromConfig()
+	if dtu == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeNotFound, "dtu_domain_port not configured")
+	}
+	return &model.DeviceProvisionConfigResp{DTUDomainPort: dtu}, nil
+}
+
+func (*DeviceProvision) findDeviceByItemUUID(ctx context.Context, itemUUID string, claims *utils.UserClaims) (*deviceProvisionRow, error) {
+	return (&DeviceProvision{}).findDeviceByItemUUIDWithDB(ctx, global.DB, itemUUID, claims)
+}
+
+func (*DeviceProvision) createAutoRegisteredDevice(ctx context.Context, tx *gorm.DB, req model.DeviceProvisionBindReq, claims *utils.UserClaims) (*deviceProvisionRow, error) {
+	itemUUID := strings.TrimSpace(req.ItemUUID)
+	now := utils.GetUTCTime()
+	deviceName := autoRegisterDeviceName(itemUUID)
+	protocol := "BLE"
+	accessWay := "A"
+	remark1 := "移动端自注册"
+	remark2 := "BLE_UUID_AUTO_REGISTER"
+	description := "遗留设备由APP蓝牙读取UUID后自动补建"
+
+	var bleMac *string
+	if req.BleMac != nil && strings.TrimSpace(*req.BleMac) != "" {
+		newMac, err := normalizeMac12(*req.BleMac)
+		if err != nil {
+			return nil, err
+		}
+		bleMac = &newMac
+	}
+
+	additionalInfo := map[string]interface{}{
+		"auto_registered":    true,
+		"register_source":    "APP_BLE",
+		"register_reason":    "legacy_device_not_preset",
+		"item_uuid":          itemUUID,
+		"created_by_user_id": claims.ID,
+		"created_at":         now.Format("2006-01-02T15:04:05Z07:00"),
+	}
+	if bleMac != nil {
+		additionalInfo["ble_mac"] = *bleMac
+	}
+	additionalInfoJSON, _ := json.Marshal(additionalInfo)
+	additionalInfoStr := string(additionalInfoJSON)
+
+	device := model.Device{
+		ID:             uuid.New(),
+		Name:           &deviceName,
+		Voucher:        defaultDeviceVoucher(),
+		TenantID:       claims.TenantID,
+		IsEnabled:      "enabled",
+		ActivateFlag:   "inactive",
+		CreatedAt:      &now,
+		UpdateAt:       &now,
+		DeviceNumber:   itemUUID,
+		Protocol:       &protocol,
+		Remark1:        &remark1,
+		Remark2:        &remark2,
+		AccessWay:      &accessWay,
+		Description:    &description,
+		AdditionalInfo: &additionalInfoStr,
+	}
+	if err := tx.WithContext(ctx).Create(&device).Error; err != nil {
+		if isDuplicateKeyErr(err) {
+			return (&DeviceProvision{}).findDeviceByItemUUIDWithDB(ctx, tx, itemUUID, claims)
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	if err := tx.WithContext(ctx).Exec(
+		`INSERT INTO device_batteries (device_id, item_uuid, ble_mac, bms_comm_type, activation_status, transfer_status, updated_at)
+		 VALUES (?, ?, ?, ?, 'INACTIVE', 'FACTORY', ?)`,
+		device.ID, itemUUID, bleMac, 1, now,
+	).Error; err != nil {
+		if isDuplicateKeyErr(err) {
+			return (&DeviceProvision{}).findDeviceByItemUUIDWithDB(ctx, tx, itemUUID, claims)
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	return (&DeviceProvision{}).findDeviceByItemUUIDWithDB(ctx, tx, itemUUID, claims)
+}
+
+func (*DeviceProvision) findOrCreateDeviceByItemUUID(ctx context.Context, req model.DeviceProvisionBindReq, claims *utils.UserClaims) (*deviceProvisionRow, bool, error) {
+	svc := &DeviceProvision{}
+	row, err := svc.findDeviceByItemUUID(ctx, req.ItemUUID, claims)
+	if err == nil {
+		return row, false, nil
+	}
+	if !isNotFoundErr(err) {
+		return nil, false, err
+	}
+	if !allowLegacyAutoRegister() {
+		return nil, false, err
+	}
+
+	var created bool
+	err = global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var innerErr error
+		row, innerErr = svc.findDeviceByItemUUIDWithDB(ctx, tx, req.ItemUUID, claims)
+		if innerErr == nil {
+			return nil
+		}
+		if !isNotFoundErr(innerErr) {
+			return innerErr
+		}
+		row, innerErr = svc.createAutoRegisteredDevice(ctx, tx, req, claims)
+		if innerErr != nil {
+			return innerErr
+		}
+		created = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return row, created, nil
+}
+
+func (*DeviceProvision) upsertOrgAddedDeviceRecordTx(ctx context.Context, tx *gorm.DB, claims *utils.UserClaims, deviceID, source string) error {
+	now := utils.GetUTCTime()
+	if err := tx.WithContext(ctx).Exec(
+		`INSERT INTO app_device_added_records (id, tenant_id, user_id, device_id, source, added_at, last_seen_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (tenant_id, user_id, device_id)
+		 DO UPDATE SET source = EXCLUDED.source, last_seen_at = EXCLUDED.last_seen_at`,
+		uuid.New(), claims.TenantID, claims.ID, deviceID, source, now, now,
+	).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return nil
+}
+
+func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, row *deviceProvisionRow, claims *utils.UserClaims) error {
+	userOrgID, err := getUserOrgID(claims.ID)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	var cnt int64
+	if err := tx.WithContext(ctx).
+		Table("device_user_bindings").
+		Where("device_id = ? AND user_id = ?", row.DeviceID, claims.ID).
+		Count(&cnt).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if cnt > 0 {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "device already bound to current user"})
+	}
+
+	if err := tx.WithContext(ctx).
+		Table("device_user_bindings").
+		Where("device_id = ?", row.DeviceID).
+		Count(&cnt).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	isFirstBinding := cnt == 0
+	now := utils.GetUTCTime()
+
+	if userOrgID != "" && row.OwnerOrgID != nil && strings.TrimSpace(*row.OwnerOrgID) != "" {
+		if !canAccessOrg(claims.TenantID, userOrgID, strings.TrimSpace(*row.OwnerOrgID)) {
+			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "device does not belong to current organization"})
+		}
+	}
+
+	updates := map[string]interface{}{
+		"activation_status": "ACTIVE",
+		"transfer_status":   "USER",
+		"activation_date":   now,
+		"updated_at":        now,
+	}
+	if (row.OwnerOrgID == nil || strings.TrimSpace(*row.OwnerOrgID) == "") && userOrgID != "" {
+		updates["owner_org_id"] = userOrgID
+	}
+	if err := tx.WithContext(ctx).
+		Table("device_batteries").
+		Where("device_id = ?", row.DeviceID).
+		Updates(updates).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	isOwner := isFirstBinding
+	binding := &model.DeviceUserBinding{
+		ID:          uuid.New(),
+		UserID:      claims.ID,
+		DeviceID:    row.DeviceID,
+		BindingTime: &now,
+		IsOwner:     &isOwner,
+	}
+	if err := tx.WithContext(ctx).Create(binding).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	if err := tx.WithContext(ctx).
+		Exec(
+			`UPDATE devices SET activate_flag = 'active', is_enabled = 'enabled', activate_at = ?, update_at = ? WHERE id = ? AND tenant_id = ?`,
+			now, now, row.DeviceID, claims.TenantID,
+		).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return nil
+}
+
 // GetProvisionInfo 按 item_uuid 查询设备信息（用于“扫码 UUID”路径）
 func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DeviceProvisionInfoReq, claims *utils.UserClaims) (*model.DeviceProvisionInfoResp, error) {
 	svc := &DeviceProvision{}
 	row, err := svc.findDeviceByItemUUID(ctx, req.ItemUUID, claims)
 	if err != nil {
+		if isNotFoundErr(err) && allowLegacyAutoRegister() {
+			return &model.DeviceProvisionInfoResp{
+				Exists:             false,
+				CanAutoRegister:    true,
+				AutoRegisterReason: autoRegisterReasonPtr(),
+				DeviceNumber:       strings.TrimSpace(req.ItemUUID),
+				IsBound:            false,
+			}, nil
+		}
 		return nil, err
 	}
 
@@ -114,6 +357,8 @@ func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DevicePr
 	}
 
 	return &model.DeviceProvisionInfoResp{
+		Exists:           true,
+		CanAutoRegister:  false,
 		DeviceID:     row.DeviceID,
 		DeviceNumber: row.DeviceNumber,
 		DeviceName:   row.DeviceName,
@@ -127,7 +372,7 @@ func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DevicePr
 // BindByItemUUID 按 item_uuid 将设备绑定到当前账号
 func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProvisionBindReq, claims *utils.UserClaims) (*model.DeviceProvisionBindResp, error) {
 	svc := &DeviceProvision{}
-	row, err := svc.findDeviceByItemUUID(ctx, req.ItemUUID, claims)
+	row, _, err := svc.findOrCreateDeviceByItemUUID(ctx, req, claims)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +425,9 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 		if req.BleMac != nil && strings.TrimSpace(*req.BleMac) != "" {
 			source = "BLE_SCAN"
 		}
-		if err := GroupApp.DeviceBinding.upsertOrgAddedDeviceRecord(ctx, claims, row.DeviceID, source); err != nil {
+		if err := global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return svc.upsertOrgAddedDeviceRecordTx(ctx, tx, claims, row.DeviceID, source)
+		}); err != nil {
 			if e, ok := err.(*errcode.Error); ok && e.Code == errcode.CodeDBError {
 				sqlErr := ""
 				if m, ok := e.Data.(map[string]interface{}); ok {
@@ -200,8 +447,9 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 		}, nil
 	}
 
-	// 复用现有绑定逻辑（device_user_bindings + activation_status 等）
-	if err := GroupApp.DeviceBinding.BindDevice(model.DeviceBindReq{DeviceNumber: row.DeviceNumber}, claims); err != nil {
+	if err := global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return svc.bindEndUserDeviceTx(ctx, tx, row, claims)
+	}); err != nil {
 		// 针对“数据库错误”做更可读的提示（用于测试环境快速定位迁移/表缺失问题）
 		if e, ok := err.(*errcode.Error); ok && e.Code == errcode.CodeDBError {
 			sqlErr := ""
@@ -222,19 +470,6 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 			}
 		}
 		return nil, err
-	}
-
-	// 同步设备激活状态（devices 表 activate_flag/is_enabled/activate_at）
-	// NOTE: DeviceBinding 仅更新了 device_batteries 的 activation_status；这里补齐 devices 主表字段，便于后台/统计统一。
-	now := utils.GetUTCTime()
-	if err := global.DB.WithContext(ctx).
-		Exec(
-			`UPDATE devices SET activate_flag = 'active', is_enabled = 'enabled', activate_at = ?, update_at = ? WHERE id = ? AND tenant_id = ?`,
-			now, now, row.DeviceID, claims.TenantID,
-		).Error; err != nil {
-		// 绑定已成功，这里尽量不影响用户绑定结果；激活字段后续可通过修复脚本/补偿任务同步。
-		// TODO: 若后续需要强一致（激活字段必须成功写入），再改回返回错误并在部署前确认 DB schema 一致。
-		logrus.WithError(err).Warn("[device_provision] bind succeeded but sync devices activation failed")
 	}
 
 	return &model.DeviceProvisionBindResp{

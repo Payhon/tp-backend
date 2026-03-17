@@ -12,13 +12,16 @@ type DeviceProvisionInfoReq struct {
 
 // DeviceProvisionInfoResp 设备开通信息（按 item_uuid 查询）
 type DeviceProvisionInfoResp struct {
-	DeviceID     string  `json:"device_id"`
-	DeviceNumber string  `json:"device_number"`
-	DeviceName   *string `json:"device_name,omitempty"`
-	BleMac       *string `json:"ble_mac,omitempty"`
-	CommChipID   *string `json:"comm_chip_id,omitempty"`
-	BmsCommType  *int    `json:"bms_comm_type,omitempty"` // 1:蓝牙、2:4G、3:蓝牙+4G
-	IsBound      bool    `json:"is_bound"`
+	Exists             bool    `json:"exists"`
+	CanAutoRegister    bool    `json:"can_auto_register"`
+	AutoRegisterReason *string `json:"auto_register_reason,omitempty"`
+	DeviceID           string  `json:"device_id"`
+	DeviceNumber       string  `json:"device_number"`
+	DeviceName         *string `json:"device_name,omitempty"`
+	BleMac             *string `json:"ble_mac,omitempty"`
+	CommChipID         *string `json:"comm_chip_id,omitempty"`
+	BmsCommType        *int    `json:"bms_comm_type,omitempty"` // 1:蓝牙、2:4G、3:蓝牙+4G
+	IsBound            bool    `json:"is_bound"`
 }
 
 // DeviceProvisionBindReq 设备开通绑定请求（按 item_uuid 绑定到当前账号）
