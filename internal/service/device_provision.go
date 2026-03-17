@@ -357,15 +357,15 @@ func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DevicePr
 	}
 
 	return &model.DeviceProvisionInfoResp{
-		Exists:           true,
-		CanAutoRegister:  false,
-		DeviceID:     row.DeviceID,
-		DeviceNumber: row.DeviceNumber,
-		DeviceName:   row.DeviceName,
-		BleMac:       row.BleMac,
-		CommChipID:   row.CommChipID,
-		BmsCommType:  row.BmsCommType,
-		IsBound:      cnt > 0,
+		Exists:          true,
+		CanAutoRegister: false,
+		DeviceID:        row.DeviceID,
+		DeviceNumber:    row.DeviceNumber,
+		DeviceName:      row.DeviceName,
+		BleMac:          row.BleMac,
+		CommChipID:      row.CommChipID,
+		BmsCommType:     row.BmsCommType,
+		IsBound:         cnt > 0,
 	}, nil
 }
 
