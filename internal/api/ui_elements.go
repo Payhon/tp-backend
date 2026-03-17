@@ -95,7 +95,14 @@ func (*UiElementsApi) ServeUiElementsListByAuthority(c *gin.Context) {
 // 菜单权限配置表单
 // /api/v1/ui_elements/select/form GET
 func (*UiElementsApi) ServeUiElementsListByTenant(c *gin.Context) {
-	uiElementsList, err := service.GroupApp.UiElements.GetTenantUiElementsList()
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	uiElementsList, err := service.GroupApp.UiElements.GetTenantUiElementsList(
+		c.Request.Context(),
+		userClaims,
+		c.Query("authority"),
+		c.Query("user_kind"),
+		c.Query("org_type"),
+	)
 	if err != nil {
 		c.Error(err)
 		return

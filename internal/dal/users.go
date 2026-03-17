@@ -179,6 +179,7 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 		AvatarURL           *string    `gorm:"column:avatar_url"`
 		OrgID               *string    `gorm:"column:org_id"`
 		UserKind            *string    `gorm:"column:user_kind"`
+		IsMain              *int16     `gorm:"column:is_main"`
 		OrgType             *string    `gorm:"column:org_type"`
 		OrgName             *string    `gorm:"column:org_name"`
 		// 地址字段
@@ -227,6 +228,7 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 			u.avatar_url,
 			u.org_id,
 			u.user_kind,
+			u.is_main,
 			o.org_type AS org_type,
 			o.name AS org_name,
 			ua.id AS address_id,
@@ -282,6 +284,7 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 		"avatar_url":            result.AvatarURL,
 		"org_id":                result.OrgID,
 		"user_kind":             result.UserKind,
+		"is_main":               result.IsMain,
 		"org_type":              result.OrgType,
 		"org_name":              result.OrgName,
 		"user_roles":            roles,
@@ -364,6 +367,26 @@ func GetUserListByPage(userListReq *model.UserListReq, claims *utils.UserClaims)
 	return GetUserListByPageWithAddress(userListReq, claims)
 }
 
+func getDescendantOrgIDs(ctx context.Context, tenantID, orgID string) ([]string, error) {
+	if strings.TrimSpace(orgID) == "" {
+		return nil, nil
+	}
+
+	var descendants []string
+	err := global.DB.WithContext(ctx).
+		Table("org_closure").
+		Select("descendant_id").
+		Where("tenant_id = ? AND ancestor_id = ?", tenantID, orgID).
+		Pluck("descendant_id", &descendants).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(descendants) == 0 {
+		descendants = []string{orgID}
+	}
+	return descendants, nil
+}
+
 func GetUserListByPageWithAddress(userListReq *model.UserListReq, claims *utils.UserClaims) (int64, interface{}, error) {
 	q := query.User
 	qa := query.UserAddress
@@ -373,7 +396,23 @@ func GetUserListByPageWithAddress(userListReq *model.UserListReq, claims *utils.
 	queryBuilder := q.WithContext(context.Background()).LeftJoin(qa, q.ID.EqCol(qa.UserID))
 
 	// 权限过滤
-	if claims.Authority == TENANT_ADMIN || claims.Authority == TENANT_USER {
+	if claims.Authority == TENANT_USER {
+		queryBuilder = queryBuilder.Where(q.TenantID.Eq(claims.TenantID), q.Authority.Eq(TENANT_USER))
+
+		if strings.TrimSpace(claims.OrgID) == "" {
+			queryBuilder = queryBuilder.Where(q.ID.Eq(claims.ID))
+		} else {
+			descendantOrgIDs, err := getDescendantOrgIDs(context.Background(), claims.TenantID, claims.OrgID)
+			if err != nil {
+				return 0, nil, err
+			}
+			if len(descendantOrgIDs) == 0 {
+				return 0, []map[string]interface{}{}, nil
+			}
+			oid := field.NewString("users", "org_id")
+			queryBuilder = queryBuilder.Where(oid.In(descendantOrgIDs...))
+		}
+	} else if claims.Authority == TENANT_ADMIN {
 		queryBuilder = queryBuilder.Where(q.TenantID.Eq(claims.TenantID))
 		// 默认保持原逻辑：仅查询租户用户
 		// 若显式指定 authority 或 all_authorities=true，则按需放宽
@@ -386,6 +425,9 @@ func GetUserListByPageWithAddress(userListReq *model.UserListReq, claims *utils.
 		}
 	} else if claims.Authority == SYS_ADMIN {
 		queryBuilder = queryBuilder.Where(q.Authority.Eq(TENANT_ADMIN))
+		uk := field.NewString("users", "user_kind")
+		im := field.NewInt16("users", "is_main")
+		queryBuilder = queryBuilder.Where(uk.Eq(model.UserKindOrgUser), im.Eq(1))
 	} else {
 		return count, nil, fmt.Errorf("authority exception")
 	}
@@ -401,6 +443,14 @@ func GetUserListByPageWithAddress(userListReq *model.UserListReq, claims *utils.
 	} else {
 		uk := field.NewString("users", "user_kind")
 		queryBuilder = queryBuilder.Where(field.Or(uk.IsNull(), uk.Eq(model.UserKindOrgUser)))
+	}
+	if userListReq != nil && userListReq.IsMain != nil {
+		im := field.NewInt16("users", "is_main")
+		queryBuilder = queryBuilder.Where(im.Eq(*userListReq.IsMain))
+	}
+	if userListReq != nil && userListReq.OrgID != nil && strings.TrimSpace(*userListReq.OrgID) != "" {
+		oid := field.NewString("users", "org_id")
+		queryBuilder = queryBuilder.Where(oid.Eq(strings.TrimSpace(*userListReq.OrgID)))
 	}
 
 	// 用户基本信息过滤
@@ -692,8 +742,10 @@ func (UserVo) PoToVo(userInfo *model.User) (info *model.UsersRes) {
 
 // 查询租户管理员列表
 func (UserVo) GetTenantAdminList() (list []*model.User, err error) {
-	var users = query.User
-	userInfoList, err := users.Where(users.Authority.Eq(TENANT_ADMIN)).Find()
+	var userInfoList []*model.User
+	err = global.DB.WithContext(context.Background()).
+		Where("authority = ? AND user_kind = ? AND is_main = 1", TENANT_ADMIN, model.UserKindOrgUser).
+		Find(&userInfoList).Error
 	if err != nil {
 		logrus.Error(err)
 		return
@@ -703,8 +755,10 @@ func (UserVo) GetTenantAdminList() (list []*model.User, err error) {
 
 // 根据租户ID查询租户信息
 func GetTenantsById(tenantID string) (info *model.User, err error) {
-	var tenants = query.User
-	info, err = tenants.Where(tenants.TenantID.Eq(tenantID), tenants.Authority.Eq(TENANT_ADMIN)).First()
+	info = &model.User{}
+	err = global.DB.WithContext(context.Background()).
+		Where("tenant_id = ? AND authority = ? AND user_kind = ? AND is_main = 1", tenantID, TENANT_ADMIN, model.UserKindOrgUser).
+		First(info).Error
 	if err != nil {
 		logrus.Error(err)
 		return
@@ -736,8 +790,12 @@ func CheckPhoneNumberExists(phoneNumber string, excludeUserID ...string) (bool, 
 
 // GetTenantAdmin 获取租户管理员
 func GetTenantAdmin(tenantID string) (*model.User, error) {
-	q := query.User
-	return q.Where(q.TenantID.Eq(tenantID)).
-		Where(q.Authority.Eq(TENANT_ADMIN)).
-		First()
+	var u model.User
+	err := global.DB.WithContext(context.Background()).
+		Where("tenant_id = ? AND authority = ? AND user_kind = ? AND is_main = 1", tenantID, TENANT_ADMIN, model.UserKindOrgUser).
+		First(&u).Error
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }

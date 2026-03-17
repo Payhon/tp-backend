@@ -35,6 +35,47 @@ const (
 	tenantIDGenerateMaxAttempt = 20
 )
 
+func int16Ptr(v int16) *int16 {
+	return &v
+}
+
+func normalizeIsMainFlag(v *int16) int16 {
+	if v == nil {
+		return 0
+	}
+	if *v == 1 {
+		return 1
+	}
+	return 0
+}
+
+func (*User) canTenantUserAccessManagedUser(ctx context.Context, claims *utils.UserClaims, user *model.User) (bool, error) {
+	if claims == nil || claims.Authority != "TENANT_USER" {
+		return true, nil
+	}
+	if user == nil || user.TenantID == nil || *user.TenantID != claims.TenantID {
+		return false, nil
+	}
+	if user.Authority == nil || *user.Authority != "TENANT_USER" {
+		return false, nil
+	}
+	if strings.TrimSpace(claims.OrgID) == "" || user.OrgID == nil || strings.TrimSpace(*user.OrgID) == "" {
+		return false, nil
+	}
+
+	orgIDs, err := GroupApp.OrgService.GetDescendantOrgIDs(ctx, claims.TenantID, claims.OrgID)
+	if err != nil {
+		return false, err
+	}
+	targetOrgID := strings.TrimSpace(*user.OrgID)
+	for _, orgID := range orgIDs {
+		if orgID == targetOrgID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (*User) generateTenantID(ctx context.Context) (string, error) {
 	for i := 0; i < tenantIDGenerateMaxAttempt; i++ {
 		tenantID, err := gonanoid.Generate(tenantIDNanoAlphabet, tenantIDNanoSize)
@@ -72,9 +113,6 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 	user.Status = StringPtr("N")
 	user.Remark = createUserReq.Remark
 
-	// WEB/后台创建的账号统一归类为组织用户（业务账号）
-	user.UserKind = StringPtr(model.UserKindOrgUser)
-
 	// 新增扩展字段
 	user.Organization = createUserReq.Organization
 	user.Timezone = createUserReq.Timezone
@@ -96,6 +134,8 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 	switch claims.Authority {
 	case "SYS_ADMIN": // 系统管理员创建租户管理员
 		user.Authority = StringPtr("TENANT_ADMIN")
+		user.UserKind = StringPtr(model.UserKindOrgUser)
+		user.IsMain = int16Ptr(1)
 		tenantID, err := u.generateTenantID(context.Background())
 		if err != nil {
 			return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
@@ -116,12 +156,158 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 			})
 		}
 		user.Authority = StringPtr(desired)
+		desiredUserKind := model.UserKindOrgUser
+		if createUserReq.UserKind != nil && strings.TrimSpace(*createUserReq.UserKind) != "" {
+			desiredUserKind = strings.TrimSpace(*createUserReq.UserKind)
+		}
+		user.UserKind = StringPtr(desiredUserKind)
+		desiredIsMain := normalizeIsMainFlag(createUserReq.IsMain)
+		if desired == "TENANT_ADMIN" {
+			if desiredIsMain == 1 {
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"field": "is_main",
+					"error": "tenant admin created by tenant cannot be main account",
+				})
+			}
+			user.IsMain = int16Ptr(0)
+			user.OrgID = nil
+		} else {
+			switch desiredUserKind {
+			case model.UserKindOrgUser:
+				if createUserReq.OrgID == nil || strings.TrimSpace(*createUserReq.OrgID) == "" {
+					return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+						"field": "org_id",
+						"error": "org user must belong to an org",
+					})
+				}
+				orgID := strings.TrimSpace(*createUserReq.OrgID)
+				var orgInfo struct {
+					ID      string `gorm:"column:id"`
+					Name    string `gorm:"column:name"`
+					OrgType string `gorm:"column:org_type"`
+				}
+				if err := global.DB.WithContext(context.Background()).
+					Table("orgs").
+					Select("id, name, org_type").
+					Where("id = ? AND tenant_id = ?", orgID, claims.TenantID).
+					Limit(1).
+					Scan(&orgInfo).Error; err != nil {
+					return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+						"operation": "query_org",
+						"org_id":    orgID,
+						"error":     err.Error(),
+					})
+				}
+				if orgInfo.ID == "" {
+					return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+						"field": "org_id",
+						"error": "org not found in current tenant",
+					})
+				}
+				user.OrgID = &orgID
+				if user.Organization == nil || strings.TrimSpace(*user.Organization) == "" {
+					user.Organization = &orgInfo.Name
+				}
+				user.IsMain = int16Ptr(desiredIsMain)
+			case model.UserKindEndUser:
+				user.IsMain = int16Ptr(0)
+				user.OrgID = nil
+			default:
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"field": "user_kind",
+					"error": "invalid user_kind",
+				})
+			}
+		}
 		// 直接使用 claims 携带的 tenant_id，避免再次查库
 		user.TenantID = &claims.TenantID
+	case "TENANT_USER": // 机构主账号创建本机构/下级机构的员工账号
+		if strings.TrimSpace(claims.OrgID) == "" {
+			return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+				"reason": "tenant_user_without_org_scope",
+			})
+		}
+
+		desired := "TENANT_USER"
+		if createUserReq.Authority != nil && strings.TrimSpace(*createUserReq.Authority) != "" {
+			desired = strings.TrimSpace(*createUserReq.Authority)
+		}
+		if desired != "TENANT_USER" {
+			return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+				"reason":              "tenant_user_can_only_create_tenant_user",
+				"requested_authority": desired,
+			})
+		}
+		user.Authority = StringPtr("TENANT_USER")
+		user.UserKind = StringPtr(model.UserKindOrgUser)
+
+		desiredIsMain := normalizeIsMainFlag(createUserReq.IsMain)
+		if desiredIsMain == 1 {
+			return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+				"reason": "tenant_user_cannot_create_main_account",
+			})
+		}
+		user.IsMain = int16Ptr(0)
+
+		orgID := strings.TrimSpace(claims.OrgID)
+		if createUserReq.OrgID != nil && strings.TrimSpace(*createUserReq.OrgID) != "" {
+			orgID = strings.TrimSpace(*createUserReq.OrgID)
+		}
+
+		accessibleOrgIDs, err := GroupApp.OrgService.GetDescendantOrgIDs(context.Background(), claims.TenantID, claims.OrgID)
+		if err != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "resolve_accessible_orgs",
+				"org_id":    claims.OrgID,
+				"error":     err.Error(),
+			})
+		}
+		allowed := false
+		for _, accessibleOrgID := range accessibleOrgIDs {
+			if accessibleOrgID == orgID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+				"reason": "org_out_of_scope",
+				"org_id": orgID,
+			})
+		}
+
+		var orgInfo struct {
+			ID   string `gorm:"column:id"`
+			Name string `gorm:"column:name"`
+		}
+		if err := global.DB.WithContext(context.Background()).
+			Table("orgs").
+			Select("id, name").
+			Where("id = ? AND tenant_id = ?", orgID, claims.TenantID).
+			Limit(1).
+			Scan(&orgInfo).Error; err != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_org",
+				"org_id":    orgID,
+				"error":     err.Error(),
+			})
+		}
+		if orgInfo.ID == "" {
+			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+				"field": "org_id",
+				"error": "org not found in current scope",
+			})
+		}
+
+		user.TenantID = &claims.TenantID
+		user.OrgID = &orgID
+		if user.Organization == nil || strings.TrimSpace(*user.Organization) == "" {
+			user.Organization = &orgInfo.Name
+		}
 	default:
 		// 权限不足
 		return errcode.WithVars(errcode.CodeNoPermission, map[string]interface{}{
-			"required_role": "SYS_ADMIN or TENANT_ADMIN",
+			"required_role": "SYS_ADMIN or TENANT_ADMIN or TENANT_USER",
 			"current_role":  claims.Authority,
 		})
 	}
@@ -256,6 +442,9 @@ func (*User) UserLoginAfter(user *model.User) (*model.LoginRsp, error) {
 		Authority:  *user.Authority,
 		CreateTime: time.Now().UTC(),
 		TenantID:   *user.TenantID,
+		UserKind:   SafeDeref(user.UserKind),
+		OrgID:      SafeDeref(user.OrgID),
+		IsMain:     normalizeIsMainFlag(user.IsMain),
 	}
 	token, err := jwt.GenerateToken(claims)
 	if err != nil {
@@ -323,6 +512,9 @@ func (*User) RefreshToken(userClaims *utils.UserClaims) (*model.LoginRsp, error)
 		Authority:  *user.Authority,
 		CreateTime: time.Now().UTC(),
 		TenantID:   *user.TenantID,
+		UserKind:   SafeDeref(user.UserKind),
+		OrgID:      SafeDeref(user.OrgID),
+		IsMain:     normalizeIsMainFlag(user.IsMain),
 	}
 	token, err := jwt.GenerateToken(claims)
 	if err != nil {
@@ -485,9 +677,25 @@ func (*User) UpdateUser(updateUserReq *model.UpdateUserReq, claims *utils.UserCl
 		if *user.TenantID != claims.TenantID {
 			return errcode.New(errcode.CodeNoPermission) // 无访问权限
 		}
+		if claims.Authority == "TENANT_USER" {
+			allowed, accessErr := GroupApp.User.canTenantUserAccessManagedUser(context.Background(), claims, user)
+			if accessErr != nil {
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "resolve_accessible_orgs",
+					"user_id":   updateUserReq.ID,
+					"error":     accessErr.Error(),
+				})
+			}
+			if !allowed {
+				return errcode.New(errcode.CodeNoPermission)
+			}
+		}
 
-		// 租户管理员不能修改自己的状态
-		if claims.Authority == "TENANT_ADMIN" && *user.Authority == "TENANT_ADMIN" && updateUserReq.Status != nil && *user.Status != *updateUserReq.Status {
+		// 租户管理员不能修改租户主账号状态
+		if claims.Authority == "TENANT_ADMIN" &&
+			user.Authority != nil && *user.Authority == "TENANT_ADMIN" &&
+			user.IsMain != nil && *user.IsMain == 1 &&
+			updateUserReq.Status != nil && *user.Status != *updateUserReq.Status {
 			return errcode.New(errcode.CodeOpDenied) // 操作被拒绝
 		}
 	}
@@ -515,9 +723,37 @@ func (*User) UpdateUser(updateUserReq *model.UpdateUserReq, claims *utils.UserCl
 	user.Remark = updateUserReq.Remark
 
 	// 更新新增的扩展字段
+	if updateUserReq.UserKind != nil {
+		user.UserKind = updateUserReq.UserKind
+	}
+	if updateUserReq.IsMain != nil {
+		user.IsMain = updateUserReq.IsMain
+	}
+	if updateUserReq.OrgID != nil {
+		if strings.TrimSpace(*updateUserReq.OrgID) == "" {
+			user.OrgID = nil
+		} else {
+			orgID := strings.TrimSpace(*updateUserReq.OrgID)
+			user.OrgID = &orgID
+		}
+	}
 	user.Organization = updateUserReq.Organization
 	user.Timezone = updateUserReq.Timezone
 	user.DefaultLanguage = updateUserReq.DefaultLanguage
+
+	if user.UserKind != nil && *user.UserKind == model.UserKindEndUser {
+		user.IsMain = int16Ptr(0)
+		user.OrgID = nil
+	}
+	if user.Authority != nil && *user.Authority == "TENANT_ADMIN" {
+		user.OrgID = nil
+		if user.IsMain != nil && *user.IsMain == 1 && claims.Authority != "SYS_ADMIN" {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"reason":  "tenant_main_account_cannot_be_modified_to_main_by_tenant",
+				"user_id": user.ID,
+			})
+		}
+	}
 
 	// 更新用户和地址信息（使用事务）
 	err = dal.UpdateUserWithAddress(user, updateUserReq.Address)
@@ -600,6 +836,19 @@ func (*User) DeleteUser(id string, claims *utils.UserClaims) error {
 				"operation":       "delete_user",
 			})
 		}
+		if claims.Authority == "TENANT_USER" {
+			allowed, accessErr := GroupApp.User.canTenantUserAccessManagedUser(context.Background(), claims, user)
+			if accessErr != nil {
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "resolve_accessible_orgs",
+					"user_id":   id,
+					"error":     accessErr.Error(),
+				})
+			}
+			if !allowed {
+				return errcode.New(errcode.CodeNoPermission)
+			}
+		}
 
 		// 租户管理员不能删除自己
 		// if claims.Authority == "TENANT_ADMIN" && *user.Authority == "TENANT_ADMIN" {
@@ -614,6 +863,12 @@ func (*User) DeleteUser(id string, claims *utils.UserClaims) error {
 	if *user.Authority == "SYS_ADMIN" {
 		return errcode.WithVars(errcode.CodeOpDenied, map[string]interface{}{
 			"reason":  "cannot_delete_sys_admin",
+			"user_id": id,
+		})
+	}
+	if user.IsMain != nil && *user.IsMain == 1 && user.UserKind != nil && *user.UserKind == model.UserKindOrgUser {
+		return errcode.WithVars(errcode.CodeOpDenied, map[string]interface{}{
+			"reason":  "cannot_delete_main_account",
 			"user_id": id,
 		})
 	}
@@ -652,6 +907,27 @@ func (*User) GetUser(id string, claims *utils.UserClaims) (interface{}, error) {
 					"current_tenant":  claims.TenantID,
 					"user_authority":  claims.Authority,
 				})
+			}
+		}
+		if claims.Authority == "TENANT_USER" {
+			userRecord, getErr := dal.GetUsersById(id)
+			if getErr != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "query_user",
+					"user_id":   id,
+					"error":     getErr.Error(),
+				})
+			}
+			allowed, accessErr := GroupApp.User.canTenantUserAccessManagedUser(context.Background(), claims, userRecord)
+			if accessErr != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "resolve_accessible_orgs",
+					"user_id":   id,
+					"error":     accessErr.Error(),
+				})
+			}
+			if !allowed {
+				return nil, errcode.New(errcode.CodeNoPermission)
 			}
 		}
 	}

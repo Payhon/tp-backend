@@ -17,6 +17,9 @@ type UserClaims struct {
 	CreateTime time.Time `json:"create_time"`
 	Authority  string    `json:"authority"`
 	TenantID   string    `json:"tenant_id"`
+	UserKind   string    `json:"user_kind"`
+	OrgID      string    `json:"org_id"`
+	IsMain     int16     `json:"is_main"`
 	jwt.StandardClaims
 }
 

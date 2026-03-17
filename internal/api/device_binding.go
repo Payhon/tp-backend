@@ -61,16 +61,20 @@ func (*DeviceBindingApi) UnbindDevice(c *gin.Context) {
 	c.Set("data", nil)
 }
 
-// GetUserDevices 获取当前用户绑定设备列表
-// @Summary 获取用户绑定设备列表
-// @Description 分页查询用户绑定的设备列表（默认当前登录用户）
+// GetUserDevices 获取当前账号“我的设备”列表
+// @Summary 获取我的设备列表
+// @Description 分页查询当前账号在移动端首页展示的设备列表（按用户类型和view_mode返回）
 // @Tags APP-Device
 // @Accept json
 // @Produce json
 // @Param page query int true "页码"
 // @Param page_size query int true "每页数量"
-// @Param user_id query string false "用户ID（可选，不传则为当前用户）"
-// @Param device_number query string false "设备编号"
+// @Param view_mode query string false "视图模式(self_bound/org_added/end_user_bound)"
+// @Param device_name query string false "设备名称"
+// @Param device_number query string false "设备编号/序列号"
+// @Param ble_mac query string false "蓝牙MAC"
+// @Param added_start_at query string false "添加开始日期(YYYY-MM-DD)"
+// @Param added_end_at query string false "添加结束日期(YYYY-MM-DD)"
 // @Success 200 {object} model.DeviceUserBindingListResp
 // @Router /api/v1/app/device/list [get]
 func (*DeviceBindingApi) GetUserDevices(c *gin.Context) {
@@ -87,6 +91,30 @@ func (*DeviceBindingApi) GetUserDevices(c *gin.Context) {
 	}
 
 	c.Set("data", data)
+}
+
+// RemoveOrgAddedDevice 移除机构账号“我添加的设备”记录
+// @Summary 移除我添加的设备
+// @Description 机构用户从首页“我添加的设备”中移除当前设备
+// @Tags APP-Device
+// @Accept json
+// @Produce json
+// @Param body body model.AppDeviceRemoveReq true "移除请求"
+// @Success 200 {object} model.Response
+// @Router /api/v1/app/device/remove [post]
+func (*DeviceBindingApi) RemoveOrgAddedDevice(c *gin.Context) {
+	var req model.AppDeviceRemoveReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	if err := service.GroupApp.DeviceBinding.RemoveOrgAddedDevice(req, userClaims); err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.Set("data", nil)
 }
 
 // GetOrgDevices 获取当前组织范围内设备列表（APP端）

@@ -23,6 +23,7 @@ type User struct {
 	DealerID            *string    `gorm:"column:dealer_id;comment:归属经销商ID（已废弃）" json:"dealer_id"`          // 归属经销商ID（已废弃，保留兼容）
 	OrgID               *string    `gorm:"column:org_id;comment:归属组织ID" json:"org_id"`                      // 归属组织ID（业务账号归属的组织）
 	UserKind            *string    `gorm:"column:user_kind;default:END_USER;comment:用户类型" json:"user_kind"` // 用户类型: ORG_USER-组织用户（业务账号）, END_USER-终端用户
+	IsMain              *int16     `gorm:"column:is_main;default:0;comment:是否主账号 0-否 1-是" json:"is_main"`   // 是否主账号 0-否 1-是
 	Remark              *string    `gorm:"column:remark" json:"remark"`
 	AdditionalInfo      *string    `gorm:"column:additional_info;default:{}" json:"additional_info"`
 	CreatedAt           *time.Time `gorm:"column:created_at" json:"created_at"`

@@ -58,6 +58,7 @@ func (*ActivationLog) GetActivationLogList(ctx context.Context, req model.Activa
 	for _, p := range paths {
 		args = append(args, p)
 	}
+	baseWhere += " AND (ol.path = '/api/v1/battery/activate' OR COALESCE(u.user_kind, 'END_USER') = 'END_USER')"
 
 	if req.StartTime != nil && req.EndTime != nil {
 		baseWhere += " AND ol.created_at BETWEEN ? AND ?"

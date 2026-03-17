@@ -6,13 +6,17 @@ import (
 	"strings"
 	"time"
 
+	"project/initialize"
+	"project/internal/dal"
 	"project/internal/model"
 	"project/internal/query"
+	protocolplugin "project/internal/service/protocol_plugin"
 	"project/pkg/errcode"
 	global "project/pkg/global"
 	"project/pkg/utils"
 
 	"github.com/go-basic/uuid"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -138,6 +142,14 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 	); err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
+	if req.Remark != nil {
+		if err := global.DB.WithContext(ctx).
+			Model(&model.Device{}).
+			Where("id = ?", device.ID).
+			Update("remark1", *req.Remark).Error; err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+	}
 
 	// 运营日志：CREATE
 	desc := "添加单个电池信息"
@@ -150,10 +162,207 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		"product_spec":     productSpec,
 		"order_number":     orderNumber,
 		"bms_comm_type":    bmsCommType,
+		"remark":           req.Remark,
 		"created_device":   createdDevice,
 	})
 
 	// 查询回显（包含型号名称）
+	return loadBatteryCreateRespByDeviceID(ctx, device.ID, device.DeviceNumber, batteryModelName), nil
+}
+
+// UpdateSingleBattery 编辑单个电池信息（对应“新增 BMS”表单字段）
+func (*Battery) UpdateSingleBattery(ctx context.Context, deviceID string, req model.BatteryCreateReq, claims *utils.UserClaims, orgID string) (*model.BatteryCreateResp, error) {
+	_, err := query.Device.WithContext(ctx).Where(
+		query.Device.ID.Eq(deviceID),
+		query.Device.TenantID.Eq(claims.TenantID),
+	).First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "设备不存在"})
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	if err := checkDeviceOrgAccess(ctx, deviceID, claims.TenantID, orgID); err != nil {
+		return nil, err
+	}
+
+	batteryModelID, batteryModelName, warrantyMonths, deviceConfigID, err := resolveBatteryCreateModelMeta(ctx, claims, req)
+	if err != nil {
+		return nil, err
+	}
+
+	itemUUID := strings.TrimSpace(req.ItemUUID)
+	if itemUUID == "" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "item_uuid is required"})
+	}
+	if err := ensureBatteryDeviceNumberUsable(ctx, claims.TenantID, deviceID, itemUUID); err != nil {
+		return nil, err
+	}
+
+	productionDate, err := parseDateYYYYMMDD(ptrToStr(req.ProductionDate))
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "出厂日期格式错误，应为 YYYY-MM-DD"})
+	}
+	warrantyExpireDate, err := parseDateYYYYMMDD(ptrToStr(req.WarrantyExpireDate))
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "质保到期格式错误，应为 YYYY-MM-DD"})
+	}
+	if warrantyExpireDate == nil && productionDate != nil && warrantyMonths != nil && *warrantyMonths > 0 {
+		t := productionDate.AddDate(0, int(*warrantyMonths), 0)
+		warrantyExpireDate = &t
+	}
+
+	now := time.Now().UTC()
+	updates := map[string]any{
+		"device_number": itemUUID,
+		"update_at":     &now,
+		"remark1":       req.Remark,
+	}
+	if deviceConfigID != nil && *deviceConfigID != "" {
+		updates["device_config_id"] = *deviceConfigID
+	}
+	if err := global.DB.WithContext(ctx).Model(&model.Device{}).Where("id = ?", deviceID).Updates(updates).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	bleMac := req.BleMac
+	commChipID := req.CommChipID
+	batchNumber := req.BatchNumber
+	productSpec := req.ProductSpec
+	orderNumber := req.OrderNumber
+	bmsCommType := req.BmsCommType
+	if err := upsertDeviceBattery(
+		ctx,
+		deviceID,
+		itemUUID,
+		&batchNumber,
+		&productSpec,
+		&orderNumber,
+		&bmsCommType,
+		batteryModelID,
+		bleMac,
+		commChipID,
+		productionDate,
+		warrantyExpireDate,
+		nil,
+	); err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	desc := "编辑 BMS 信息"
+	_ = CreateBatteryOperationLog(ctx, claims.TenantID, deviceID, itemUUID, BatteryOpTypeEditInfo, &claims.ID, &desc, map[string]any{
+		"battery_model_id": batteryModelID,
+		"batch_number":     batchNumber,
+		"product_spec":     productSpec,
+		"order_number":     orderNumber,
+		"bms_comm_type":    bmsCommType,
+		"remark":           req.Remark,
+	})
+
+	return loadBatteryCreateRespByDeviceID(ctx, deviceID, itemUUID, batteryModelName), nil
+}
+
+// DeleteBattery 删除电池及其关联业务数据（保留运营日志审计）
+func (*Battery) DeleteBattery(ctx context.Context, deviceID string, claims *utils.UserClaims, orgID string) error {
+	device, err := query.Device.WithContext(ctx).Where(
+		query.Device.ID.Eq(deviceID),
+		query.Device.TenantID.Eq(claims.TenantID),
+	).First()
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"message": "设备不存在"})
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if err := checkDeviceOrgAccess(ctx, deviceID, claims.TenantID, orgID); err != nil {
+		return err
+	}
+
+	subDevices, err := dal.GetSubDeviceListByParentID(deviceID)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if len(subDevices) > 0 {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "设备存在子设备，无法删除"})
+	}
+	conditions, err := dal.GetDeviceTriggerConditionListByDeviceId(deviceID)
+	if err != nil {
+		return err
+	}
+	if len(conditions) > 0 {
+		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"message": "设备已关联场景联动，请先解除"})
+	}
+
+	desc := "删除电池及关联业务数据"
+	err = global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tables := []string{
+			"telemetry_current_datas",
+			"telemetry_datas",
+			"telemetry_set_logs",
+			"attribute_datas",
+			"attribute_set_logs",
+			"event_datas",
+			"command_set_logs",
+			"expected_datas",
+			"device_user_bindings",
+			"device_battery_tags",
+			"battery_maintenance_records",
+			"warranty_applications",
+			"offline_command_tasks",
+			"ota_upgrade_task_details",
+			"device_org_transfers",
+			"device_transfers",
+			"r_group_device",
+			"device_status_history",
+			"device_batteries",
+		}
+		for _, tableName := range tables {
+			if err := tx.Table(tableName).Where("device_id = ?", deviceID).Delete(nil).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Table("devices").Where("id = ? AND tenant_id = ?", deviceID, claims.TenantID).Delete(nil).Error; err != nil {
+			return err
+		}
+		return CreateBatteryOperationLogTx(tx, claims.TenantID, deviceID, device.DeviceNumber, BatteryOpTypeDelete, &claims.ID, &desc, map[string]any{
+			"deleted_tables": []string{
+				"telemetry_current_datas",
+				"telemetry_datas",
+				"telemetry_set_logs",
+				"attribute_datas",
+				"attribute_set_logs",
+				"event_datas",
+				"command_set_logs",
+				"expected_datas",
+				"device_user_bindings",
+				"device_battery_tags",
+				"battery_maintenance_records",
+				"warranty_applications",
+				"offline_command_tasks",
+				"ota_upgrade_task_details",
+				"device_org_transfers",
+				"device_transfers",
+				"r_group_device",
+				"device_status_history",
+				"device_batteries",
+				"devices",
+			},
+		})
+	})
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	initialize.DelDeviceCache(deviceID)
+	global.REDIS.Del(context.Background(), device.Voucher)
+	if protocolplugin.DisconnectDeviceByDeviceID(deviceID) != nil {
+		logrus.Error("DisconnectDeviceByDeviceID failed")
+	}
+	return nil
+}
+
+func loadBatteryCreateRespByDeviceID(ctx context.Context, deviceID, deviceNumber string, fallbackBatteryModelName *string) *model.BatteryCreateResp {
 	var row struct {
 		BatteryModelID     *string    `gorm:"column:battery_model_id"`
 		BatteryModelName   *string    `gorm:"column:battery_model_name"`
@@ -171,7 +380,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		Select(`dbat.battery_model_id, COALESCE(bm_pack.name, bm_bms.name) AS battery_model_name, dbat.item_uuid, dbat.batch_number, dbat.product_spec, dbat.order_number, dbat.bms_comm_type, dbat.ble_mac, dbat.comm_chip_id, dbat.production_date, dbat.warranty_expire_date`).
 		Joins(`LEFT JOIN battery_models bm_pack ON bm_pack.id = dbat.battery_model_id`).
 		Joins(`LEFT JOIN battery_bms_models bm_bms ON bm_bms.id = dbat.battery_model_id`).
-		Where("dbat.device_id = ?", device.ID).
+		Where("dbat.device_id = ?", deviceID).
 		Scan(&row).Error
 
 	var productionDateStr *string
@@ -187,14 +396,14 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 
 	// 优先使用查询结果的型号名，否则用解析时获取的
 	if row.BatteryModelName != nil {
-		batteryModelName = row.BatteryModelName
+		fallbackBatteryModelName = row.BatteryModelName
 	}
 
 	return &model.BatteryCreateResp{
-		DeviceID:           device.ID,
-		DeviceNumber:       device.DeviceNumber,
+		DeviceID:           deviceID,
+		DeviceNumber:       deviceNumber,
 		BatteryModelID:     row.BatteryModelID,
-		BatteryModelName:   batteryModelName,
+		BatteryModelName:   fallbackBatteryModelName,
 		ItemUUID:           row.ItemUUID,
 		BatchNumber:        row.BatchNumber,
 		ProductSpec:        row.ProductSpec,
@@ -204,7 +413,102 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		CommChipID:         row.CommChipID,
 		ProductionDate:     productionDateStr,
 		WarrantyExpireDate: warrantyExpireDateStr,
-	}, nil
+	}
+}
+
+func resolveBatteryCreateModelMeta(ctx context.Context, claims *utils.UserClaims, req model.BatteryCreateReq) (*string, *string, *int32, *string, error) {
+	var batteryModelID *string
+	var batteryModelName *string
+	var warrantyMonths *int32
+	var deviceConfigID *string
+
+	resolveBmsModelMeta := func(packModelID, packModelName string) error {
+		if bmsModel, err := getBmsBatteryModelByID(ctx, claims.TenantID, packModelID); err == nil {
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+			return nil
+		} else if err != gorm.ErrRecordNotFound {
+			return err
+		}
+
+		if bmsModel, err := getBmsBatteryModelByName(ctx, claims.TenantID, packModelName); err == nil {
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+			return nil
+		} else if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		return nil
+	}
+
+	if req.BatteryModelID != nil && *req.BatteryModelID != "" {
+		if bmsModel, err := getBmsBatteryModelByID(ctx, claims.TenantID, *req.BatteryModelID); err == nil {
+			batteryModelID = &bmsModel.ID
+			batteryModelName = &bmsModel.Name
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+		} else if err != gorm.ErrRecordNotFound {
+			return nil, nil, nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		} else {
+			bm, err := getPackBatteryModelByID(ctx, claims.TenantID, *req.BatteryModelID)
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return nil, nil, nil, nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "BMS型号不存在"})
+				}
+				return nil, nil, nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+			batteryModelID = &bm.ID
+			batteryModelName = &bm.Name
+			if err := resolveBmsModelMeta(bm.ID, bm.Name); err != nil {
+				return nil, nil, nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+		}
+	} else if req.BatteryModelName != nil && *req.BatteryModelName != "" {
+		if bmsModel, err := getBmsBatteryModelByName(ctx, claims.TenantID, *req.BatteryModelName); err == nil {
+			batteryModelID = &bmsModel.ID
+			batteryModelName = &bmsModel.Name
+			warrantyMonths = bmsModel.WarrantyMonth
+			deviceConfigID = bmsModel.DeviceConfigID
+		} else if err != gorm.ErrRecordNotFound {
+			return nil, nil, nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		} else {
+			bm, err := getPackBatteryModelByName(ctx, claims.TenantID, *req.BatteryModelName)
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return nil, nil, nil, nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "BMS型号不存在"})
+				}
+				return nil, nil, nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+			batteryModelID = &bm.ID
+			batteryModelName = &bm.Name
+			if err := resolveBmsModelMeta(bm.ID, bm.Name); err != nil {
+				return nil, nil, nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+		}
+	}
+
+	return batteryModelID, batteryModelName, warrantyMonths, deviceConfigID, nil
+}
+
+func ensureBatteryDeviceNumberUsable(ctx context.Context, tenantID, currentDeviceID, deviceNumber string) error {
+	existing, err := query.Device.WithContext(ctx).Where(query.Device.DeviceNumber.Eq(deviceNumber)).First()
+	if err == nil {
+		if existing.TenantID != tenantID {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"message": "设备编号已存在（非当前租户），无法保存",
+			})
+		}
+		if existing.ID != currentDeviceID {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"message": "设备编号已存在，无法保存",
+			})
+		}
+		return nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return nil
 }
 
 func ptrToStr(v *string) string {

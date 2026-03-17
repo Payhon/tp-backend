@@ -23,6 +23,7 @@ type deviceProvisionRow struct {
 	BleMac       *string `gorm:"column:ble_mac"`
 	CommChipID   *string `gorm:"column:comm_chip_id"`
 	BmsCommType  *int    `gorm:"column:bms_comm_type"`
+	OwnerOrgID   *string `gorm:"column:owner_org_id"`
 }
 
 func normalizeMac12(input string) (string, error) {
@@ -71,7 +72,8 @@ func (*DeviceProvision) findDeviceByItemUUID(ctx context.Context, itemUUID strin
 			d.name AS device_name,
 			dbat.ble_mac AS ble_mac,
 			dbat.comm_chip_id AS comm_chip_id,
-			dbat.bms_comm_type AS bms_comm_type
+			dbat.bms_comm_type AS bms_comm_type,
+			dbat.owner_org_id AS owner_org_id
 		`).
 		Joins("JOIN devices AS d ON d.id = dbat.device_id").
 		Where("dbat.item_uuid = ? AND d.tenant_id = ?", itemUUID, claims.TenantID).
@@ -95,8 +97,16 @@ func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DevicePr
 
 	var cnt int64
 	if claims != nil && claims.ID != "" {
+		viewCtx, err := resolveAppDeviceViewContext(ctx, claims)
+		if err != nil {
+			return nil, err
+		}
+		tableName := "device_user_bindings"
+		if viewCtx.userKind == model.UserKindOrgUser {
+			tableName = "app_device_added_records"
+		}
 		if err := global.DB.WithContext(ctx).
-			Table("device_user_bindings").
+			Table(tableName).
 			Where("device_id = ? AND user_id = ?", row.DeviceID, claims.ID).
 			Count(&cnt).Error; err != nil {
 			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
@@ -153,6 +163,41 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 			}
 		}
+	}
+
+	viewCtx, err := resolveAppDeviceViewContext(ctx, claims)
+	if err != nil {
+		return nil, err
+	}
+
+	if viewCtx.userKind == model.UserKindOrgUser {
+		if !viewCtx.isFactory && viewCtx.orgID != "" && row.OwnerOrgID != nil && strings.TrimSpace(*row.OwnerOrgID) != "" {
+			if !canAccessOrg(claims.TenantID, viewCtx.orgID, strings.TrimSpace(*row.OwnerOrgID)) {
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+		}
+		source := "UUID_SCAN"
+		if req.BleMac != nil && strings.TrimSpace(*req.BleMac) != "" {
+			source = "BLE_SCAN"
+		}
+		if err := GroupApp.DeviceBinding.upsertOrgAddedDeviceRecord(ctx, claims, row.DeviceID, source); err != nil {
+			if e, ok := err.(*errcode.Error); ok && e.Code == errcode.CodeDBError {
+				sqlErr := ""
+				if m, ok := e.Data.(map[string]interface{}); ok {
+					if v, ok := m["sql_error"].(string); ok {
+						sqlErr = v
+					}
+				}
+				if strings.Contains(sqlErr, "app_device_added_records") && strings.Contains(sqlErr, "does not exist") {
+					return nil, errcode.NewWithMessage(errcode.CodeDBError, "数据库缺少表 app_device_added_records，请先执行迁移脚本 backend/sql/43.sql")
+				}
+			}
+			return nil, err
+		}
+		return &model.DeviceProvisionBindResp{
+			DeviceID:     row.DeviceID,
+			DeviceNumber: row.DeviceNumber,
+		}, nil
 	}
 
 	// 复用现有绑定逻辑（device_user_bindings + activation_status 等）

@@ -14,6 +14,7 @@ func (*DeviceBinding) InitDeviceBinding(Router *gin.RouterGroup) {
 	{
 		appDeviceApi.POST("bind", api.Controllers.DeviceBindingApi.BindDevice)
 		appDeviceApi.POST("unbind", api.Controllers.DeviceBindingApi.UnbindDevice)
+		appDeviceApi.POST("remove", api.Controllers.DeviceBindingApi.RemoveOrgAddedDevice)
 		appDeviceApi.GET("list", api.Controllers.DeviceBindingApi.GetUserDevices)
 		appDeviceApi.GET("org/list", api.Controllers.DeviceBindingApi.GetOrgDevices)
 

@@ -136,7 +136,7 @@ func resolveTenantID(ctx context.Context, tenantHeader string) (string, error) {
 	err := global.DB.WithContext(ctx).
 		Table("users").
 		Select("tenant_id").
-		Where("authority = ? AND tenant_id IS NOT NULL AND tenant_id <> ''", "TENANT_ADMIN").
+		Where("authority = ? AND user_kind = ? AND is_main = 1 AND tenant_id IS NOT NULL AND tenant_id <> ''", "TENANT_ADMIN", "ORG_USER").
 		Order("created_at ASC NULLS LAST, id ASC").
 		Limit(1).
 		Scan(&defaultTenantID).Error

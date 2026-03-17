@@ -32,9 +32,14 @@ type batteryListRow struct {
 
 	BatteryModelID   *string `gorm:"column:battery_model_id"`
 	BatteryModelName *string `gorm:"column:battery_model_name"`
+	CellBrandSeqNo   *int16  `gorm:"column:cell_brand_seq_no"`
+	CellBrandName    *string `gorm:"column:cell_brand_name"`
+	PackModelSeqNo   *int16  `gorm:"column:battery_model_seq_no"`
+	PackModelName    *string `gorm:"column:pack_battery_model_name"`
 
 	ItemUUID    *string `gorm:"column:item_uuid"`
 	BatchNumber *string `gorm:"column:batch_number"`
+	ProductSpec *string `gorm:"column:product_spec"`
 	BleMac      *string `gorm:"column:ble_mac"`
 	CommChipID  *string `gorm:"column:comm_chip_id"`
 
@@ -42,9 +47,10 @@ type batteryListRow struct {
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
 
 	// 组织相关（替代 dealer）
-	OwnerOrgID   *string `gorm:"column:owner_org_id"`
-	OwnerOrgName *string `gorm:"column:owner_org_name"`
-	OwnerOrgType *string `gorm:"column:owner_org_type"`
+	OwnerOrgID       *string `gorm:"column:owner_org_id"`
+	OwnerOrgName     *string `gorm:"column:owner_org_name"`
+	OwnerOrgType     *string `gorm:"column:owner_org_type"`
+	PackFactoryOrgID *string `gorm:"column:pack_factory_org_id"`
 
 	// 保留兼容字段（逐步废弃）
 	DealerID   *string `gorm:"column:dealer_id"`
@@ -236,8 +242,24 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			d.name AS device_name,
 			dbat.battery_model_id AS battery_model_id,
 			COALESCE(bm_pack.name, bm_bms.name) AS battery_model_name,
+			dbat.cell_brand_seq_no AS cell_brand_seq_no,
+			bcb.name AS cell_brand_name,
+			dbat.battery_model_seq_no AS battery_model_seq_no,
+			(
+				SELECT bmps.name
+				FROM battery_models bmps
+				WHERE bmps.tenant_id = d.tenant_id
+				  AND bmps.seq_no = dbat.battery_model_seq_no
+				  AND bmps.org_id = COALESCE(
+				  	dbat.pack_factory_org_id,
+				  	CASE WHEN org.org_type = 'PACK_FACTORY' THEN dbat.owner_org_id ELSE NULL END
+				  )
+				ORDER BY bmps.created_at DESC
+				LIMIT 1
+			) AS pack_battery_model_name,
 			dbat.item_uuid AS item_uuid,
 			dbat.batch_number AS batch_number,
+			dbat.product_spec AS product_spec,
 			dbat.ble_mac AS ble_mac,
 			dbat.comm_chip_id AS comm_chip_id,
 			dbat.production_date AS production_date,
@@ -245,6 +267,7 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			dbat.owner_org_id AS owner_org_id,
 			org.name AS owner_org_name,
 			org.org_type AS owner_org_type,
+			dbat.pack_factory_org_id AS pack_factory_org_id,
 			dbat.dealer_id AS dealer_id,
 			de.name AS dealer_name,
 			u.id AS user_id,
@@ -261,6 +284,7 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
 		Joins(`LEFT JOIN battery_models AS bm_pack ON bm_pack.id = dbat.battery_model_id`).
 		Joins(`LEFT JOIN battery_bms_models AS bm_bms ON bm_bms.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN battery_cell_brands AS bcb ON bcb.tenant_id = d.tenant_id AND bcb.seq_no = dbat.cell_brand_seq_no`).
 		Joins(`LEFT JOIN orgs AS org ON org.id = dbat.owner_org_id`).
 		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`). // 兼容旧字段
 		// 仅取主用户（is_owner=true），若无则为空
@@ -295,6 +319,12 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 	}
 	if req.BatteryModelID != nil && *req.BatteryModelID != "" {
 		queryBuilder = queryBuilder.Where("dbat.battery_model_id = ?", *req.BatteryModelID)
+	}
+	if req.CellBrandSeqNo != nil {
+		queryBuilder = queryBuilder.Where("dbat.cell_brand_seq_no = ?", *req.CellBrandSeqNo)
+	}
+	if req.BatteryModelSeqNo != nil {
+		queryBuilder = queryBuilder.Where("dbat.battery_model_seq_no = ?", *req.BatteryModelSeqNo)
 	}
 	if req.IsOnline != nil {
 		queryBuilder = queryBuilder.Where("d.is_online = ?", *req.IsOnline)
@@ -364,13 +394,19 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			DeviceName:       r.DeviceName,
 			BatteryModelID:   r.BatteryModelID,
 			BatteryModelName: r.BatteryModelName,
+			CellBrandSeqNo:   r.CellBrandSeqNo,
+			CellBrandName:    r.CellBrandName,
+			PackModelSeqNo:   r.PackModelSeqNo,
+			PackModelName:    r.PackModelName,
 			ItemUUID:         r.ItemUUID,
 			BatchNumber:      r.BatchNumber,
+			ProductSpec:      r.ProductSpec,
 			BleMac:           r.BleMac,
 			CommChipID:       r.CommChipID,
 			OwnerOrgID:       r.OwnerOrgID,
 			OwnerOrgName:     r.OwnerOrgName,
 			OwnerOrgType:     r.OwnerOrgType,
+			PackFactoryOrgID: r.PackFactoryOrgID,
 			DealerID:         r.DealerID,
 			DealerName:       r.DealerName,
 			UserID:           r.UserID,
@@ -419,6 +455,21 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 			d.name AS device_name,
 			dbat.battery_model_id AS battery_model_id,
 			COALESCE(bm_pack.name, bm_bms.name) AS battery_model_name,
+			dbat.cell_brand_seq_no AS cell_brand_seq_no,
+			bcb.name AS cell_brand_name,
+			dbat.battery_model_seq_no AS battery_model_seq_no,
+			(
+				SELECT bmps.name
+				FROM battery_models bmps
+				WHERE bmps.tenant_id = d.tenant_id
+				  AND bmps.seq_no = dbat.battery_model_seq_no
+				  AND bmps.org_id = COALESCE(
+				  	dbat.pack_factory_org_id,
+				  	CASE WHEN org.org_type = 'PACK_FACTORY' THEN dbat.owner_org_id ELSE NULL END
+				  )
+				ORDER BY bmps.created_at DESC
+				LIMIT 1
+			) AS pack_battery_model_name,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
 			dbat.owner_org_id AS owner_org_id,
@@ -440,6 +491,7 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
 		Joins(`LEFT JOIN battery_models AS bm_pack ON bm_pack.id = dbat.battery_model_id`).
 		Joins(`LEFT JOIN battery_bms_models AS bm_bms ON bm_bms.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN battery_cell_brands AS bcb ON bcb.tenant_id = d.tenant_id AND bcb.seq_no = dbat.cell_brand_seq_no`).
 		Joins(`LEFT JOIN orgs AS org ON org.id = dbat.owner_org_id`).
 		Joins(`LEFT JOIN dealers AS de ON de.id = dbat.dealer_id`).
 		Joins(`LEFT JOIN device_user_bindings AS dub ON dub.device_id = d.id AND dub.is_owner = true`).
@@ -473,6 +525,12 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 	}
 	if req.BatteryModelID != nil && *req.BatteryModelID != "" {
 		queryBuilder = queryBuilder.Where("dbat.battery_model_id = ?", *req.BatteryModelID)
+	}
+	if req.CellBrandSeqNo != nil {
+		queryBuilder = queryBuilder.Where("dbat.cell_brand_seq_no = ?", *req.CellBrandSeqNo)
+	}
+	if req.BatteryModelSeqNo != nil {
+		queryBuilder = queryBuilder.Where("dbat.battery_model_seq_no = ?", *req.BatteryModelSeqNo)
 	}
 	if req.IsOnline != nil {
 		queryBuilder = queryBuilder.Where("d.is_online = ?", *req.IsOnline)
@@ -543,7 +601,7 @@ func (*Battery) ExportBatteryList(ctx context.Context, req model.BatteryExportRe
 	f.SetActiveSheet(index)
 
 	// 设置表头
-	headers := []string{"序列号", "设备名称", "电池型号", "出厂日期", "质保到期", "归属机构", "终端用户", "用户电话", "激活状态", "激活时间", "在线状态", "SOC(%)", "SOH(%)", "固件版本", "流转状态"}
+	headers := []string{"序列号", "设备名称", "BMS型号", "电芯品牌", "电池型号", "出厂日期", "质保到期", "归属机构", "终端用户", "用户电话", "激活状态", "激活时间", "在线状态", "SOC(%)", "SOH(%)", "固件版本", "流转状态"}
 	for i, h := range headers {
 		cell := fmt.Sprintf("%c1", 'A'+i)
 		f.SetCellValue(sheetName, cell, h)
@@ -568,6 +626,16 @@ func (*Battery) ExportBatteryList(ctx context.Context, req model.BatteryExportRe
 		}
 		if r.BatteryModelName != nil {
 			setCell(*r.BatteryModelName)
+		} else {
+			setCell("")
+		}
+		if r.CellBrandName != nil {
+			setCell(*r.CellBrandName)
+		} else {
+			setCell("")
+		}
+		if r.PackModelName != nil {
+			setCell(*r.PackModelName)
 		} else {
 			setCell("")
 		}

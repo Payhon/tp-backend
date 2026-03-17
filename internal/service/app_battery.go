@@ -36,9 +36,14 @@ type appBatteryDetailRow struct {
 	BatteryModelID   *string `gorm:"column:battery_model_id"`
 	BatteryModelName *string `gorm:"column:battery_model_name"`
 
-	ItemUUID   *string `gorm:"column:item_uuid"`
-	BleMac     *string `gorm:"column:ble_mac"`
-	CommChipID *string `gorm:"column:comm_chip_id"`
+	ItemUUID           *string    `gorm:"column:item_uuid"`
+	BatchNumber        *string    `gorm:"column:batch_number"`
+	ProductSpec        *string    `gorm:"column:product_spec"`
+	OrderNumber        *string    `gorm:"column:order_number"`
+	BleMac             *string    `gorm:"column:ble_mac"`
+	CommChipID         *string    `gorm:"column:comm_chip_id"`
+	ProductionDate     *time.Time `gorm:"column:production_date"`
+	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
 
 	Soc       *float64   `gorm:"column:soc"`
 	Soh       *float64   `gorm:"column:soh"`
@@ -200,8 +205,13 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 			dbat.battery_model_id AS battery_model_id,
 			bm.name AS battery_model_name,
 			dbat.item_uuid AS item_uuid,
+			dbat.batch_number AS batch_number,
+			dbat.product_spec AS product_spec,
+			dbat.order_number AS order_number,
 			dbat.ble_mac AS ble_mac,
 			dbat.comm_chip_id AS comm_chip_id,
+			dbat.production_date AS production_date,
+			dbat.warranty_expire_date AS warranty_expire_date,
 			dbat.soc AS soc,
 			dbat.soh AS soh,
 			dbat.updated_at AS db_updated_at
@@ -222,23 +232,38 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 		s := row.DbUpdated.Local().Format("2006-01-02 15:04:05")
 		updatedAt = &s
 	}
+	var productionDate *string
+	if row.ProductionDate != nil {
+		s := row.ProductionDate.Local().Format("2006-01-02")
+		productionDate = &s
+	}
+	var warrantyExpireDate *string
+	if row.WarrantyExpireDate != nil {
+		s := row.WarrantyExpireDate.Local().Format("2006-01-02")
+		warrantyExpireDate = &s
+	}
 
 	return &model.AppBatteryDetailResp{
-		DeviceID:         row.DeviceID,
-		DeviceNumber:     row.DeviceNumber,
-		DeviceName:       row.DeviceName,
-		BmsCommType:      row.BmsCommType,
-		BatteryModelID:   row.BatteryModelID,
-		BatteryModelName: row.BatteryModelName,
-		ItemUUID:         row.ItemUUID,
-		BleMac:           row.BleMac,
-		CommChipID:       row.CommChipID,
-		Soc:              row.Soc,
-		Soh:              row.Soh,
-		UpdatedAt:        updatedAt,
-		IsOnline:         row.IsOnline,
-		FwVersion:        row.CurrentVer,
-		Remark:           row.DeviceRemark1,
+		DeviceID:           row.DeviceID,
+		DeviceNumber:       row.DeviceNumber,
+		DeviceName:         row.DeviceName,
+		BmsCommType:        row.BmsCommType,
+		BatteryModelID:     row.BatteryModelID,
+		BatteryModelName:   row.BatteryModelName,
+		ItemUUID:           row.ItemUUID,
+		BatchNumber:        row.BatchNumber,
+		ProductSpec:        row.ProductSpec,
+		OrderNumber:        row.OrderNumber,
+		BleMac:             row.BleMac,
+		CommChipID:         row.CommChipID,
+		ProductionDate:     productionDate,
+		WarrantyExpireDate: warrantyExpireDate,
+		Soc:                row.Soc,
+		Soh:                row.Soh,
+		UpdatedAt:          updatedAt,
+		IsOnline:           row.IsOnline,
+		FwVersion:          row.CurrentVer,
+		Remark:             row.DeviceRemark1,
 	}, nil
 }
 

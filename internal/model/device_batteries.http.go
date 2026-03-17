@@ -11,6 +11,12 @@ type BatteryListReq struct {
 	// 电池型号
 	BatteryModelID *string `form:"battery_model_id"`
 
+	// 电芯品牌序号
+	CellBrandSeqNo *int16 `form:"cell_brand_seq_no" binding:"omitempty,gte=1,lte=255"`
+
+	// PACK 电池型号序号
+	BatteryModelSeqNo *int16 `form:"battery_model_seq_no" binding:"omitempty,gte=1,lte=255"`
+
 	// 在线状态：1-在线 0-离线
 	IsOnline *int16 `form:"is_online" binding:"omitempty,oneof=0 1"`
 
@@ -42,10 +48,15 @@ type BatteryListItemResp struct {
 
 	BatteryModelID   *string `json:"battery_model_id"`
 	BatteryModelName *string `json:"battery_model_name"`
+	CellBrandSeqNo   *int16  `json:"cell_brand_seq_no"`
+	CellBrandName    *string `json:"cell_brand_name"`
+	PackModelSeqNo   *int16  `json:"battery_model_seq_no"`
+	PackModelName    *string `json:"pack_battery_model_name"`
 
 	// 业务字段
 	ItemUUID    *string `json:"item_uuid"`
 	BatchNumber *string `json:"batch_number"`
+	ProductSpec *string `json:"product_spec"`
 	BleMac      *string `json:"ble_mac"`
 	CommChipID  *string `json:"comm_chip_id"`
 
@@ -53,9 +64,10 @@ type BatteryListItemResp struct {
 	WarrantyExpireDate *string `json:"warranty_expire_date"`
 
 	// 组织相关（替代 dealer）
-	OwnerOrgID   *string `json:"owner_org_id"`
-	OwnerOrgName *string `json:"owner_org_name"`
-	OwnerOrgType *string `json:"owner_org_type"`
+	OwnerOrgID       *string `json:"owner_org_id"`
+	OwnerOrgName     *string `json:"owner_org_name"`
+	OwnerOrgType     *string `json:"owner_org_type"`
+	PackFactoryOrgID *string `json:"pack_factory_org_id"`
 
 	// 已废弃，保留兼容
 	DealerID   *string `json:"dealer_id"`
@@ -118,6 +130,12 @@ type BatteryExportReq struct {
 	// 电池型号
 	BatteryModelID *string `form:"battery_model_id"`
 
+	// 电芯品牌序号
+	CellBrandSeqNo *int16 `form:"cell_brand_seq_no" binding:"omitempty,gte=1,lte=255"`
+
+	// PACK 电池型号序号
+	BatteryModelSeqNo *int16 `form:"battery_model_seq_no" binding:"omitempty,gte=1,lte=255"`
+
 	// 在线状态：1-在线 0-离线
 	IsOnline *int16 `form:"is_online" binding:"omitempty,oneof=0 1"`
 
@@ -145,6 +163,18 @@ type BatteryExportReq struct {
 type BatteryBatchAssignDealerReq struct {
 	DeviceIDs []string `json:"device_ids" binding:"required,min=1"`
 	DealerID  string   `json:"dealer_id" binding:"required"`
+}
+
+// BatteryCompleteInfoReq 电池信息补全请求
+type BatteryCompleteInfoReq struct {
+	DeviceIDs         []string `json:"device_ids" binding:"required,min=1"`
+	CellBrandSeqNo    int16    `json:"cell_brand_seq_no" binding:"required,gte=1,lte=255"`
+	BatteryModelSeqNo int16    `json:"battery_model_seq_no" binding:"required,gte=1,lte=255"`
+}
+
+type BatteryCompleteInfoResp struct {
+	Total   int `json:"total"`
+	Success int `json:"success"`
 }
 
 // BatteryBatchCommandReq 批量下发指令请求

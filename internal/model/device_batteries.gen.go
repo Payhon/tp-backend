@@ -23,6 +23,8 @@ type DeviceBattery struct {
 	ActivationDate     *time.Time `gorm:"column:activation_date" json:"activation_date"`
 	ActivationStatus   *string    `gorm:"column:activation_status;default:INACTIVE;comment:激活状态: INACTIVE, ACTIVE" json:"activation_status"` // 激活状态: INACTIVE, ACTIVE
 	TransferStatus     *string    `gorm:"column:transfer_status;default:FACTORY;comment:流转状态: FACTORY, DEALER, USER" json:"transfer_status"` // 流转状态: FACTORY, DEALER, USER
+	CellBrandSeqNo     *int16     `gorm:"column:cell_brand_seq_no;comment:电芯品牌序号（关联 battery_cell_brands.seq_no）" json:"cell_brand_seq_no"`   // 电芯品牌序号（关联 battery_cell_brands.seq_no）
+	BatteryModelSeqNo  *int16     `gorm:"column:battery_model_seq_no;comment:电池型号序号（关联 battery_models.seq_no）" json:"battery_model_seq_no"`  // 电池型号序号（关联 battery_models.seq_no）
 	BatchNumber        *string    `gorm:"column:batch_number" json:"batch_number"`
 	Soc                *float64   `gorm:"column:soc" json:"soc"`
 	Soh                *float64   `gorm:"column:soh" json:"soh"`

@@ -15,6 +15,9 @@ type Role struct {
 	ID          string     `gorm:"column:id;primaryKey;comment:Id" json:"id"`        // Id
 	Name        string     `gorm:"column:name;not null;comment:名称" json:"name"`      // 名称
 	Description *string    `gorm:"column:description;comment:描述" json:"description"` // 描述
+	Authority   *string    `gorm:"column:authority;comment:角色适用账号权限类型" json:"authority"`
+	UserKind    *string    `gorm:"column:user_kind;comment:角色适用用户类型" json:"user_kind"`
+	OrgType     *string    `gorm:"column:org_type;comment:角色适用组织类型" json:"org_type"`
 	CreatedAt   *time.Time `gorm:"column:created_at;comment:创建时间" json:"created_at"` // 创建时间
 	UpdatedAt   *time.Time `gorm:"column:updated_at;comment:更新时间" json:"updated_at"` // 更新时间
 	TenantID    *string    `gorm:"column:tenant_id;comment:租户id" json:"tenant_id"`   // 租户id

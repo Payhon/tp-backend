@@ -180,6 +180,131 @@ func ServeUiElementsListByCodes(codes []string) (int64, []*model.UiElementsListR
 	return int64(len(result)), result, nil
 }
 
+// ServeUiElementsListByIDs 按 sys_ui_elements.id 构建菜单树（自动补齐祖先节点）
+func ServeUiElementsListByIDs(ids []string) (int64, []*model.UiElementsListRsp, error) {
+	normalized := normalizeMenuCodes(ids)
+	if len(normalized) == 0 {
+		return 0, []*model.UiElementsListRsp{}, nil
+	}
+
+	rows, err := query.SysUIElement.
+		Where(query.SysUIElement.ElementType.In(1, 2, 3)).
+		Order(query.SysUIElement.Order_).
+		Find()
+	if err != nil {
+		return 0, nil, err
+	}
+
+	idIndex := make(map[string]*model.SysUIElement, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		idIndex[row.ID] = row
+	}
+
+	included := make(map[string]struct{}, len(normalized))
+	for _, id := range normalized {
+		if _, ok := idIndex[id]; !ok {
+			continue
+		}
+		addAncestors(id, idIndex, included)
+	}
+
+	if len(included) == 0 {
+		return 0, []*model.UiElementsListRsp{}, nil
+	}
+
+	childrenByParent := make(map[string][]*model.SysUIElement)
+	for id := range included {
+		node := idIndex[id]
+		if node == nil {
+			continue
+		}
+		parentID := strings.TrimSpace(node.ParentID)
+		if parentID == "" {
+			parentID = "0"
+		}
+		childrenByParent[parentID] = append(childrenByParent[parentID], node)
+	}
+
+	for parentID := range childrenByParent {
+		sort.Slice(childrenByParent[parentID], func(i, j int) bool {
+			return menuOrderValue(childrenByParent[parentID][i]) < menuOrderValue(childrenByParent[parentID][j])
+		})
+	}
+
+	roots := childrenByParent["0"]
+	result := make([]*model.UiElementsListRsp, 0, len(roots))
+	for _, root := range roots {
+		result = append(result, buildMenuNode(root, childrenByParent))
+	}
+	return int64(len(result)), result, nil
+}
+
+// ServeUiElementsFormByCodes 按 element_code 构建权限配置树（包含按钮节点）
+func ServeUiElementsFormByCodes(codes []string) ([]*model.UiElementsListRsp1, error) {
+	normalized := normalizeMenuCodes(codes)
+	if len(normalized) == 0 {
+		return []*model.UiElementsListRsp1{}, nil
+	}
+
+	rows, err := query.SysUIElement.
+		Where(query.SysUIElement.ElementType.In(1, 2, 3, 4)).
+		Order(query.SysUIElement.Order_).
+		Find()
+	if err != nil {
+		return nil, err
+	}
+
+	idIndex := make(map[string]*model.SysUIElement, len(rows))
+	codeIndex := make(map[string]*model.SysUIElement, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		idIndex[row.ID] = row
+		if code := strings.TrimSpace(row.ElementCode); code != "" {
+			codeIndex[code] = row
+		}
+	}
+
+	included := make(map[string]struct{}, len(normalized))
+	for _, code := range normalized {
+		node, ok := codeIndex[code]
+		if !ok || node == nil {
+			continue
+		}
+		addAncestors(node.ID, idIndex, included)
+	}
+
+	childrenByParent := make(map[string][]*model.SysUIElement)
+	for id := range included {
+		node := idIndex[id]
+		if node == nil {
+			continue
+		}
+		parentID := strings.TrimSpace(node.ParentID)
+		if parentID == "" {
+			parentID = "0"
+		}
+		childrenByParent[parentID] = append(childrenByParent[parentID], node)
+	}
+
+	for parentID := range childrenByParent {
+		sort.Slice(childrenByParent[parentID], func(i, j int) bool {
+			return menuOrderValue(childrenByParent[parentID][i]) < menuOrderValue(childrenByParent[parentID][j])
+		})
+	}
+
+	roots := childrenByParent["0"]
+	result := make([]*model.UiElementsListRsp1, 0, len(roots))
+	for _, root := range roots {
+		result = append(result, buildMenuNodeForm(root, childrenByParent))
+	}
+	return result, nil
+}
+
 // 获取租户下权限配置表单树
 func GetTenantUiElementsList() (interface{}, error) {
 	q := query.SysUIElement
@@ -338,6 +463,22 @@ func buildMenuNode(node *model.SysUIElement, childrenByParent map[string][]*mode
 	rsp.Children = make([]*model.UiElementsListRsp, 0, len(children))
 	for _, child := range children {
 		rsp.Children = append(rsp.Children, buildMenuNode(child, childrenByParent))
+	}
+	return rsp
+}
+
+func buildMenuNodeForm(node *model.SysUIElement, childrenByParent map[string][]*model.SysUIElement) *model.UiElementsListRsp1 {
+	if node == nil {
+		return nil
+	}
+	rsp := node.ToRsp1()
+	children := childrenByParent[node.ID]
+	if len(children) == 0 {
+		return rsp
+	}
+	rsp.Children = make([]*model.UiElementsListRsp1, 0, len(children))
+	for _, child := range children {
+		rsp.Children = append(rsp.Children, buildMenuNodeForm(child, childrenByParent))
 	}
 	return rsp
 }

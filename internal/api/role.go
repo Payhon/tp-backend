@@ -44,7 +44,8 @@ func (*RoleApi) UpdateRole(c *gin.Context) {
 		return
 	}
 
-	data, err := service.GroupApp.Role.UpdateRole(&req)
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.Role.UpdateRole(&req, userClaims)
 	if err != nil {
 		c.Error(err)
 		return
@@ -67,7 +68,8 @@ func (*RoleApi) DeleteRole(c *gin.Context) {
 		return
 	}
 
-	err := service.GroupApp.Role.DeleteRole(id)
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	err := service.GroupApp.Role.DeleteRole(id, userClaims)
 	if err != nil {
 		c.Error(err)
 		return

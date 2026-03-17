@@ -23,9 +23,18 @@
 - 初次编码，请参考用户管理、通知组相关接口示例
 - 编码时候注意权限的逻辑
   - 用户共分三种，通过用户的authority字段区分（TENANT_ADMIN-租户管理员 TENANT_USER-租户用户 SYS_ADMIN-系统管理员）
-  - 每个租户都有一个租户管理员，租户之前的数据是隔离的，比如用户是租户管理员或者租户用户，请求过来后后端只能去查这个租户的数据，表中以tenant_id区分租户
+  - 后台账号体系必须同时结合 `authority + user_kind + is_main` 判断：
+    - `TENANT_ADMIN + ORG_USER + is_main=1`：租户主账号，同时也是“租户”概念载体
+    - `TENANT_ADMIN + ORG_USER + is_main=0`：租户后台管理员
+    - `TENANT_USER + ORG_USER + is_main=1`：机构主账号
+    - `TENANT_USER + ORG_USER + is_main=0`：机构员工账号
+    - `TENANT_USER + END_USER`：终端用户（`is_main` 固定为 `0`）
+  - 涉及“租户列表 / 默认租户 / 租户信息”时，不能再简单使用 `authority = TENANT_ADMIN` 代表租户，必须使用 `TENANT_ADMIN + ORG_USER + is_main=1`
+  - 每个租户只能有一个租户主账号；每个 `tenant_id + org_id` 只能有一个机构主账号
+  - 租户之前的数据是隔离的，比如用户是租户管理员或者租户用户，请求过来后后端只能去查这个租户的数据，表中以tenant_id区分租户
   - root@system.cn 123456
-  - 系统管理员登录后，可在租户管理中创建租户管理员；以租户管理员登录，可在用户管理可以创建租户用户
+  - 系统管理员登录后，可在租户管理中创建租户主账号；以租户管理员登录，可在后台账号管理中创建租户后台管理员、机构主账号和机构员工账号
+  - 后台角色权限采用 `roles + user_roles + role_permissions` 业务表作为事实来源，Casbin 继续作为运行时授权适配层
 - 新增的sql要更新的/sql/1.sql文件中
 - 指针赋值转换service/enter.go里有公共方法
 - 由于数据库在写入时候的报错不友好，所以需要手动校验json字段，如

@@ -45,6 +45,14 @@ func getUserOrgID(userID string) (string, error) {
 // 4. 更新 device_batteries 激活状态/流转状态
 func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClaims) error {
 	ctx := context.Background()
+	viewCtx, err := resolveAppDeviceViewContext(ctx, claims)
+	if err != nil {
+		return err
+	}
+	if viewCtx.userKind != model.UserKindEndUser {
+		return errcode.New(errcode.CodeNoPermission)
+	}
+
 	q := query.Use(global.DB)
 
 	// 查询设备信息并校验租户
@@ -224,6 +232,14 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 // 2. 当设备不存在其它绑定关系时，重置激活状态
 func (*DeviceBinding) UnbindDevice(req model.DeviceUnbindReq, claims *utils.UserClaims) error {
 	ctx := context.Background()
+	viewCtx, err := resolveAppDeviceViewContext(ctx, claims)
+	if err != nil {
+		return err
+	}
+	if viewCtx.userKind != model.UserKindEndUser {
+		return errcode.New(errcode.CodeNoPermission)
+	}
+
 	tx := query.Use(global.DB).Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -322,186 +338,28 @@ func (*DeviceBinding) UnbindDevice(req model.DeviceUnbindReq, claims *utils.User
 // GetUserDevices 获取用户绑定的设备列表
 func (*DeviceBinding) GetUserDevices(req model.DeviceUserBindingListReq, claims *utils.UserClaims) (*model.DeviceUserBindingListResp, error) {
 	ctx := context.Background()
-
-	bindingQuery := query.DeviceUserBinding.WithContext(ctx)
-
-	// 默认查询当前用户的绑定设备
-	if req.UserID != nil && *req.UserID != "" {
-		bindingQuery = bindingQuery.Where(query.DeviceUserBinding.UserID.Eq(*req.UserID))
-	} else {
-		bindingQuery = bindingQuery.Where(query.DeviceUserBinding.UserID.Eq(claims.ID))
-	}
-
-	// 先根据租户和（可选）设备编号筛选出符合条件的设备ID
-	deviceQuery := query.Device.WithContext(ctx).Where(query.Device.TenantID.Eq(claims.TenantID))
-	if req.DeviceNumber != nil && *req.DeviceNumber != "" {
-		deviceQuery = deviceQuery.Where(query.Device.DeviceNumber.Like("%" + *req.DeviceNumber + "%"))
-	}
-
-	devices, err := deviceQuery.Find()
+	viewCtx, err := resolveAppDeviceViewContext(ctx, claims)
 	if err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"sql_error": err.Error(),
-		})
+		return nil, err
 	}
 
-	if len(devices) == 0 {
-		return &model.DeviceUserBindingListResp{
-			List:     []model.DeviceUserBindingResp{},
-			Total:    0,
-			Page:     req.Page,
-			PageSize: req.PageSize,
-		}, nil
-	}
-
-	deviceIDs := make([]string, 0, len(devices))
-	for _, d := range devices {
-		deviceIDs = append(deviceIDs, d.ID)
-	}
-
-	bindingQuery = bindingQuery.Where(query.DeviceUserBinding.DeviceID.In(deviceIDs...))
-
-	// 统计总数
-	total, err := bindingQuery.Count()
+	viewMode, err := resolveRequestedViewMode(&req, viewCtx)
 	if err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"sql_error": err.Error(),
+		return nil, err
+	}
+
+	switch viewMode {
+	case model.AppDeviceViewModeSelfBound:
+		return GroupApp.DeviceBinding.listSelfBoundDevices(ctx, req, claims)
+	case model.AppDeviceViewModeOrgAdded:
+		return GroupApp.DeviceBinding.listOrgAddedDevices(ctx, req, claims, viewCtx)
+	case model.AppDeviceViewModeEndUserBind:
+		return GroupApp.DeviceBinding.listOrgEndUserBoundDevices(ctx, req, claims, viewCtx)
+	default:
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"message": "unsupported view_mode",
 		})
 	}
-
-	// 分页查询绑定记录
-	offset := (req.Page - 1) * req.PageSize
-	bindings, err := bindingQuery.
-		Offset(offset).
-		Limit(req.PageSize).
-		Order(query.DeviceUserBinding.BindingTime.Desc()).
-		Find()
-	if err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"sql_error": err.Error(),
-		})
-	}
-
-	if len(bindings) == 0 {
-		return &model.DeviceUserBindingListResp{
-			List:     []model.DeviceUserBindingResp{},
-			Total:    total,
-			Page:     req.Page,
-			PageSize: req.PageSize,
-		}, nil
-	}
-
-	// 收集用户ID和设备ID，避免 N+1 查询
-	userIDs := make(map[string]struct{})
-	deviceIDSet := make(map[string]struct{})
-	for _, b := range bindings {
-		userIDs[b.UserID] = struct{}{}
-		deviceIDSet[b.DeviceID] = struct{}{}
-	}
-
-	userIDList := make([]string, 0, len(userIDs))
-	for id := range userIDs {
-		userIDList = append(userIDList, id)
-	}
-
-	deviceIDList := make([]string, 0, len(deviceIDSet))
-	for id := range deviceIDSet {
-		deviceIDList = append(deviceIDList, id)
-	}
-
-	// 查询用户与设备信息
-	users, err := query.User.WithContext(ctx).
-		Where(query.User.ID.In(userIDList...)).
-		Find()
-	if err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"sql_error": err.Error(),
-		})
-	}
-
-	devicesForBindings, err := query.Device.WithContext(ctx).
-		Where(
-			query.Device.ID.In(deviceIDList...),
-			query.Device.TenantID.Eq(claims.TenantID),
-		).
-		Find()
-	if err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"sql_error": err.Error(),
-		})
-	}
-
-	userMap := make(map[string]*model.User, len(users))
-	for _, u := range users {
-		userMap[u.ID] = u
-	}
-
-	deviceMap := make(map[string]*model.Device, len(devicesForBindings))
-	for _, d := range devicesForBindings {
-		deviceMap[d.ID] = d
-	}
-
-	// device_batteries: ble_mac（用于移动端扫描时过滤“已绑定设备”）
-	type batteryBleRow struct {
-		DeviceID string  `gorm:"column:device_id"`
-		BleMac   *string `gorm:"column:ble_mac"`
-	}
-	var batteryRows []batteryBleRow
-	if err := global.DB.WithContext(ctx).
-		Table("device_batteries").
-		Select("device_id, ble_mac").
-		Where("device_id IN ?", deviceIDList).
-		Scan(&batteryRows).Error; err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"sql_error": err.Error(),
-		})
-	}
-	batteryMacMap := make(map[string]*string, len(batteryRows))
-	for _, r := range batteryRows {
-		if r.DeviceID == "" {
-			continue
-		}
-		batteryMacMap[r.DeviceID] = r.BleMac
-	}
-
-	// 组装响应
-	list := make([]model.DeviceUserBindingResp, 0, len(bindings))
-	for _, b := range bindings {
-		resp := model.DeviceUserBindingResp{
-			ID:       b.ID,
-			UserID:   b.UserID,
-			DeviceID: b.DeviceID,
-			IsOwner:  b.IsOwner != nil && *b.IsOwner,
-		}
-
-		if b.BindingTime != nil {
-			resp.BindingTime = b.BindingTime.Format("2006-01-02 15:04:05")
-		}
-
-		if u, ok := userMap[b.UserID]; ok {
-			resp.UserName = u.Name
-			resp.UserPhone = u.PhoneNumber
-		}
-
-		if d, ok := deviceMap[b.DeviceID]; ok {
-			resp.DeviceNumber = d.DeviceNumber
-			if d.Name != nil {
-				resp.DeviceName = *d.Name
-			}
-		}
-		if mac, ok := batteryMacMap[b.DeviceID]; ok {
-			resp.BleMac = mac
-		}
-
-		list = append(list, resp)
-	}
-
-	return &model.DeviceUserBindingListResp{
-		List:     list,
-		Total:    total,
-		Page:     req.Page,
-		PageSize: req.PageSize,
-	}, nil
 }
 
 type appOrgDeviceRow struct {
@@ -540,6 +398,19 @@ func canAccessOrg(tenantID, accessorOrgID, targetOrgID string) bool {
 		Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", tenantID, accessorOrgID, targetOrgID).
 		Count(&count)
 	return count > 0
+}
+
+func trimOptionalFilterValue(input *string) string {
+	if input == nil {
+		return ""
+	}
+	text := strings.TrimSpace(*input)
+	switch strings.ToLower(text) {
+	case "", "undefined", "null":
+		return ""
+	default:
+		return text
+	}
 }
 
 // GetOrgDevices 获取组织范围设备列表（APP端）
@@ -615,19 +486,17 @@ func (*DeviceBinding) GetOrgDevices(req model.AppOrgDeviceListReq, claims *utils
 		)`, tenantID, orgID)
 	}
 
-	if req.DeviceNumber != nil && strings.TrimSpace(*req.DeviceNumber) != "" {
-		queryBuilder = queryBuilder.Where("d.device_number ILIKE ?", "%"+strings.TrimSpace(*req.DeviceNumber)+"%")
+	if deviceNumber := trimOptionalFilterValue(req.DeviceNumber); deviceNumber != "" {
+		queryBuilder = queryBuilder.Where("d.device_number ILIKE ?", "%"+deviceNumber+"%")
 	}
-	if req.OwnerOrgID != nil && strings.TrimSpace(*req.OwnerOrgID) != "" {
-		ownerID := strings.TrimSpace(*req.OwnerOrgID)
+	if ownerID := trimOptionalFilterValue(req.OwnerOrgID); ownerID != "" {
 		if !isFactory && orgID != "" {
 			if !canAccessOrg(tenantID, orgID, ownerID) {
 				return nil, errcode.New(errcode.CodeNoPermission)
 			}
 		}
 		queryBuilder = queryBuilder.Where("dbat.owner_org_id = ?", ownerID)
-	} else if req.OwnerOrgType != nil && strings.TrimSpace(*req.OwnerOrgType) != "" {
-		ownerType := strings.TrimSpace(*req.OwnerOrgType)
+	} else if ownerType := trimOptionalFilterValue(req.OwnerOrgType); ownerType != "" {
 		if !isFactory && !allowOrgFilter(orgType, ownerType) {
 			return nil, errcode.New(errcode.CodeNoPermission)
 		}

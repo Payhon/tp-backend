@@ -46,6 +46,52 @@ func (*BatteryApi) CreateSingleBattery(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// UpdateSingleBattery 编辑单个电池
+// @Summary 编辑单个电池
+// @Description BMS 电池管理-编辑 BMS 信息（对应新增 BMS 表单字段）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param id path string true "设备ID"
+// @Param body body model.BatteryCreateReq true "电池信息"
+// @Success 200 {object} model.BatteryCreateResp
+// @Router /api/v1/battery/single/{id} [put]
+func (*BatteryApi) UpdateSingleBattery(c *gin.Context) {
+	var req model.BatteryCreateReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	data, err := service.GroupApp.Battery.UpdateSingleBattery(context.Background(), c.Param("id"), req, userClaims, orgID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// DeleteBattery 删除电池
+// @Summary 删除电池
+// @Description BMS 电池管理-删除电池及关联业务数据（不可恢复）
+// @Tags 电池管理
+// @Produce json
+// @Param id path string true "设备ID"
+// @Success 200 {object} map[string]any
+// @Router /api/v1/battery/{id} [delete]
+func (*BatteryApi) DeleteBattery(c *gin.Context) {
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	if err := service.GroupApp.Battery.DeleteBattery(context.Background(), c.Param("id"), userClaims, orgID); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", gin.H{"success": true})
+}
+
 // GetBatteryList 获取电池列表
 // @Summary 获取电池列表
 // @Description BMS 电池管理-电池列表（支持厂家/经销商视角数据隔离）
@@ -352,6 +398,31 @@ func (*BatteryApi) ActivateBattery(c *gin.Context) {
 		return
 	}
 	c.Set("data", map[string]interface{}{"message": "激活成功"})
+}
+
+// CompleteBatteryInfo 电池信息补全
+// @Summary 电池信息补全
+// @Description BMS 电池管理-批量补全电芯品牌和电池型号
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryCompleteInfoReq true "请求参数"
+// @Success 200 {object} model.BatteryCompleteInfoResp
+// @Router /api/v1/battery/complete-info [post]
+func (*BatteryApi) CompleteBatteryInfo(c *gin.Context) {
+	var req model.BatteryCompleteInfoReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	data, err := service.GroupApp.Battery.CompleteBatteryInfo(context.Background(), req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
 }
 
 // BatchAssignDealer 批量分配经销商

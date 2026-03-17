@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -396,7 +397,7 @@ func (s *OrgTypePermission) GetAllowedDeviceParamPermissions(ctx context.Context
 }
 
 func (s *OrgTypePermission) GetUserKind(ctx context.Context, tenantID, userID string) (string, error) {
-	var kind string
+	var kind sql.NullString
 	if err := global.DB.WithContext(ctx).
 		Table("users").
 		Select("user_kind").
@@ -404,15 +405,15 @@ func (s *OrgTypePermission) GetUserKind(ctx context.Context, tenantID, userID st
 		Scan(&kind).Error; err != nil {
 		return "", err
 	}
-	kind = strings.TrimSpace(kind)
-	if kind == "" {
-		kind = model.UserKindEndUser
+	text := strings.TrimSpace(kind.String)
+	if text == "" {
+		text = model.UserKindEndUser
 	}
-	return kind, nil
+	return text, nil
 }
 
 func (s *OrgTypePermission) GetUserOrgType(ctx context.Context, tenantID, userID string) (string, bool, error) {
-	var orgID string
+	var orgID sql.NullString
 	if err := global.DB.WithContext(ctx).
 		Table("users").
 		Select("org_id").
@@ -420,24 +421,24 @@ func (s *OrgTypePermission) GetUserOrgType(ctx context.Context, tenantID, userID
 		Scan(&orgID).Error; err != nil {
 		return "", false, err
 	}
-	orgID = strings.TrimSpace(orgID)
-	if orgID == "" {
+	orgIDText := strings.TrimSpace(orgID.String)
+	if orgIDText == "" {
 		return "", false, nil
 	}
 
-	var orgType string
+	var orgType sql.NullString
 	if err := global.DB.WithContext(ctx).
 		Table("orgs").
 		Select("org_type").
-		Where("id = ? AND tenant_id = ?", orgID, tenantID).
+		Where("id = ? AND tenant_id = ?", orgIDText, tenantID).
 		Scan(&orgType).Error; err != nil {
 		return "", false, err
 	}
-	orgType = strings.TrimSpace(orgType)
-	if orgType == "" {
+	orgTypeText := strings.TrimSpace(orgType.String)
+	if orgTypeText == "" {
 		return "", false, nil
 	}
-	return orgType, true, nil
+	return orgTypeText, true, nil
 }
 
 func (s *OrgTypePermission) GetCurrentDeviceParamPermissions(ctx context.Context, claims *utils.UserClaims) (*model.DeviceParamPermissionResp, error) {

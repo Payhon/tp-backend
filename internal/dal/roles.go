@@ -80,10 +80,16 @@ func GetRoleListByPage(data *model.GetRoleListByPageReq, tenantID string) (int64
 
 // 查询用户的角色
 func GetRolesByUserId(userId string) ([]string, bool) {
-	policys := global.CasbinEnforcer.GetFilteredNamedGroupingPolicy("g", 0, userId)
 	var roles []string
-	for _, policy := range policys {
-		roles = append(roles, policy[1])
+	err := global.DB.WithContext(context.Background()).
+		Table("user_roles").
+		Select("role_id").
+		Where("user_id = ?", userId).
+		Order("created_at ASC NULLS LAST, role_id ASC").
+		Scan(&roles).Error
+	if err != nil {
+		logrus.Error(err)
+		return nil, false
 	}
 	return roles, true
 }

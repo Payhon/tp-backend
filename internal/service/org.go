@@ -160,6 +160,7 @@ func (*OrgService) CreateOrg(ctx context.Context, req *model.OrgCreateReq, claim
 				TenantID:            &claims.TenantID,
 				OrgID:               &orgID,
 				UserKind:            StringPtr(model.UserKindOrgUser),
+				IsMain:              int16Ptr(1),
 				Organization:        &org.Name,
 				AdditionalInfo:      StringPtr("{}"),
 				CreatedAt:           &now,
@@ -227,7 +228,7 @@ func (*OrgService) ResetOrgAccountPassword(ctx context.Context, orgID string, re
 	// 找到该组织下的业务账号（默认取第一条）
 	var u model.User
 	if err := global.DB.WithContext(ctx).
-		Where("tenant_id = ? AND org_id = ? AND user_kind = ?", claims.TenantID, orgID, model.UserKindOrgUser).
+		Where("tenant_id = ? AND org_id = ? AND user_kind = ? AND is_main = 1", claims.TenantID, orgID, model.UserKindOrgUser).
 		First(&u).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.CodeNotFound)
@@ -395,6 +396,30 @@ func (*OrgService) GetOrgByID(ctx context.Context, orgID string, claims *utils.U
 func (*OrgService) GetOrgList(ctx context.Context, req *model.OrgListReq, claims *utils.UserClaims) (*model.OrgListResp, error) {
 	q := query.Org
 	queryBuilder := q.WithContext(ctx).Where(q.TenantID.Eq(claims.TenantID))
+
+	if claims.Authority == "TENANT_USER" {
+		if strings.TrimSpace(claims.OrgID) == "" {
+			queryBuilder = queryBuilder.Where(q.ID.Eq(""))
+		} else {
+			descendantOrgIDs, err := GroupApp.OrgService.GetDescendantOrgIDs(ctx, claims.TenantID, claims.OrgID)
+			if err != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+					"operation": "resolve_accessible_orgs",
+					"org_id":    claims.OrgID,
+					"error":     err.Error(),
+				})
+			}
+			if len(descendantOrgIDs) == 0 {
+				return &model.OrgListResp{
+					List:     []*model.Org{},
+					Total:    0,
+					Page:     req.Page,
+					PageSize: req.PageSize,
+				}, nil
+			}
+			queryBuilder = queryBuilder.Where(q.ID.In(descendantOrgIDs...))
+		}
+	}
 
 	// 按类型筛选
 	if req.OrgType != nil && *req.OrgType != "" {

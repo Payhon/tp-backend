@@ -521,6 +521,51 @@ COMMENT ON COLUMN public.roles.created_at IS '创建时间';
 COMMENT ON COLUMN public.roles.updated_at IS '更新时间';
 COMMENT ON COLUMN public.roles.tenant_id IS '租户id';
 
+ALTER TABLE public.roles ADD COLUMN IF NOT EXISTS authority varchar(50) NULL;
+ALTER TABLE public.roles ADD COLUMN IF NOT EXISTS user_kind varchar(50) NULL;
+ALTER TABLE public.roles ADD COLUMN IF NOT EXISTS org_type varchar(50) NULL;
+
+COMMENT ON COLUMN public.roles.authority IS '角色适用账号权限类型';
+COMMENT ON COLUMN public.roles.user_kind IS '角色适用用户类型';
+COMMENT ON COLUMN public.roles.org_type IS '角色适用组织类型';
+
+CREATE TABLE IF NOT EXISTS public.user_roles (
+	id varchar(36) NOT NULL,
+	tenant_id varchar(36) NOT NULL, -- 租户ID
+	user_id varchar(36) NOT NULL, -- 用户ID
+	role_id varchar(36) NOT NULL, -- 角色ID
+	created_at timestamptz(6) NULL, -- 创建时间
+	updated_at timestamptz(6) NULL, -- 更新时间
+	CONSTRAINT user_roles_pkey PRIMARY KEY (id)
+);
+COMMENT ON TABLE public.user_roles IS '用户角色关联表';
+COMMENT ON COLUMN public.user_roles.tenant_id IS '租户ID';
+COMMENT ON COLUMN public.user_roles.user_id IS '用户ID';
+COMMENT ON COLUMN public.user_roles.role_id IS '角色ID';
+COMMENT ON COLUMN public.user_roles.created_at IS '创建时间';
+COMMENT ON COLUMN public.user_roles.updated_at IS '更新时间';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_roles_user_role ON public.user_roles(user_id, role_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_tenant_user ON public.user_roles(tenant_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON public.user_roles(role_id);
+
+CREATE TABLE IF NOT EXISTS public.role_permissions (
+	id varchar(36) NOT NULL,
+	tenant_id varchar(36) NOT NULL, -- 租户ID
+	role_id varchar(36) NOT NULL, -- 角色ID
+	permission_key varchar(128) NOT NULL, -- 权限标识（sys_ui_elements.id）
+	created_at timestamptz(6) NULL, -- 创建时间
+	updated_at timestamptz(6) NULL, -- 更新时间
+	CONSTRAINT role_permissions_pkey PRIMARY KEY (id)
+);
+COMMENT ON TABLE public.role_permissions IS '角色权限关联表';
+COMMENT ON COLUMN public.role_permissions.tenant_id IS '租户ID';
+COMMENT ON COLUMN public.role_permissions.role_id IS '角色ID';
+COMMENT ON COLUMN public.role_permissions.permission_key IS '权限标识（sys_ui_elements.id）';
+COMMENT ON COLUMN public.role_permissions.created_at IS '创建时间';
+COMMENT ON COLUMN public.role_permissions.updated_at IS '更新时间';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permissions_role_permission ON public.role_permissions(role_id, permission_key);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_tenant_role ON public.role_permissions(tenant_id, role_id);
+
 
 -- public.scene_automations definition
 
@@ -761,6 +806,42 @@ COMMENT ON TABLE public.users IS '用户';
 
 COMMENT ON COLUMN public.users.status IS '用户状态 F-冻结 N-正常';
 COMMENT ON COLUMN public.users.authority IS '权限类型 TENANT_ADMIN-租户管理员 TENANT_USER-租户用户 SYS_ADMIN-系统管理员';
+
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS dealer_id varchar(36) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS org_id varchar(36) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS user_kind varchar(50) NULL DEFAULT 'END_USER';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_main smallint NOT NULL DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_last_updated timestamptz(6) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_visit_time timestamptz(6) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_visit_ip varchar(64) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_visit_device varchar(255) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS organization varchar(200) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS timezone varchar(50) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS default_language varchar(10) NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_fail_count int4 NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_url varchar(500) NULL;
+
+COMMENT ON COLUMN public.users.dealer_id IS '归属经销商ID（已废弃）';
+COMMENT ON COLUMN public.users.org_id IS '归属组织ID';
+COMMENT ON COLUMN public.users.user_kind IS '用户类型';
+COMMENT ON COLUMN public.users.is_main IS '是否主账号 0-否 1-是';
+COMMENT ON COLUMN public.users.password_last_updated IS '密码最后更新时间';
+COMMENT ON COLUMN public.users.last_visit_time IS '上次访问时间';
+COMMENT ON COLUMN public.users.last_visit_ip IS '上次访问IP';
+COMMENT ON COLUMN public.users.last_visit_device IS '上次访问设备信息摘要';
+COMMENT ON COLUMN public.users.organization IS '用户所属组织机构名称';
+COMMENT ON COLUMN public.users.timezone IS '所在时区';
+COMMENT ON COLUMN public.users.default_language IS '默认语言';
+COMMENT ON COLUMN public.users.password_fail_count IS '密码错误次数';
+COMMENT ON COLUMN public.users.avatar_url IS '用户头像URL或文件路径';
+
+CREATE INDEX IF NOT EXISTS idx_users_tenant_authority_kind_main ON public.users(tenant_id, authority, user_kind, is_main);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_tenant_main_account
+	ON public.users(tenant_id)
+	WHERE authority = 'TENANT_ADMIN' AND user_kind = 'ORG_USER' AND is_main = 1;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_org_main_account
+	ON public.users(tenant_id, org_id)
+	WHERE authority = 'TENANT_USER' AND user_kind = 'ORG_USER' AND is_main = 1 AND org_id IS NOT NULL;
 
 
 -- public.vis_dashboard definition
@@ -1669,8 +1750,8 @@ INSERT INTO public.sys_dict_language (id, dict_id, language_code, "translation")
 INSERT INTO public.sys_function (id, "name", enable_flag, description, remark) VALUES('function_1', 'use_captcha', 'disable', '验证码登陆', NULL);
 INSERT INTO public.sys_function (id, "name", enable_flag, description, remark) VALUES('function_2', 'enable_reg', 'disable', '租户注册', NULL);
 
-INSERT INTO public.users (id, "name", phone_number, email, status, authority, "password", tenant_id, remark, additional_info, created_at, updated_at) VALUES('00000000-4fe9-b409-67c3-000000000000', 'admin', '+86 13100000000', 'root@system.cn', 'N', 'SYS_ADMIN', '$2a$10$dPDIqoOEt.rSDwEWsSHCqe9/PJEsnWvRK76DwXVZUFM/7J0D3ikfq', 'aaaaaa', 'dolor', '{}'::json, NULL, '2024-03-06 14:52:52.390');
-INSERT INTO public.users (id, "name", phone_number, email, status, authority, "password", tenant_id, remark, additional_info, created_at, updated_at) VALUES('11111111-4fe9-b409-67c3-111111111111', '富嘉电源', '+86 13166666666', 'admin@fjia.com', 'N', 'TENANT_ADMIN', '$2a$10$zvPRDn0okgLt1t/OjQ.K5eZjGc3Mva7tmA8VlASsP8flfv0PwEz76', 'd616bcbb', '', '{}'::json, '2024-06-05 16:48:11.097', '2024-06-05 16:48:11.097');
+INSERT INTO public.users (id, "name", phone_number, email, status, authority, "password", tenant_id, user_kind, is_main, remark, additional_info, created_at, updated_at) VALUES('00000000-4fe9-b409-67c3-000000000000', 'admin', '+86 13100000000', 'root@system.cn', 'N', 'SYS_ADMIN', '$2a$10$dPDIqoOEt.rSDwEWsSHCqe9/PJEsnWvRK76DwXVZUFM/7J0D3ikfq', 'aaaaaa', 'ORG_USER', 1, 'dolor', '{}'::json, NULL, '2024-03-06 14:52:52.390');
+INSERT INTO public.users (id, "name", phone_number, email, status, authority, "password", tenant_id, user_kind, is_main, remark, additional_info, created_at, updated_at) VALUES('11111111-4fe9-b409-67c3-111111111111', '富嘉电源', '+86 13166666666', 'admin@fjia.com', 'N', 'TENANT_ADMIN', '$2a$10$zvPRDn0okgLt1t/OjQ.K5eZjGc3Mva7tmA8VlASsP8flfv0PwEz76', 'd616bcbb', 'ORG_USER', 1, '', '{}'::json, '2024-06-05 16:48:11.097', '2024-06-05 16:48:11.097');
 
 INSERT INTO public.data_policy (id, data_type, retention_days, last_cleanup_time, last_cleanup_data_time, enabled, remark) VALUES('b', '2', 15, '2024-06-05 10:02:00.003', '2024-05-21 10:02:00.003', '1', '');
 INSERT INTO public.data_policy (id, data_type, retention_days, last_cleanup_time, last_cleanup_data_time, enabled, remark) VALUES('a', '1', 15, '2024-06-05 10:02:00.003', '2024-05-21 10:02:00.101', '1', '');
@@ -1682,6 +1763,8 @@ INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, o
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('b6d57a4a-d37a-9d9d-6e4e-be33b955ff04', '6e5e0963-46bf-bc27-d792-156e87a69f51', 'alarm_notification-group', 3, 1152, '/alarm/notification-group', 'simple-icons:apacheecharts', 'basic', '["TENANT_ADMIN"]'::json, '通知组', '2024-03-07 21:48:15.416', '', 'route.alarm_notification-group', 'view.alarm_notification-group');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('faf7e607-00ae-3483-40a1-b74f9245b100', 'e1ebd134-53df-3105-35f4-489fc674d173', 'management_auth', 3, 43, '/management/auth', 'ic:baseline-security', 'self', '["SYS_ADMIN"]'::json, '菜单管理', '2024-02-18 17:49:31.209', '', 'route.management_auth', 'view.management_auth');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('4e7e0b9e-6ee4-4b4b-9ef7-0b19f7d5f2f2', 'e1ebd134-53df-3105-35f4-489fc674d173', 'management_dict', 3, 45, '/management/dict', 'mdi:book-open-page-variant', 'self', '["SYS_ADMIN","TENANT_ADMIN"]'::json, '字典管理', '2026-01-14 00:00:00.000', '', 'route.management_dict', 'view.management_dict');
+INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('a61b4a30-9d22-4b11-9f11-1a2b3c4d5e61', 'e1ebd134-53df-3105-35f4-489fc674d173', 'bms_system_user', 3, 46, '/management/backoffice-user', 'mdi:account-cog', 'self', '["TENANT_ADMIN","SYS_ADMIN"]'::json, '后台账号管理', '2026-03-13 00:00:00.000', '', 'route.bms_system_user', 'view.bms_system_user');
+INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('b72c5b41-8e33-4c22-8f22-2b3c4d5e6f72', 'e1ebd134-53df-3105-35f4-489fc674d173', 'bms_system_role', 3, 47, '/management/backoffice-role', 'mdi:account-key', 'self', '["TENANT_ADMIN","SYS_ADMIN"]'::json, '后台角色管理', '2026-03-13 00:00:00.000', '', 'route.bms_system_role', 'view.bms_system_role');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('95e2a961-382b-f4a6-87b3-1898123c95bc', '0', 'visualization', 1, 113, '/visualization', 'icon-park-outline:data-server', 'self', '["TENANT_ADMIN","SYS_ADMIN"]'::json, '可视化', '2024-03-07 21:37:16.042', '', 'route.visualization', 'layout.base');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('676e8f33-875a-0473-e9ca-c82fd09fef57', '0', 'automation', 1, 114, '/automation', 'material-symbols:device-hub', 'self', '["TENANT_ADMIN"]'::json, '自动化', '2024-03-07 21:41:17.921', '', 'route.automation', 'layout.base');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('e1ebd134-53df-3105-35f4-489fc674d173', '0', 'management', 1, 120, '/management', 'carbon:cloud-service-management', 'self', '["SYS_ADMIN","TENANT_ADMIN"]'::json, '系统管理', '2024-02-18 17:48:45.265', '', 'route.management', 'layout.base');
@@ -2031,6 +2114,212 @@ BEGIN
 		);
 	END IF;
 END $$;
+
+DO $$
+DECLARE
+	battery_list_id varchar(36);
+BEGIN
+	SELECT id INTO battery_list_id
+	FROM public.sys_ui_elements
+	WHERE element_code = 'bms_battery_list'
+	LIMIT 1;
+
+	IF battery_list_id IS NULL THEN
+		RETURN;
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_edit_bms_info') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1021', battery_list_id, 'bms_battery_list_action_edit_bms_info', 4, 13035,
+			'bms_battery_list_action_edit_bms_info', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'编辑BMS信息', NOW(), '页面元素权限', 'perm.bms_battery_list_action_edit_bms_info', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_delete') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1022', battery_list_id, 'bms_battery_list_action_delete', 4, 13036,
+			'bms_battery_list_action_delete', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'删除', NOW(), '页面元素权限', 'perm.bms_battery_list_action_delete', ''
+		);
+	END IF;
+END $$;
+
+WITH target_rows AS (
+	SELECT tenant_id, org_type, COALESCE(ui_codes, '[]'::jsonb) AS ui_codes
+	FROM public.org_type_permissions
+	WHERE org_type = 'PACK_FACTORY'
+), merged_rows AS (
+	SELECT
+		tr.tenant_id,
+		tr.org_type,
+		(
+			SELECT COALESCE(jsonb_agg(code ORDER BY code), '[]'::jsonb)
+			FROM (
+				SELECT DISTINCT code
+				FROM (
+					SELECT jsonb_array_elements_text(tr.ui_codes) AS code
+					UNION ALL SELECT 'bms_battery_list_action_edit_bms_info'
+					UNION ALL SELECT 'bms_battery_list_action_delete'
+				) AS raw_codes
+				WHERE btrim(code) <> ''
+			) AS dedup_codes
+		) AS merged_codes
+	FROM target_rows tr
+)
+UPDATE public.org_type_permissions otp
+SET
+	ui_codes = mr.merged_codes,
+	updated_at = NOW()
+FROM merged_rows mr
+WHERE otp.tenant_id = mr.tenant_id
+  AND otp.org_type = mr.org_type;
+
+-- FEAT-0014: 电池信息补全（电芯品牌/电池型号）
+DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'device_batteries' AND column_name = 'cell_brand_seq_no'
+	) THEN
+		ALTER TABLE public.device_batteries ADD COLUMN cell_brand_seq_no smallint;
+		COMMENT ON COLUMN public.device_batteries.cell_brand_seq_no IS '电芯品牌序号（关联 battery_cell_brands.seq_no）';
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'device_batteries' AND column_name = 'battery_model_seq_no'
+	) THEN
+		ALTER TABLE public.device_batteries ADD COLUMN battery_model_seq_no smallint;
+		COMMENT ON COLUMN public.device_batteries.battery_model_seq_no IS '电池型号序号（关联 battery_models.seq_no）';
+	END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_device_batteries_cell_brand_seq_no
+	ON public.device_batteries (cell_brand_seq_no);
+
+CREATE INDEX IF NOT EXISTS idx_device_batteries_battery_model_seq_no
+	ON public.device_batteries (battery_model_seq_no);
+
+DO $$
+DECLARE
+	battery_list_id varchar(36);
+BEGIN
+	SELECT id INTO battery_list_id
+	FROM public.sys_ui_elements
+	WHERE element_code = 'bms_battery_list'
+	LIMIT 1;
+
+	IF battery_list_id IS NULL THEN
+		RETURN;
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_info_complete') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1015', battery_list_id, 'bms_battery_list_batch_info_complete', 4, 13023,
+			'bms_battery_list_batch_info_complete', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'批量电池信息补全', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_info_complete', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_assign_dealer') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1017', battery_list_id, 'bms_battery_list_batch_assign_dealer', 4, 13024,
+			'bms_battery_list_batch_assign_dealer', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'批量分配经销商', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_assign_dealer', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_tag') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1018', battery_list_id, 'bms_battery_list_batch_tag', 4, 13025,
+			'bms_battery_list_batch_tag', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'批量设置标签', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_tag', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_command') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1019', battery_list_id, 'bms_battery_list_batch_command', 4, 13026,
+			'bms_battery_list_batch_command', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'批量下发指令', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_command', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_ota') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1020', battery_list_id, 'bms_battery_list_batch_ota', 4, 13027,
+			'bms_battery_list_batch_ota', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'批量OTA推送', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_ota', ''
+		);
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_lifecycle_info_complete') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1016', battery_list_id, 'bms_battery_list_action_lifecycle_info_complete', 4, 13034,
+			'bms_battery_list_action_lifecycle_info_complete', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'生命周期-信息补全', NOW(), '页面元素权限', 'perm.bms_battery_list_action_lifecycle_info_complete', ''
+		);
+	END IF;
+END $$;
+
+WITH target_rows AS (
+	SELECT tenant_id, org_type, COALESCE(ui_codes, '[]'::jsonb) AS ui_codes
+	FROM public.org_type_permissions
+	WHERE org_type = 'PACK_FACTORY'
+), merged_rows AS (
+	SELECT
+		tr.tenant_id,
+		tr.org_type,
+		(
+			SELECT COALESCE(jsonb_agg(code ORDER BY code), '[]'::jsonb)
+			FROM (
+				SELECT DISTINCT code
+				FROM (
+					SELECT jsonb_array_elements_text(tr.ui_codes) AS code
+					UNION ALL SELECT 'bms_battery_list_batch_info_complete'
+					UNION ALL SELECT 'bms_battery_list_batch_assign_dealer'
+					UNION ALL SELECT 'bms_battery_list_batch_tag'
+					UNION ALL SELECT 'bms_battery_list_batch_command'
+					UNION ALL SELECT 'bms_battery_list_batch_ota'
+					UNION ALL SELECT 'bms_battery_list_action_lifecycle_info_complete'
+				) AS raw_codes
+				WHERE btrim(code) <> ''
+			) AS dedup_codes
+		) AS merged_codes
+	FROM target_rows tr
+)
+UPDATE public.org_type_permissions otp
+SET
+	ui_codes = mr.merged_codes,
+	updated_at = NOW()
+FROM merged_rows mr
+WHERE otp.tenant_id = mr.tenant_id
+  AND otp.org_type = mr.org_type;
 
 -- FEAT-0012: 电芯品牌管理 + 电池型号管理（机构维度）
 CREATE TABLE IF NOT EXISTS public.battery_cell_brands (
