@@ -5,6 +5,12 @@ type BatteryListReq struct {
 	Page     int `form:"page" binding:"required,min=1"`
 	PageSize int `form:"page_size" binding:"required,min=1,max=100"`
 
+	// 通用文本搜索字段
+	SearchField *string `form:"search_field" binding:"omitempty,oneof=device_number batch_number battery_model_name product_spec ble_mac comm_chip_id"`
+
+	// 通用文本搜索值
+	SearchValue *string `form:"search_value"`
+
 	// 设备编号（序列号）
 	DeviceNumber *string `form:"device_number"`
 
@@ -124,6 +130,12 @@ type BatteryImportResp struct {
 
 // BatteryExportReq 电池导出请求（复用列表查询条件，但不分页）
 type BatteryExportReq struct {
+	// 通用文本搜索字段
+	SearchField *string `form:"search_field" binding:"omitempty,oneof=device_number batch_number battery_model_name product_spec ble_mac comm_chip_id"`
+
+	// 通用文本搜索值
+	SearchValue *string `form:"search_value"`
+
 	// 设备编号（序列号）
 	DeviceNumber *string `form:"device_number"`
 

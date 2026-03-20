@@ -314,6 +314,7 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 	}
 
 	// 条件筛选
+	queryBuilder = applyBatteryTextSearch(queryBuilder, req.SearchField, req.SearchValue)
 	if req.DeviceNumber != nil && *req.DeviceNumber != "" {
 		queryBuilder = queryBuilder.Where("d.device_number ILIKE ?", "%"+*req.DeviceNumber+"%")
 	}
@@ -520,6 +521,7 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 	}
 
 	// 条件筛选
+	queryBuilder = applyBatteryTextSearch(queryBuilder, req.SearchField, req.SearchValue)
 	if req.DeviceNumber != nil && *req.DeviceNumber != "" {
 		queryBuilder = queryBuilder.Where("d.device_number ILIKE ?", "%"+*req.DeviceNumber+"%")
 	}
@@ -572,6 +574,40 @@ func buildBatteryQuery(ctx context.Context, req model.BatteryExportReq, claims *
 	}
 
 	return queryBuilder
+}
+
+func applyBatteryTextSearch(queryBuilder *gorm.DB, fieldPtr, valuePtr *string) *gorm.DB {
+	if queryBuilder == nil || valuePtr == nil {
+		return queryBuilder
+	}
+
+	searchValue := strings.TrimSpace(*valuePtr)
+	if searchValue == "" {
+		return queryBuilder
+	}
+
+	searchField := "device_number"
+	if fieldPtr != nil && strings.TrimSpace(*fieldPtr) != "" {
+		searchField = strings.TrimSpace(*fieldPtr)
+	}
+
+	likeValue := "%" + searchValue + "%"
+	switch searchField {
+	case "device_number":
+		return queryBuilder.Where("d.device_number ILIKE ?", likeValue)
+	case "batch_number":
+		return queryBuilder.Where("dbat.batch_number ILIKE ?", likeValue)
+	case "battery_model_name":
+		return queryBuilder.Where("COALESCE(bm_pack.name, bm_bms.name) ILIKE ?", likeValue)
+	case "product_spec":
+		return queryBuilder.Where("dbat.product_spec ILIKE ?", likeValue)
+	case "ble_mac":
+		return queryBuilder.Where("dbat.ble_mac ILIKE ?", likeValue)
+	case "comm_chip_id":
+		return queryBuilder.Where("dbat.comm_chip_id ILIKE ?", likeValue)
+	default:
+		return queryBuilder.Where("d.device_number ILIKE ?", likeValue)
+	}
 }
 
 // ExportBatteryList 导出电池列表（Excel）

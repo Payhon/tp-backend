@@ -100,6 +100,8 @@ func (*BatteryApi) DeleteBattery(c *gin.Context) {
 // @Produce json
 // @Param page query int true "页码"
 // @Param page_size query int true "每页数量"
+// @Param search_field query string false "文本搜索字段(device_number/batch_number/battery_model_name/product_spec/ble_mac/comm_chip_id)"
+// @Param search_value query string false "文本搜索值"
 // @Param device_number query string false "设备编号(序列号)"
 // @Param battery_model_id query string false "电池型号ID"
 // @Param is_online query int false "在线状态(1在线/0离线)"
@@ -137,6 +139,8 @@ func (*BatteryApi) GetBatteryList(c *gin.Context) {
 // @Tags 电池管理
 // @Accept json
 // @Produce json
+// @Param search_field query string false "文本搜索字段(device_number/batch_number/battery_model_name/product_spec/ble_mac/comm_chip_id)"
+// @Param search_value query string false "文本搜索值"
 // @Param device_number query string false "设备编号(序列号)"
 // @Param battery_model_id query string false "电池型号ID"
 // @Param is_online query int false "在线状态(1在线/0离线)"
