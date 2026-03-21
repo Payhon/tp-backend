@@ -135,9 +135,12 @@ func seedDefaultStatus(store *regStore, seriesCount int, tempCount int, deviceID
 	store.set(0x127, uint16((2<<8)|40))
 	store.set(0x128, uint16((1<<8)|2))
 
-	// Protection/indicator/alarm bitfields
+	// Total discharge capacity + protection/indicator/alarm bitfields
 	store.set(0x12D, 0x0000)
 	store.set(0x12E, 0x0000)
+	store.set(0x12F, 0x0000)
+	store.set(0x130, 0x0000)
+	store.set(0x131, 0x0000)
 	store.set(0x132, 0x0000)
 	store.set(0x133, 0x0000)
 	store.set(0x134, 0x0000)

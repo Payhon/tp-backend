@@ -28,15 +28,16 @@ type Meta struct {
 }
 
 type Energy struct {
-	DesignCapacityMah      uint32  `json:"designCapacityMah"`
-	RemainingCapacityMah   uint32  `json:"remainingCapacityMah"`
-	FullCapacityMah        uint32  `json:"fullCapacityMah"`
-	FullWh                 float64 `json:"fullWh"`
-	RemainingWh            float64 `json:"remainingWh"`
-	SocPct                 float64 `json:"socPct"`
-	SohPct                 float64 `json:"sohPct"`
-	CycleCount             uint16  `json:"cycleCount"`
-	TotalChargeCapacityRaw uint32  `json:"totalChargeCapacityRaw"`
+	DesignCapacityMah         uint32  `json:"designCapacityMah"`
+	RemainingCapacityMah      uint32  `json:"remainingCapacityMah"`
+	FullCapacityMah           uint32  `json:"fullCapacityMah"`
+	FullWh                    float64 `json:"fullWh"`
+	RemainingWh               float64 `json:"remainingWh"`
+	SocPct                    float64 `json:"socPct"`
+	SohPct                    float64 `json:"sohPct"`
+	CycleCount                uint16  `json:"cycleCount"`
+	TotalChargeCapacityRaw    uint32  `json:"totalChargeCapacityRaw"`
+	TotalDischargeCapacityRaw uint32  `json:"totalDischargeCapacityRaw"`
 }
 
 type Timing struct {

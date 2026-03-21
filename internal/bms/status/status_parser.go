@@ -179,7 +179,7 @@ func ParseStatusRegisters(startAddress uint16, registers []uint16) (BmsStatus, e
 		return BmsStatus{}, err
 	}
 
-	protU32, err := view.U32(0x12D)
+	protU32, err := view.U32(0x12F)
 	if err != nil {
 		return BmsStatus{}, err
 	}
@@ -357,6 +357,10 @@ func ParseStatusRegisters(startAddress uint16, registers []uint16) (BmsStatus, e
 	if err != nil {
 		return BmsStatus{}, err
 	}
+	totalDischargeCapRaw, err := view.U32(0x12D)
+	if err != nil {
+		return BmsStatus{}, err
+	}
 
 	maxChargeInterval, err := view.U16(0x10F)
 	if err != nil {
@@ -435,15 +439,16 @@ func ParseStatusRegisters(startAddress uint16, registers []uint16) (BmsStatus, e
 			ProductionDate:  productionDate,
 		},
 		Energy: Energy{
-			DesignCapacityMah:      designCap,
-			RemainingCapacityMah:   remCap,
-			FullCapacityMah:        fullCap,
-			FullWh:                 float64(fullWhRaw) * 0.1,
-			RemainingWh:            float64(remWhRaw) * 0.1,
-			SocPct:                 float64(socByte) * 0.5,
-			SohPct:                 float64(sohByte),
-			CycleCount:             cycleCount,
-			TotalChargeCapacityRaw: totalChargeCapRaw,
+			DesignCapacityMah:         designCap,
+			RemainingCapacityMah:      remCap,
+			FullCapacityMah:           fullCap,
+			FullWh:                    float64(fullWhRaw) * 0.1,
+			RemainingWh:               float64(remWhRaw) * 0.1,
+			SocPct:                    float64(socByte) * 0.5,
+			SohPct:                    float64(sohByte),
+			CycleCount:                cycleCount,
+			TotalChargeCapacityRaw:    totalChargeCapRaw,
+			TotalDischargeCapacityRaw: totalDischargeCapRaw,
 		},
 		Timing: Timing{
 			MaxChargeIntervalHours:     maxChargeInterval,

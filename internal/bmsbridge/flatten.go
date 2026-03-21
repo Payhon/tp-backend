@@ -30,6 +30,7 @@ func FlattenStatus(s status.BmsStatus) map[string]any {
 	out["energy.sohPct"] = s.Energy.SohPct
 	out["energy.cycleCount"] = s.Energy.CycleCount
 	out["energy.totalChargeCapacityRaw"] = s.Energy.TotalChargeCapacityRaw
+	out["energy.totalDischargeCapacityRaw"] = s.Energy.TotalDischargeCapacityRaw
 
 	out["timing.maxChargeIntervalHours"] = s.Timing.MaxChargeIntervalHours
 	out["timing.currentChargeIntervalHours"] = s.Timing.CurrentChargeIntervalHours
