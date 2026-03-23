@@ -36,6 +36,10 @@ func normalizeMac12(input string) (string, error) {
 	return out, nil
 }
 
+func normalizeItemUUID(input string) string {
+	return strings.ToUpper(strings.TrimSpace(input))
+}
+
 func getDTUDomainPortFromConfig() string {
 	// 兼容两种命名，避免后续改配置造成老版本不可用
 	if v := strings.TrimSpace(viper.GetString("bms.provision.dtu_domain_port")); v != "" {
@@ -85,7 +89,7 @@ func defaultDeviceVoucher() string {
 }
 
 func (*DeviceProvision) findDeviceByItemUUIDWithDB(ctx context.Context, db *gorm.DB, itemUUID string, claims *utils.UserClaims) (*deviceProvisionRow, error) {
-	itemUUID = strings.TrimSpace(itemUUID)
+	itemUUID = normalizeItemUUID(itemUUID)
 	if itemUUID == "" {
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "item_uuid is required")
 	}
@@ -93,10 +97,11 @@ func (*DeviceProvision) findDeviceByItemUUIDWithDB(ctx context.Context, db *gorm
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims.tenant_id is required")
 	}
 
-	var row deviceProvisionRow
-	err := db.WithContext(ctx).
-		Table("device_batteries AS dbat").
-		Select(`
+	scanRow := func(where string, args ...interface{}) (*deviceProvisionRow, error) {
+		var row deviceProvisionRow
+		err := db.WithContext(ctx).
+			Table("device_batteries AS dbat").
+			Select(`
 			d.id AS device_id,
 			d.device_number AS device_number,
 			d.name AS device_name,
@@ -105,16 +110,26 @@ func (*DeviceProvision) findDeviceByItemUUIDWithDB(ctx context.Context, db *gorm
 			dbat.bms_comm_type AS bms_comm_type,
 			dbat.owner_org_id AS owner_org_id
 		`).
-		Joins("JOIN devices AS d ON d.id = dbat.device_id").
-		Where("dbat.item_uuid = ? AND d.tenant_id = ?", itemUUID, claims.TenantID).
-		Scan(&row).Error
-	if err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			Joins("JOIN devices AS d ON d.id = dbat.device_id").
+			Where(where, args...).
+			Limit(1).
+			Scan(&row).Error
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		if row.DeviceID == "" {
+			return nil, errcode.NewWithMessage(errcode.CodeNotFound, "device not found by item_uuid")
+		}
+		return &row, nil
 	}
-	if row.DeviceID == "" {
-		return nil, errcode.NewWithMessage(errcode.CodeNotFound, "device not found by item_uuid")
+
+	row, err := scanRow("dbat.item_uuid = ? AND d.tenant_id = ?", itemUUID, claims.TenantID)
+	if err == nil || !isNotFoundErr(err) {
+		return row, err
 	}
-	return &row, nil
+
+	// 兜底兼容历史错误数据：早期链路可能把小写 item_uuid 写入数据库。
+	return scanRow("UPPER(dbat.item_uuid) = ? AND d.tenant_id = ?", itemUUID, claims.TenantID)
 }
 
 // GetProvisionConfig 获取移动端开通配置
@@ -131,7 +146,7 @@ func (*DeviceProvision) findDeviceByItemUUID(ctx context.Context, itemUUID strin
 }
 
 func (*DeviceProvision) createAutoRegisteredDevice(ctx context.Context, tx *gorm.DB, req model.DeviceProvisionBindReq, claims *utils.UserClaims) (*deviceProvisionRow, error) {
-	itemUUID := strings.TrimSpace(req.ItemUUID)
+	itemUUID := normalizeItemUUID(req.ItemUUID)
 	now := utils.GetUTCTime()
 	deviceName := autoRegisterDeviceName(itemUUID)
 	protocol := "BLE"
@@ -203,6 +218,7 @@ func (*DeviceProvision) createAutoRegisteredDevice(ctx context.Context, tx *gorm
 
 func (*DeviceProvision) findOrCreateDeviceByItemUUID(ctx context.Context, req model.DeviceProvisionBindReq, claims *utils.UserClaims) (*deviceProvisionRow, bool, error) {
 	svc := &DeviceProvision{}
+	req.ItemUUID = normalizeItemUUID(req.ItemUUID)
 	row, err := svc.findDeviceByItemUUID(ctx, req.ItemUUID, claims)
 	if err == nil {
 		return row, false, nil
@@ -324,6 +340,7 @@ func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, ro
 // GetProvisionInfo 按 item_uuid 查询设备信息（用于“扫码 UUID”路径）
 func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DeviceProvisionInfoReq, claims *utils.UserClaims) (*model.DeviceProvisionInfoResp, error) {
 	svc := &DeviceProvision{}
+	req.ItemUUID = normalizeItemUUID(req.ItemUUID)
 	row, err := svc.findDeviceByItemUUID(ctx, req.ItemUUID, claims)
 	if err != nil {
 		if isNotFoundErr(err) && allowLegacyAutoRegister() {
@@ -372,6 +389,7 @@ func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DevicePr
 // BindByItemUUID 按 item_uuid 将设备绑定到当前账号
 func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProvisionBindReq, claims *utils.UserClaims) (*model.DeviceProvisionBindResp, error) {
 	svc := &DeviceProvision{}
+	req.ItemUUID = normalizeItemUUID(req.ItemUUID)
 	row, _, err := svc.findOrCreateDeviceByItemUUID(ctx, req, claims)
 	if err != nil {
 		return nil, err
