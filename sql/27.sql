@@ -2,13 +2,13 @@
 -- Description: APP内容管理（单页/FAQ/用户反馈）+ 菜单
 
 -- ============================================================================
--- 1. 单页内容（用户政策/隐私政策...）
+-- 1. 单页内容（用户政策/隐私政策/联系客服...）
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.app_content_pages (
 	id varchar(36) NOT NULL,
 	tenant_id varchar(36) NOT NULL,
 	app_id varchar(36) NOT NULL,
-	content_key varchar(50) NOT NULL, -- user_policy / privacy_policy
+	content_key varchar(50) NOT NULL, -- user_policy / privacy_policy / contact_service
 	published bool NOT NULL DEFAULT false,
 	published_at timestamptz NULL,
 	created_by varchar(36) NULL,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS public.app_content_pages (
 );
 
 COMMENT ON TABLE public.app_content_pages IS 'APP内容管理：单页内容（按应用/Key）';
-COMMENT ON COLUMN public.app_content_pages.content_key IS '内容Key：user_policy/privacy_policy';
+COMMENT ON COLUMN public.app_content_pages.content_key IS '内容Key：user_policy/privacy_policy/contact_service';
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_app_content_pages_tenant_app_key
 	ON public.app_content_pages (tenant_id, app_id, content_key);
@@ -144,4 +144,3 @@ BEGIN
 		);
 	END IF;
 END $$;
-

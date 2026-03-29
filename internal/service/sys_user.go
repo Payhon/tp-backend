@@ -873,17 +873,12 @@ func (*User) DeleteUser(id string, claims *utils.UserClaims) error {
 		})
 	}
 
-	// 删除用户
-	err = dal.DeleteUsersById(id)
-	if err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"error":     err.Error(),
-			"user_id":   id,
-			"operation": "delete_user",
-		})
-	}
-
-	return nil
+	return global.DB.WithContext(context.Background()).Transaction(func(tx *gorm.DB) error {
+		if err := deleteUserCascadeTx(context.Background(), tx, user); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // 获取用户信息

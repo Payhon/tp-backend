@@ -424,3 +424,26 @@ func (*AppAuthApi) Unbind(c *gin.Context) {
 	}
 	c.Set("data", nil)
 }
+
+// DeleteAccount 注销当前终端用户账号
+// @Summary 注销当前终端用户账号
+// @Tags APP-Auth
+// @Accept json
+// @Produce json
+// @Param X-TenantID header string true "租户ID"
+// @Param body body model.AppDeleteAccountReq true "请求"
+// @Success 200 {object} model.Response
+// @Router /api/v1/app/auth/delete_account [post]
+func (*AppAuthApi) DeleteAccount(c *gin.Context) {
+	var req model.AppDeleteAccountReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	tenantID := middleware.GetTenantIDFromHeader(c)
+	if err := service.GroupApp.AppAuth.DeleteAccount(c.Request.Context(), tenantID, userClaims.ID, req.Password); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}

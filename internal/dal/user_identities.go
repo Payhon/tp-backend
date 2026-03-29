@@ -2,6 +2,7 @@ package dal
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"project/pkg/global"
@@ -37,15 +38,28 @@ type UserIdentity struct {
 func (UserIdentity) TableName() string { return "user_identities" }
 
 func GetUserIdentity(ctx context.Context, tenantID, identityType, identifier string) (*UserIdentity, error) {
+	db := global.DB.WithContext(ctx)
 	var out UserIdentity
-	err := global.DB.WithContext(ctx).
+	err := db.
 		Table("user_identities").
 		Where("tenant_id = ? AND identity_type = ? AND identifier = ?", tenantID, identityType, identifier).
 		First(&out).Error
 	if err != nil {
 		return nil, err
 	}
-	return &out, nil
+
+	var userRow struct {
+		ID string
+	}
+	err = db.Table("users").Select("id").Where("id = ?", out.UserID).Take(&userRow).Error
+	if err == nil {
+		return &out, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		_ = db.Table("user_identities").Where("id = ?", out.ID).Delete(&UserIdentity{}).Error
+		return nil, gorm.ErrRecordNotFound
+	}
+	return nil, err
 }
 
 func ListUserIdentitiesByUser(ctx context.Context, tenantID, userID string) ([]UserIdentity, error) {

@@ -2003,7 +2003,7 @@ CREATE TABLE IF NOT EXISTS public.app_content_pages (
 	id varchar(36) NOT NULL,
 	tenant_id varchar(36) NOT NULL,
 	app_id varchar(36) NOT NULL,
-	content_key varchar(50) NOT NULL,
+	content_key varchar(50) NOT NULL, -- user_policy / privacy_policy / contact_service
 	published bool NOT NULL DEFAULT false,
 	published_at timestamptz NULL,
 	created_by varchar(36) NULL,

@@ -696,6 +696,36 @@ func (a *AppAuth) UnbindIdentity(ctx context.Context, tenantID, userID, identity
 	})
 }
 
+func (a *AppAuth) DeleteAccount(ctx context.Context, tenantID, userID, password string) error {
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "password is required"})
+	}
+
+	user, err := dal.GetUsersById(userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.WithData(errcode.CodeNotFound, map[string]interface{}{"error": "user not found"})
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if user.TenantID == nil || strings.TrimSpace(*user.TenantID) != strings.TrimSpace(tenantID) {
+		return errcode.New(errcode.CodeNoPermission)
+	}
+	if user.UserKind == nil || strings.TrimSpace(*user.UserKind) != model.UserKindEndUser {
+		return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+			"error": "only END_USER can delete account",
+		})
+	}
+	if !utils.BcryptCheck(password, user.Password) {
+		return errcode.New(errcode.CodeInvalidAuth)
+	}
+
+	return global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return deleteUserCascadeTx(ctx, tx, user)
+	})
+}
+
 // UpdateProfile APP/小程序更新个人资料（昵称/头像）
 func (a *AppAuth) UpdateProfile(ctx context.Context, tenantID, userID string, req *model.AppProfileUpdateReq) error {
 	if tenantID == "" || userID == "" || req == nil {

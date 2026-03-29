@@ -21,18 +21,18 @@ const (
 )
 
 type AuthMessageTemplate struct {
-	ID                   string    `gorm:"column:id"`
-	TenantID             string    `gorm:"column:tenant_id"`
-	Channel              string    `gorm:"column:channel"`
-	Scene                string    `gorm:"column:scene"`
-	Subject              *string   `gorm:"column:subject"`
-	Content              *string   `gorm:"column:content"`
-	Provider             *string   `gorm:"column:provider"`
-	ProviderTemplateCode *string   `gorm:"column:provider_template_code"`
-	Status               string    `gorm:"column:status"`
-	Remark               *string   `gorm:"column:remark"`
-	CreatedAt            time.Time `gorm:"column:created_at"`
-	UpdatedAt            time.Time `gorm:"column:updated_at"`
+	ID                   string    `gorm:"column:id" json:"id"`
+	TenantID             string    `gorm:"column:tenant_id" json:"tenant_id"`
+	Channel              string    `gorm:"column:channel" json:"channel"`
+	Scene                string    `gorm:"column:scene" json:"scene"`
+	Subject              *string   `gorm:"column:subject" json:"subject"`
+	Content              *string   `gorm:"column:content" json:"content"`
+	Provider             *string   `gorm:"column:provider" json:"provider"`
+	ProviderTemplateCode *string   `gorm:"column:provider_template_code" json:"provider_template_code"`
+	Status               string    `gorm:"column:status" json:"status"`
+	Remark               *string   `gorm:"column:remark" json:"remark"`
+	CreatedAt            time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt            time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (AuthMessageTemplate) TableName() string { return "auth_message_templates" }

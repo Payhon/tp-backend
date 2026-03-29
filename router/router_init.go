@@ -193,6 +193,7 @@ func RouterInit() *gin.Engine {
 				appAuthAuthed.POST("bind/phone", controllers.AppAuthApi.BindPhone)
 				appAuthAuthed.POST("bind/email", controllers.AppAuthApi.BindEmail)
 				appAuthAuthed.POST("unbind", controllers.AppAuthApi.Unbind)
+				appAuthAuthed.POST("delete_account", controllers.AppAuthApi.DeleteAccount)
 			}
 
 			// APP/小程序认证配置（WEB端可配置：模板/微信配置）

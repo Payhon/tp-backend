@@ -8,14 +8,14 @@ import (
 )
 
 type WxMpApp struct {
-	ID        string    `gorm:"column:id"`
-	TenantID  string    `gorm:"column:tenant_id"`
-	AppID     string    `gorm:"column:appid"`
-	AppSecret string    `gorm:"column:app_secret"`
-	Status    string    `gorm:"column:status"`
-	Remark    *string   `gorm:"column:remark"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at"`
+	ID        string    `gorm:"column:id" json:"id"`
+	TenantID  string    `gorm:"column:tenant_id" json:"tenant_id"`
+	AppID     string    `gorm:"column:appid" json:"appid"`
+	AppSecret string    `gorm:"column:app_secret" json:"app_secret"`
+	Status    string    `gorm:"column:status" json:"status"`
+	Remark    *string   `gorm:"column:remark" json:"remark"`
+	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (WxMpApp) TableName() string { return "wx_mp_apps" }

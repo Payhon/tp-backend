@@ -18,12 +18,12 @@ type AppContentApi struct{}
 // APP端（无需登录）
 // ---------------------------------------------------------------------------
 
-// GetPageForApp 获取单页内容（用户协议/隐私政策/关于我们）
+// GetPageForApp 获取单页内容（用户协议/隐私政策/联系客服/关于我们）
 // @Summary 获取单页内容
 // @Tags APP-Content
 // @Produce json
 // @Param X-TenantID header string false "租户ID（可选；缺省使用第一个租户）"
-// @Param content_key path string true "内容Key(user_policy/privacy_policy/about_us)"
+// @Param content_key path string true "内容Key(user_policy/privacy_policy/contact_service/about_us)"
 // @Param appid query string true "应用AppID"
 // @Param lang query string false "语言(zh-CN/en-US)"
 // @Success 200 {object} model.AppContentPageResp
@@ -155,7 +155,7 @@ func (*AppContentApi) GetMyFeedbackForApp(c *gin.Context) {
 // @Summary 获取单页内容
 // @Tags APP-Content-Admin
 // @Produce json
-// @Param content_key path string true "内容Key(user_policy/privacy_policy)"
+// @Param content_key path string true "内容Key(user_policy/privacy_policy/contact_service)"
 // @Param app_id query string true "应用ID(apps.id)"
 // @Param lang query string false "语言(zh-CN/en-US)"
 // @Success 200 {object} model.AdminContentPageResp
@@ -184,7 +184,7 @@ func (*AppContentApi) AdminGetPage(c *gin.Context) {
 // @Tags APP-Content-Admin
 // @Accept json
 // @Produce json
-// @Param content_key path string true "内容Key(user_policy/privacy_policy)"
+// @Param content_key path string true "内容Key(user_policy/privacy_policy/contact_service)"
 // @Param body body model.AdminContentPageUpsertReq true "内容"
 // @Success 200 {object} model.Response
 // @Router /api/v1/app_content/pages/{content_key} [put]
@@ -207,7 +207,7 @@ func (*AppContentApi) AdminUpsertPage(c *gin.Context) {
 // @Tags APP-Content-Admin
 // @Accept json
 // @Produce json
-// @Param content_key path string true "内容Key(user_policy/privacy_policy)"
+// @Param content_key path string true "内容Key(user_policy/privacy_policy/contact_service)"
 // @Param body body model.AdminContentPagePublishReq true "应用ID"
 // @Success 200 {object} model.Response
 // @Router /api/v1/app_content/pages/{content_key}/publish [post]
@@ -230,7 +230,7 @@ func (*AppContentApi) AdminPublishPage(c *gin.Context) {
 // @Tags APP-Content-Admin
 // @Accept json
 // @Produce json
-// @Param content_key path string true "内容Key(user_policy/privacy_policy)"
+// @Param content_key path string true "内容Key(user_policy/privacy_policy/contact_service)"
 // @Param body body model.AdminContentPagePublishReq true "应用ID"
 // @Success 200 {object} model.Response
 // @Router /api/v1/app_content/pages/{content_key}/unpublish [post]

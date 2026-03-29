@@ -45,6 +45,7 @@ type DeviceUserBindingResp struct {
 	DeviceNumber     string   `json:"device_number"`
 	DeviceName       string   `json:"device_name"`
 	BleMac           *string  `json:"ble_mac,omitempty"`
+	Iccid            *string  `json:"iccid,omitempty"`
 	BmsCommType      *int     `json:"bms_comm_type,omitempty"`
 	IsOnline         int16    `json:"is_online"`
 	Soc              *float64 `json:"soc,omitempty"`

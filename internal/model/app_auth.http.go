@@ -100,6 +100,10 @@ type AppUnbindReq struct {
 	IdentityType string `json:"identity_type" validate:"required,max=32,oneof=PHONE EMAIL"`
 }
 
+type AppDeleteAccountReq struct {
+	Password string `json:"password" validate:"required,min=1,max=255"`
+}
+
 type AppAuthBindingsResp struct {
 	UserID string               `json:"user_id"`
 	List   []AppAuthBindingItem `json:"list"`

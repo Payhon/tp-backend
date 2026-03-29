@@ -3,6 +3,7 @@
 # go.mod
 # go.sum
 # configs/
+configs/conf-prod.yml
 
 .idea/
 

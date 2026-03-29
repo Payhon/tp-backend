@@ -23,6 +23,7 @@ type appDeviceListRow struct {
 	DeviceNumber     string     `gorm:"column:device_number"`
 	DeviceName       *string    `gorm:"column:device_name"`
 	BleMac           *string    `gorm:"column:ble_mac"`
+	Iccid            *string    `gorm:"column:iccid"`
 	BmsCommType      *int       `gorm:"column:bms_comm_type"`
 	IsOnline         int16      `gorm:"column:is_online"`
 	Soc              *float64   `gorm:"column:soc"`
@@ -214,6 +215,7 @@ func buildDeviceListResp(rows []appDeviceListRow, total int64, page, pageSize in
 			DeviceNumber:     row.DeviceNumber,
 			DeviceName:       deviceName,
 			BleMac:           row.BleMac,
+			Iccid:            row.Iccid,
 			BmsCommType:      row.BmsCommType,
 			IsOnline:         row.IsOnline,
 			Soc:              row.Soc,
@@ -296,6 +298,7 @@ SELECT
 	d.device_number AS device_number,
 	d.name AS device_name,
 	dbat.ble_mac AS ble_mac,
+	COALESCE(NULLIF(dbat.iccid, ''), NULLIF(dbat.comm_chip_id, '')) AS iccid,
 	dbat.bms_comm_type AS bms_comm_type,
 	d.is_online AS is_online,
 	dbat.soc AS soc,
@@ -369,6 +372,7 @@ SELECT
 	d.device_number AS device_number,
 	d.name AS device_name,
 	dbat.ble_mac AS ble_mac,
+	COALESCE(NULLIF(dbat.iccid, ''), NULLIF(dbat.comm_chip_id, '')) AS iccid,
 	dbat.bms_comm_type AS bms_comm_type,
 	d.is_online AS is_online,
 	dbat.soc AS soc,
@@ -436,6 +440,7 @@ SELECT
 	d.device_number AS device_number,
 	d.name AS device_name,
 	dbat.ble_mac AS ble_mac,
+	COALESCE(NULLIF(dbat.iccid, ''), NULLIF(dbat.comm_chip_id, '')) AS iccid,
 	dbat.bms_comm_type AS bms_comm_type,
 	d.is_online AS is_online,
 	dbat.soc AS soc,
