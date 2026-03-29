@@ -599,9 +599,37 @@ func (*DeviceBinding) GetOrgOptions(ctx context.Context, req *model.AppOrgOption
 		Where("o.tenant_id = ? AND o.org_type = ?", tenantID, req.OrgType)
 
 	if !isFactory && orgID != "" {
-		queryBuilder = queryBuilder.Where(`o.id IN (
-			SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
-		)`, tenantID, orgID)
+		switch orgType {
+		case model.OrgTypePACKFactory:
+			if req.OrgType != model.OrgTypeDealer && req.OrgType != model.OrgTypeStore {
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+			queryBuilder = queryBuilder.Where(`o.id IN (
+				SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+			)`, tenantID, orgID)
+		case model.OrgTypeDealer:
+			switch req.OrgType {
+			case model.OrgTypeStore:
+				queryBuilder = queryBuilder.Where(`o.id IN (
+					SELECT descendant_id FROM org_closure WHERE tenant_id = ? AND ancestor_id = ?
+				)`, tenantID, orgID)
+			case model.OrgTypePACKFactory:
+				queryBuilder = queryBuilder.Where(`o.id IN (
+					SELECT ancestor_id FROM org_closure WHERE tenant_id = ? AND descendant_id = ?
+				)`, tenantID, orgID)
+			default:
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+		case model.OrgTypeStore:
+			if req.OrgType != model.OrgTypeDealer {
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+			queryBuilder = queryBuilder.Where(`o.id IN (
+				SELECT ancestor_id FROM org_closure WHERE tenant_id = ? AND descendant_id = ?
+			)`, tenantID, orgID)
+		default:
+			return nil, errcode.New(errcode.CodeNoPermission)
+		}
 	}
 
 	var rows []model.AppOrgOptionResp

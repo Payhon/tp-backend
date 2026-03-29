@@ -284,20 +284,61 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 				}
 			}
 		case model.OrgTypeDealer:
-			if fromOrg.OrgType != model.OrgTypeStore {
+			if fromOrg.OrgType != model.OrgTypeDealer {
 				return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
-					"message": "经销商仅支持门店间调拨",
+					"message": "经销商仅支持调拨自身库存",
 				})
 			}
-			if targetOrg.OrgType != model.OrgTypeStore {
+			if targetOrg.OrgType != model.OrgTypePACKFactory && targetOrg.OrgType != model.OrgTypeStore {
 				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-					"message": "经销商调拨目标仅支持门店",
+					"message": "经销商调拨目标仅支持 PACK 厂或门店",
+				})
+			}
+			if operatorOrgID != "" {
+				var count int64
+				if targetOrg.OrgType == model.OrgTypePACKFactory {
+					if err := tx.Table("org_closure").
+						Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, targetOrg.ID, operatorOrgID).
+						Count(&count).Error; err != nil {
+						return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+							"sql_error": err.Error(),
+						})
+					}
+					if count == 0 {
+						return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+							"message": "目标 PACK 厂不在当前经销商上级链路中",
+						})
+					}
+				} else {
+					if err := tx.Table("org_closure").
+						Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, operatorOrgID, targetOrg.ID).
+						Count(&count).Error; err != nil {
+						return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+							"sql_error": err.Error(),
+						})
+					}
+					if count == 0 {
+						return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+							"message": "目标门店不在当前经销商范围内",
+						})
+					}
+				}
+			}
+		case model.OrgTypeStore:
+			if fromOrg.OrgType != model.OrgTypeStore {
+				return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+					"message": "门店仅支持调拨自身库存",
+				})
+			}
+			if targetOrg.OrgType != model.OrgTypeDealer {
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"message": "门店调拨目标仅支持经销商",
 				})
 			}
 			if operatorOrgID != "" {
 				var count int64
 				if err := tx.Table("org_closure").
-					Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, operatorOrgID, targetOrg.ID).
+					Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, targetOrg.ID, operatorOrgID).
 					Count(&count).Error; err != nil {
 					return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 						"sql_error": err.Error(),
@@ -305,7 +346,7 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 				}
 				if count == 0 {
 					return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
-						"message": "目标门店不在当前经销商范围内",
+						"message": "目标经销商不在当前门店上级链路中",
 					})
 				}
 			}
