@@ -38,12 +38,9 @@ func (*MqttHTTPAuthApi) Auth(c *gin.Context) {
 		return
 	}
 
-	ok, reason := service.GroupApp.MqttHTTPAuth.Auth(&req)
-	if ok {
-		resp.Result = "allow"
-		resp.Reason = ""
-	}
-	if !ok && reason != "" {
+	result, reason := service.GroupApp.MqttHTTPAuth.Auth(&req)
+	resp.Result = result
+	if reason != "" {
 		resp.Reason = reason
 	}
 
