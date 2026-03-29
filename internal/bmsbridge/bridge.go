@@ -195,6 +195,116 @@ func (b *Bridge) decodeSocketHex(payload []byte) (string, error) {
 	return s, nil
 }
 
+func (b *Bridge) debugEnabled() bool {
+	return b.log != nil && b.log.IsLevelEnabled(logrus.DebugLevel)
+}
+
+func (b *Bridge) debugLogJSON(label, deviceID string, value any) {
+	if !b.debugEnabled() {
+		return
+	}
+	bs, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		b.log.WithField("device_id", deviceID).WithError(err).Debug("bms bridge json debug marshal failed")
+		return
+	}
+	b.log.WithFields(logrus.Fields{
+		"device_id": deviceID,
+		"json":      string(bs),
+	}).Debug(label)
+}
+
+func debugFrameValue(parsed protocol.ParsedFrame) any {
+	switch f := parsed.(type) {
+	case protocol.ReadFrame:
+		return map[string]any{
+			"type":           f.Type,
+			"sourceAddress":  f.SourceAddress,
+			"targetAddress":  f.TargetAddress,
+			"functionCode":   f.FunctionCode,
+			"byteCount":      f.ByteCount,
+			"dataHex":        protocol.BytesToHexUpper(f.Data),
+			"rawHex":         protocol.BytesToHexUpper(f.Raw),
+			"dataLength":     len(f.Data),
+			"rawLength":      len(f.Raw),
+		}
+	case protocol.WriteRequestFrame:
+		return map[string]any{
+			"type":           f.Type,
+			"sourceAddress":  f.SourceAddress,
+			"targetAddress":  f.TargetAddress,
+			"functionCode":   f.FunctionCode,
+			"startAddress":   f.StartAddress,
+			"quantity":       f.Quantity,
+			"byteCount":      f.ByteCount,
+			"dataHex":        protocol.BytesToHexUpper(f.Data),
+			"rawHex":         protocol.BytesToHexUpper(f.Raw),
+			"dataLength":     len(f.Data),
+			"rawLength":      len(f.Raw),
+		}
+	case protocol.ReadRequestFrame:
+		return map[string]any{
+			"type":          f.Type,
+			"sourceAddress": f.SourceAddress,
+			"targetAddress": f.TargetAddress,
+			"functionCode":  f.FunctionCode,
+			"startAddress":  f.StartAddress,
+			"quantity":      f.Quantity,
+			"rawHex":        protocol.BytesToHexUpper(f.Raw),
+			"rawLength":     len(f.Raw),
+		}
+	case protocol.WriteFrame:
+		return map[string]any{
+			"type":          f.Type,
+			"sourceAddress": f.SourceAddress,
+			"targetAddress": f.TargetAddress,
+			"functionCode":  f.FunctionCode,
+			"startAddress":  f.StartAddress,
+			"quantity":      f.Quantity,
+			"rawHex":        protocol.BytesToHexUpper(f.Raw),
+			"rawLength":     len(f.Raw),
+		}
+	case protocol.ErrorFrame:
+		return map[string]any{
+			"type":          f.Type,
+			"sourceAddress": f.SourceAddress,
+			"targetAddress": f.TargetAddress,
+			"functionCode":  f.FunctionCode,
+			"errorCode":     f.ErrorCode,
+			"rawHex":        protocol.BytesToHexUpper(f.Raw),
+			"rawLength":     len(f.Raw),
+		}
+	default:
+		return parsed
+	}
+}
+
+func extractReadFramePayload(f protocol.ReadFrame, reportFunctionCode byte, defaultStart uint16) (reportStart uint16, registers []uint16, ok bool, err error) {
+	switch f.FunctionCode {
+	case protocol.FuncSocketRead, protocol.FuncReadHoldingRegisters:
+		if len(f.Data) >= 4 {
+			startAddress, quantity, rest, parseErr := protocol.ParseSocketReadPayload(f.Data)
+			if parseErr == nil && quantity > 0 && int(quantity)*2 == len(rest) {
+				regs, splitErr := protocol.SplitIntoRegistersBE(rest)
+				if splitErr != nil {
+					return 0, nil, false, splitErr
+				}
+				return startAddress, regs, true, nil
+			}
+		}
+	}
+
+	if f.FunctionCode != reportFunctionCode {
+		return 0, nil, false, nil
+	}
+
+	regs, splitErr := protocol.SplitIntoRegistersBE(f.Data)
+	if splitErr != nil {
+		return 0, nil, false, splitErr
+	}
+	return defaultStart, regs, true, nil
+}
+
 func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 	b.log.WithFields(logrus.Fields{
 		"topic":      msg.topic,
@@ -210,6 +320,12 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 		"device_id": msg.deviceID,
 		"hexLen":    len(hexStr),
 	}).Debug("bms bridge decoded hex payload")
+	if b.debugEnabled() {
+		b.log.WithFields(logrus.Fields{
+			"device_id": msg.deviceID,
+			"raw_hex":   strings.ToUpper(strings.TrimSpace(hexStr)),
+		}).Debug("bms bridge raw hex payload")
+	}
 
 	frameBytes, err := protocol.DecodeHexString(hexStr)
 	if err != nil {
@@ -224,6 +340,7 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 	if err != nil {
 		return err
 	}
+	b.debugLogJSON("bms bridge parsed frame json", msg.deviceID, debugFrameValue(parsed))
 
 	switch f := parsed.(type) {
 	case protocol.ReadFrame:
@@ -236,56 +353,40 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			"byteCount":     f.ByteCount,
 		}).Debug("bms bridge parsed read frame")
 
-		if f.FunctionCode != b.cfg.Report.FunctionCode && f.FunctionCode != 0x0F {
-			// Ignore normal request/response traffic; focus on report frames.
-			return nil
-		}
-
-		reportStart := b.cfg.Report.StatusStartAddress
-		payload := f.Data
-		if f.FunctionCode == 0x0F {
-			startAddress, quantity, rest, err := protocol.ParseSocketReadPayload(f.Data)
+			reportStart, registers, ok, err := extractReadFramePayload(f, b.cfg.Report.FunctionCode, b.cfg.Report.StatusStartAddress)
 			if err != nil {
 				return err
 			}
-			reportStart = startAddress
-			payload = rest
-			if quantity > 0 && int(quantity)*2 != len(rest) {
-				b.log.WithFields(logrus.Fields{
-					"device_id": msg.deviceID,
-					"quantity":  quantity,
-					"byteLen":   len(rest),
-				}).Debug("socket payload length mismatch")
+			if !ok {
+				// Generic 0x03 response does not carry enough addressing info unless the payload
+				// embeds [startAddress, quantity, data...]. If it doesn't, we skip semantic decode.
+				return nil
 			}
-		}
 
-		registers, err := protocol.SplitIntoRegistersBE(payload)
-		if err != nil {
-			return err
-		}
-
-		flat := make(map[string]any, 256)
-		flat["report.startAddress"] = int(reportStart)
+			flat := make(map[string]any, 256)
+			flat["report.startAddress"] = int(reportStart)
 		flat["report.quantity"] = len(registers)
 		flat = merge(flat, flattenRegisters(reportStart, registers))
 		if extra := decodeSocketRegisters(reportStart, registers); extra != nil {
 			flat = merge(flat, extra)
 		}
 
-		// If it's a status block report, decode semantic status and merge.
-		if reportStart == 0x100 {
-			if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
-				b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed")
-			} else {
-				st, err := status.ParseStatusRegisters(reportStart, registers)
-				if err != nil {
-					return err
+			// If it's a status block report, decode semantic status and merge.
+			if reportStart == 0x100 {
+				if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
+					b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed")
+				} else {
+					st, err := status.ParseStatusRegisters(reportStart, registers)
+					if err != nil {
+						return err
+					}
+					b.debugLogJSON("bms bridge parsed status json", msg.deviceID, st)
+					flat = merge(flat, FlattenStatus(st))
 				}
-				flat = merge(flat, FlattenStatus(st))
 			}
-		}
+			b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
 
-		return b.applyRules(ctx, msg.deviceID, flat)
+			return b.applyRules(ctx, msg.deviceID, flat)
 
 	case protocol.WriteRequestFrame:
 		b.log.WithFields(logrus.Fields{
@@ -316,19 +417,21 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			flat = merge(flat, extra)
 		}
 
-		if reportStart == 0x100 {
-			if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
-				b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed")
-			} else {
-				st, err := status.ParseStatusRegisters(reportStart, registers)
-				if err != nil {
-					return err
+			if reportStart == 0x100 {
+				if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
+					b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed")
+				} else {
+					st, err := status.ParseStatusRegisters(reportStart, registers)
+					if err != nil {
+						return err
+					}
+					b.debugLogJSON("bms bridge parsed status json", msg.deviceID, st)
+					flat = merge(flat, FlattenStatus(st))
 				}
-				flat = merge(flat, FlattenStatus(st))
 			}
-		}
+			b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
 
-		return b.applyRules(ctx, msg.deviceID, flat)
+			return b.applyRules(ctx, msg.deviceID, flat)
 
 	default:
 		// Other frames are not handled yet (passthrough rules are TODO).

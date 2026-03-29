@@ -111,8 +111,8 @@ func ParseFrame(frameBytes []byte) (ParsedFrame, error) {
 		return nil, &ProtocolError{Message: "frame body too short"}
 	}
 
-	// CRC covers bytes from source address to last data byte (excludes 0x7F,0x55)
-	crcRegion := bodyWithoutCrcAndTail[2:]
+	// CRC covers bytes from target address to last data byte (excludes 0x7F,0x55 and source address).
+	crcRegion := bodyWithoutCrcAndTail[3:]
 	calcCrc := CRC16Modbus(crcRegion)
 	if declaredCrc != calcCrc {
 		return nil, &ProtocolError{

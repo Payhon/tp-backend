@@ -23,8 +23,8 @@ func BuildReadRequestFrame(sourceAddress, targetAddress, functionCode byte, star
 	frame = append(frame, byte((startAddress>>8)&0xFF), byte(startAddress&0xFF))
 	frame = append(frame, byte((quantity>>8)&0xFF), byte(quantity&0xFF))
 
-	// CRC covers bytes from source address (excludes head bytes)
-	crc := CRC16Modbus(frame[2:])
+	// CRC covers bytes from target address (excludes head bytes and source address)
+	crc := CRC16Modbus(frame[3:])
 	frame = append(frame, byte(crc&0xFF), byte((crc>>8)&0xFF), FrameTail)
 	return frame
 }
@@ -40,7 +40,7 @@ func BuildReadResponseFrame(sourceAddress, targetAddress, functionCode byte, dat
 	frame = append(frame, byte(len(data)))
 	frame = append(frame, data...)
 
-	crc := CRC16Modbus(frame[2:])
+	crc := CRC16Modbus(frame[3:])
 	frame = append(frame, byte(crc&0xFF), byte((crc>>8)&0xFF), FrameTail)
 	return frame
 }
@@ -60,7 +60,7 @@ func BuildWriteRequestFrame(sourceAddress, targetAddress, functionCode byte, sta
 		frame = append(frame, byte((v>>8)&0xFF), byte(v&0xFF))
 	}
 
-	crc := CRC16Modbus(frame[2:])
+	crc := CRC16Modbus(frame[3:])
 	frame = append(frame, byte(crc&0xFF), byte((crc>>8)&0xFF), FrameTail)
 	return frame
 }
@@ -72,7 +72,7 @@ func BuildWriteResponseFrame(sourceAddress, targetAddress, functionCode byte, st
 	frame = append(frame, byte((startAddress>>8)&0xFF), byte(startAddress&0xFF))
 	frame = append(frame, byte((quantity>>8)&0xFF), byte(quantity&0xFF))
 
-	crc := CRC16Modbus(frame[2:])
+	crc := CRC16Modbus(frame[3:])
 	frame = append(frame, byte(crc&0xFF), byte((crc>>8)&0xFF), FrameTail)
 	return frame
 }
