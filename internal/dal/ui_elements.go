@@ -15,6 +15,10 @@ import (
 	"gorm.io/gen"
 )
 
+func isHiddenMenuElementCode(code string) bool {
+	return strings.TrimSpace(code) == model.AppMobilePermissionsRoot
+}
+
 func CreateUiElements(uielements *model.SysUIElement) error {
 	return query.SysUIElement.Create(uielements)
 }
@@ -72,7 +76,11 @@ func ServeUiElementsListByAuthority(u *utils.UserClaims) (int64, interface{}, er
 		var count int64
 		queryBuilder := q.WithContext(context.Background())
 		queryBuilder = queryBuilder.Where(gen.Cond(datatypes.JSONQuery("authority").HasKey(u.Authority))...)
-		uielementsList, err := queryBuilder.Where(q.ParentID.Eq("0"), q.ElementType.In(1, 2, 3)).Order(q.Order_).Find()
+		uielementsList, err := queryBuilder.Where(
+			q.ParentID.Eq("0"),
+			q.ElementType.In(1, 2, 3),
+			q.ElementCode.Neq(model.AppMobilePermissionsRoot),
+		).Order(q.Order_).Find()
 		if err != nil {
 			logrus.Error(err)
 			return count, uielementsList, err
@@ -99,8 +107,8 @@ func ServeUiElementsListByAuthority(u *utils.UserClaims) (int64, interface{}, er
 		 on crr.v1 = crp.v0 where crp.ptype ='p'
 		) t
 		left join sys_ui_elements tf on t.v1 = tf.id 
-		where tf.parent_id ='0' and tf.element_type in (1,2,3)
-		order by tf.orders desc`, u.ID).Scan(&uielementsList)
+		where tf.parent_id ='0' and tf.element_type in (1,2,3) and tf.element_code <> ?
+		order by tf.orders desc`, u.ID, model.AppMobilePermissionsRoot).Scan(&uielementsList)
 		if err.Error != nil {
 			return 0, nil, err.Error
 		}
@@ -132,6 +140,9 @@ func ServeUiElementsListByCodes(codes []string) (int64, []*model.UiElementsListR
 	codeIndex := make(map[string]*model.SysUIElement, len(rows))
 	for _, row := range rows {
 		if row == nil {
+			continue
+		}
+		if isHiddenMenuElementCode(row.ElementCode) {
 			continue
 		}
 		idIndex[row.ID] = row
@@ -198,6 +209,9 @@ func ServeUiElementsListByIDs(ids []string) (int64, []*model.UiElementsListRsp, 
 	idIndex := make(map[string]*model.SysUIElement, len(rows))
 	for _, row := range rows {
 		if row == nil {
+			continue
+		}
+		if isHiddenMenuElementCode(row.ElementCode) {
 			continue
 		}
 		idIndex[row.ID] = row
@@ -344,6 +358,7 @@ func queryChildrenByAuthority(parent *model.UiElementsListRsp, authority string)
 	children, err := query.SysUIElement.Where(
 		query.SysUIElement.ParentID.Eq(parent.ID),
 		query.SysUIElement.ElementType.In(1, 2, 3),
+		query.SysUIElement.ElementCode.Neq(model.AppMobilePermissionsRoot),
 		query.SysUIElement.Where(gen.Cond(datatypes.JSONQuery("authority").HasKey(authority))...),
 	).Order(query.SysUIElement.Order_).Find()
 	if err != nil {
@@ -388,8 +403,8 @@ func queryChildrenByUserID(parent *model.UiElementsListRsp, userID string) {
 		 on crr.v1 = crp.v0 where crp.ptype ='p'
 		) t
 		left join sys_ui_elements tf on t.v1 = tf.id 
-		where tf.parent_id =? and tf.element_type in (1,2,3)
-		order by tf.orders desc`, userID, parent.ID).Scan(&children)
+		where tf.parent_id =? and tf.element_type in (1,2,3) and tf.element_code <> ?
+		order by tf.orders desc`, userID, parent.ID, model.AppMobilePermissionsRoot).Scan(&children)
 	if err.Error != nil {
 		logrus.Error(err)
 	}

@@ -58,6 +58,18 @@ func normalizeUICodes(codes []string) []string {
 	return out
 }
 
+func codesToSet(codes []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(codes))
+	for _, code := range codes {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		set[code] = struct{}{}
+	}
+	return set
+}
+
 type uiElementLite struct {
 	ID          string `gorm:"column:id"`
 	ParentID    string `gorm:"column:parent_id"`
@@ -137,6 +149,74 @@ func expandUICodesWithAncestors(ctx context.Context, codes []string) ([]string, 
 	expanded = append(expanded, extra...)
 
 	return expanded, nil
+}
+
+func (s *OrgTypePermission) listUICodesByRoot(ctx context.Context, rootCode string) ([]string, error) {
+	rootCode = strings.TrimSpace(rootCode)
+	if rootCode == "" {
+		return []string{}, nil
+	}
+
+	var rows []uiElementLite
+	if err := global.DB.WithContext(ctx).
+		Table("sys_ui_elements").
+		Select("id, parent_id, element_code").
+		Where("element_type IN (1,2,3,4)").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	idIndex := make(map[string]uiElementLite, len(rows))
+	rootID := ""
+	for _, row := range rows {
+		idIndex[row.ID] = row
+		if strings.TrimSpace(row.ElementCode) == rootCode {
+			rootID = row.ID
+		}
+	}
+	if rootID == "" {
+		return []string{}, nil
+	}
+
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if !isDescendantOf(row.ID, rootID, idIndex) {
+			continue
+		}
+		code := strings.TrimSpace(row.ElementCode)
+		if code == "" {
+			continue
+		}
+		out = append(out, code)
+	}
+
+	sort.Strings(out)
+	return normalizeUICodes(out), nil
+}
+
+func isDescendantOf(id, rootID string, idIndex map[string]uiElementLite) bool {
+	current := strings.TrimSpace(id)
+	visited := map[string]struct{}{}
+	for current != "" && current != "0" {
+		if current == rootID {
+			return true
+		}
+		if _, ok := visited[current]; ok {
+			return false
+		}
+		visited[current] = struct{}{}
+
+		row, ok := idIndex[current]
+		if !ok {
+			return false
+		}
+		parentID := strings.TrimSpace(row.ParentID)
+		if parentID == "" || parentID == current {
+			return false
+		}
+		current = parentID
+	}
+	return false
 }
 
 func addAncestorIDs(id string, idIndex map[string]uiElementLite, included map[string]struct{}) {
@@ -619,6 +699,92 @@ func (s *OrgTypePermission) GetCurrentUIPermissions(ctx context.Context, claims 
 		resp.UICodes = merged
 	}
 
+	return resp, nil
+}
+
+func (s *OrgTypePermission) GetCurrentMobileUIPermissions(ctx context.Context, claims *utils.UserClaims) (*model.UIPermissionResp, error) {
+	resp := &model.UIPermissionResp{
+		OrgType:  "",
+		OrgTypes: []string{},
+		AllowAll: false,
+		UICodes:  []string{},
+	}
+	if claims == nil {
+		return resp, nil
+	}
+
+	tenantID := strings.TrimSpace(claims.TenantID)
+	userID := strings.TrimSpace(claims.ID)
+	if tenantID == "" || userID == "" {
+		return resp, nil
+	}
+
+	userKind, err := s.GetUserKind(ctx, tenantID, userID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user_kind",
+			"user_id":   userID,
+			"error":     err.Error(),
+		})
+	}
+
+	targetOrgType := model.OrgTypeAppUser
+	if userKind == model.UserKindOrgUser {
+		var ok bool
+		targetOrgType, ok, err = s.GetUserOrgType(ctx, tenantID, userID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"operation": "query_user_org_type",
+				"user_id":   userID,
+				"error":     err.Error(),
+			})
+		}
+		if !ok || strings.TrimSpace(targetOrgType) == "" {
+			return resp, nil
+		}
+	}
+
+	targetOrgType = strings.TrimSpace(targetOrgType)
+	resp.OrgType = targetOrgType
+	resp.OrgTypes = normalizeOrgTypes([]string{targetOrgType})
+
+	allowedCodes, exists, err := s.GetAllowedUICodes(ctx, tenantID, targetOrgType)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_mobile_ui_permissions",
+			"org_type":  targetOrgType,
+			"error":     err.Error(),
+		})
+	}
+	if !exists || len(allowedCodes) == 0 {
+		return resp, nil
+	}
+
+	mobileCodes, err := s.listUICodesByRoot(ctx, model.AppMobilePermissionsRoot)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_mobile_ui_scope",
+			"error":     err.Error(),
+		})
+	}
+	if len(mobileCodes) == 0 {
+		return resp, nil
+	}
+
+	scopeSet := codesToSet(mobileCodes)
+	filtered := make([]string, 0, len(allowedCodes))
+	for _, code := range allowedCodes {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		if _, ok := scopeSet[code]; !ok {
+			continue
+		}
+		filtered = append(filtered, code)
+	}
+
+	resp.UICodes = normalizeUICodes(filtered)
 	return resp, nil
 }
 
