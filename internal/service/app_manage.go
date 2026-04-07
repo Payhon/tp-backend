@@ -239,6 +239,40 @@ func (*AppManage) GetApp(ctx context.Context, id string, claims *utils.UserClaim
 	}, nil
 }
 
+// GetPublicAppInfo 公开下载页使用的应用信息
+func (*AppManage) GetPublicAppInfo(ctx context.Context, tenantID, appID string) (*model.AppPublicInfoResp, error) {
+	var r appRow
+	if err := global.DB.WithContext(ctx).Table("apps").
+		Where("tenant_id = ? AND appid = ?", tenantID, strings.TrimSpace(appID)).
+		Select(`appid, name, description, icon_url, introduction,
+			screenshot, app_android, app_ios, app_harmony, h5`).
+		Limit(1).
+		Scan(&r).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if strings.TrimSpace(r.AppID) == "" {
+		return nil, errcode.New(errcode.CodeNotFound)
+	}
+
+	var screenshots []string
+	if len(r.Screenshot) != 0 {
+		_ = json.Unmarshal(r.Screenshot, &screenshots)
+	}
+
+	return &model.AppPublicInfoResp{
+		AppID:        r.AppID,
+		Name:         r.Name,
+		Description:  r.Description,
+		Introduction: r.Introduction,
+		IconURL:      r.IconURL,
+		Screenshot:   screenshots,
+		AppAndroid:   rawJSONPtr(r.AppAndroid),
+		AppIOS:       rawJSONPtr(r.AppIOS),
+		AppHarmony:   rawJSONPtr(r.AppHarmony),
+		H5:           rawJSONPtr(r.H5),
+	}, nil
+}
+
 // CreateApp 创建应用
 func (*AppManage) CreateApp(ctx context.Context, req model.AppCreateReq, claims *utils.UserClaims) (string, error) {
 	now := time.Now().UTC()

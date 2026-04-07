@@ -45,3 +45,43 @@ type SendTestEmailReq struct {
 	Email string `json:"email" validate:"required"`
 	Body  string `json:"body" form:"body" validate:"required"`
 }
+
+type SendTestSMSReq struct {
+	TenantID    string `json:"tenant_id" validate:"omitempty,max=36"`
+	PhonePrefix string `json:"phone_prefix" validate:"omitempty,max=10"`
+	PhoneNumber string `json:"phone_number" validate:"required,min=5,max=50"`
+	Scene       string `json:"scene" validate:"required,max=32,oneof=LOGIN REGISTER RESET_PASSWORD BIND"`
+}
+
+type SendTestSMSResp struct {
+	Success             bool                  `json:"success"`
+	Summary             string                `json:"summary"`
+	Phone               string                `json:"phone"`
+	Scene               string                `json:"scene"`
+	Provider            string                `json:"provider,omitempty"`
+	TemplateCode        string                `json:"template_code,omitempty"`
+	DefaultTemplateCode string                `json:"default_template_code,omitempty"`
+	SignName            string                `json:"sign_name,omitempty"`
+	Endpoint            string                `json:"endpoint,omitempty"`
+	RequestID           string                `json:"request_id,omitempty"`
+	ProviderCode        string                `json:"provider_code,omitempty"`
+	ProviderMessage     string                `json:"provider_message,omitempty"`
+	Steps               []SendTestSMSRespStep `json:"steps"`
+}
+
+type SendTestSMSRespStep struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail"`
+}
+
+type SendSMSProviderResult struct {
+	Provider            string `json:"provider,omitempty"`
+	TemplateCode        string `json:"template_code,omitempty"`
+	DefaultTemplateCode string `json:"default_template_code,omitempty"`
+	SignName            string `json:"sign_name,omitempty"`
+	Endpoint            string `json:"endpoint,omitempty"`
+	RequestID           string `json:"request_id,omitempty"`
+	ProviderCode        string `json:"provider_code,omitempty"`
+	ProviderMessage     string `json:"provider_message,omitempty"`
+}

@@ -94,6 +94,19 @@ type AppDetailResp struct {
 	UpdatedAt    string           `json:"updated_at"`
 }
 
+type AppPublicInfoResp struct {
+	AppID        string           `json:"appid"`
+	Name         string           `json:"name"`
+	Description  *string          `json:"description"`
+	Introduction *string          `json:"introduction"`
+	IconURL      *string          `json:"icon_url"`
+	Screenshot   []string         `json:"screenshot"`
+	AppAndroid   *json.RawMessage `json:"app_android"`
+	AppIOS       *json.RawMessage `json:"app_ios"`
+	AppHarmony   *json.RawMessage `json:"app_harmony"`
+	H5           *json.RawMessage `json:"h5"`
+}
+
 type AppListResp struct {
 	List     []AppListItemResp `json:"list"`
 	Total    int64             `json:"total"`

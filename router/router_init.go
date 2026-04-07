@@ -123,6 +123,12 @@ func RouterInit() *gin.Engine {
 				appContentPublic.GET("faqs", controllers.AppContentApi.ListFaqsForApp)
 			}
 
+			appPublic := v1.Group("app/public")
+			appPublic.Use(middleware.RequireTenantHeader())
+			{
+				appPublic.GET("info", controllers.AppManageApi.GetPublicAppInfo)
+			}
+
 			// APP升级（无需登录）：APP端检查更新（替代 uniCloud）
 			appUpgrade := v1.Group("app/upgrade")
 			appUpgrade.Use(middleware.RequireTenantHeader())

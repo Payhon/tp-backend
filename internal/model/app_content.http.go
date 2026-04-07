@@ -5,8 +5,8 @@ package model
 // ---------------------------------------------------------------------------
 
 type AppContentPageGetReq struct {
-	AppID string  `form:"appid" json:"appid" validate:"required,max=100"` // 应用AppID（apps.appid）
-	Lang  *string `form:"lang" json:"lang" validate:"omitempty,max=10"`   // zh-CN/en-US（其他语言默认en-US）
+	AppID *string `form:"appid" json:"appid" validate:"omitempty,max=100"` // 应用AppID（apps.appid）；公开页可省略
+	Lang  *string `form:"lang" json:"lang" validate:"omitempty,max=10"`    // zh-CN/en-US（默认 zh-CN）
 }
 
 type AppContentPageResp struct {

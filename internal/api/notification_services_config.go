@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strings"
+
 	dal "project/internal/dal"
 	model "project/internal/model"
 	service "project/internal/service"
@@ -86,4 +88,28 @@ func (*NotificationServicesConfigApi) SendTestEmail(c *gin.Context) {
 		return
 	}
 	c.Set("data", nil)
+}
+
+// SendTestSMS 发送测试短信验证码（走 APP 手机验证码完整链路）
+// @Router   /api/v1/notification/services/config/sms/test [post]
+func (*NotificationServicesConfigApi) SendTestSMS(c *gin.Context) {
+	var req model.SendTestSMSReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	if userClaims.Authority != dal.SYS_ADMIN {
+		c.Error(errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+			"authority": "authority is not sys admin",
+		}))
+		return
+	}
+
+	tenantID := strings.TrimSpace(userClaims.TenantID)
+	if userClaims.Authority == dal.SYS_ADMIN && strings.TrimSpace(req.TenantID) != "" {
+		tenantID = strings.TrimSpace(req.TenantID)
+	}
+
+	report := service.GroupApp.AppAuth.DebugSendPhoneCode(c.Request.Context(), tenantID, req.PhonePrefix, req.PhoneNumber, req.Scene)
+	c.Set("data", report)
 }

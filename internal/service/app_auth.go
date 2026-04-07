@@ -169,6 +169,156 @@ func (a *AppAuth) SendPhoneCode(ctx context.Context, tenantID, phonePrefix, phon
 	return nil
 }
 
+func appendSMSTestStep(resp *model.SendTestSMSResp, name string, ok bool, detail string) {
+	resp.Steps = append(resp.Steps, model.SendTestSMSRespStep{
+		Name:   name,
+		OK:     ok,
+		Detail: detail,
+	})
+}
+
+func explainErrcodeDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	if ec, ok := err.(*errcode.Error); ok {
+		if ec.UseCustomMsg && strings.TrimSpace(ec.CustomMsg) != "" {
+			return ec.CustomMsg
+		}
+
+		if dataMap, ok := ec.Data.(map[string]interface{}); ok {
+			if msg, ok := dataMap["error"].(string); ok && strings.TrimSpace(msg) != "" {
+				raw, marshalErr := json.Marshal(dataMap)
+				if marshalErr == nil {
+					return fmt.Sprintf("%s | details=%s", msg, string(raw))
+				}
+				return msg
+			}
+			raw, marshalErr := json.Marshal(dataMap)
+			if marshalErr == nil {
+				return string(raw)
+			}
+		}
+
+		return fmt.Sprintf("errcode=%d", ec.Code)
+	}
+
+	return err.Error()
+}
+
+func (a *AppAuth) DebugSendPhoneCode(ctx context.Context, tenantID, phonePrefix, phoneNumber, scene string) *model.SendTestSMSResp {
+	phone := normalizePhone(phonePrefix, phoneNumber)
+	scene = strings.ToUpper(strings.TrimSpace(scene))
+	resp := &model.SendTestSMSResp{
+		Success: false,
+		Summary: "短信验证码调试失败",
+		Phone:   phone,
+		Scene:   scene,
+		Steps:   make([]model.SendTestSMSRespStep, 0, 6),
+	}
+
+	if strings.TrimSpace(tenantID) == "" {
+		appendSMSTestStep(resp, "租户识别", false, "tenant_id 为空，无法定位 APP 认证模板配置")
+		return resp
+	}
+	appendSMSTestStep(resp, "租户识别", true, fmt.Sprintf("tenant_id=%s", tenantID))
+
+	if strings.TrimSpace(phone) == "" {
+		appendSMSTestStep(resp, "手机号参数", false, "phone is empty")
+		return resp
+	}
+	appendSMSTestStep(resp, "手机号参数", true, fmt.Sprintf("normalized_phone=%s", phone))
+
+	if scene == "" {
+		appendSMSTestStep(resp, "业务场景", false, "scene is empty")
+		return resp
+	}
+	appendSMSTestStep(resp, "业务场景", true, fmt.Sprintf("scene=%s", scene))
+
+	tpl, err := dal.GetAuthMessageTemplate(ctx, tenantID, dal.TemplateChannelSMS, scene)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		appendSMSTestStep(resp, "APP认证短信模板", false, explainErrcodeDetail(err))
+		return resp
+	}
+	if tpl == nil {
+		appendSMSTestStep(resp, "APP认证短信模板", false, fmt.Sprintf("auth_message_templates 未配置 tenant_id=%s channel=SMS scene=%s", tenantID, scene))
+		return resp
+	}
+
+	templateCode := ""
+	if tpl.ProviderTemplateCode != nil {
+		templateCode = strings.TrimSpace(*tpl.ProviderTemplateCode)
+	}
+	appendSMSTestStep(
+		resp,
+		"APP认证短信模板",
+		tpl.Status == dal.TemplateStatusOpen,
+		fmt.Sprintf("status=%s provider=%s provider_template_code=%s", tpl.Status, SafeDeref(tpl.Provider), templateCode),
+	)
+	if tpl.Status != dal.TemplateStatusOpen {
+		return resp
+	}
+
+	code, err := a.sendCode(ctx, tenantID, dal.TemplateChannelSMS, scene, phone)
+	if err != nil {
+		appendSMSTestStep(resp, "验证码生成与缓存", false, explainErrcodeDetail(err))
+		return resp
+	}
+	appendSMSTestStep(resp, "验证码生成与缓存", true, fmt.Sprintf("已生成 6 位验证码并写入 Redis，有效期 %s", AuthCodeTTL))
+
+	providerResult, err := GroupApp.NotificationServicesConfig.SendSMSByTemplateDetailed(ctx, tenantID, phone, templateCode, map[string]string{"code": code})
+	if providerResult != nil {
+		resp.Provider = providerResult.Provider
+		resp.TemplateCode = providerResult.TemplateCode
+		resp.DefaultTemplateCode = providerResult.DefaultTemplateCode
+		resp.SignName = providerResult.SignName
+		resp.Endpoint = providerResult.Endpoint
+		resp.RequestID = providerResult.RequestID
+		resp.ProviderCode = providerResult.ProviderCode
+		resp.ProviderMessage = providerResult.ProviderMessage
+	}
+	if err != nil {
+		detail := explainErrcodeDetail(err)
+		if providerResult != nil {
+			detail = strings.TrimSpace(fmt.Sprintf(
+				"%s | provider=%s endpoint=%s sign_name=%s template=%s default_template=%s provider_code=%s provider_message=%s request_id=%s",
+				detail,
+				providerResult.Provider,
+				providerResult.Endpoint,
+				providerResult.SignName,
+				providerResult.TemplateCode,
+				providerResult.DefaultTemplateCode,
+				providerResult.ProviderCode,
+				providerResult.ProviderMessage,
+				providerResult.RequestID,
+			))
+		}
+		appendSMSTestStep(resp, "短信服务发送", false, detail)
+		return resp
+	}
+
+	appendSMSTestStep(
+		resp,
+		"短信服务发送",
+		true,
+		fmt.Sprintf(
+			"provider=%s endpoint=%s sign_name=%s template=%s provider_code=%s provider_message=%s request_id=%s",
+			resp.Provider,
+			resp.Endpoint,
+			resp.SignName,
+			resp.TemplateCode,
+			resp.ProviderCode,
+			resp.ProviderMessage,
+			resp.RequestID,
+		),
+	)
+
+	resp.Success = true
+	resp.Summary = "短信验证码发送成功，已走完整注册验证码链路"
+	return resp
+}
+
 func (a *AppAuth) PhoneLoginByCode(ctx context.Context, tenantID, phonePrefix, phoneNumber, verifyCode string) (*model.LoginRsp, error) {
 	phone := normalizePhone(phonePrefix, phoneNumber)
 	if err := a.verifyCode(ctx, tenantID, dal.TemplateChannelSMS, dal.TemplateSceneLogin, phone, verifyCode); err != nil {

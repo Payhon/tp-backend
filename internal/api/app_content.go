@@ -24,7 +24,7 @@ type AppContentApi struct{}
 // @Produce json
 // @Param X-TenantID header string false "租户ID（可选；缺省使用第一个租户）"
 // @Param content_key path string true "内容Key(user_policy/privacy_policy/contact_service/about_us)"
-// @Param appid query string true "应用AppID"
+// @Param appid query string false "应用AppID（公开页可省略，默认回退租户下首个应用）"
 // @Param lang query string false "语言(zh-CN/en-US)"
 // @Success 200 {object} model.AppContentPageResp
 // @Router /api/v1/app/content/pages/{content_key} [get]
@@ -39,7 +39,11 @@ func (*AppContentApi) GetPageForApp(c *gin.Context) {
 	if req.Lang != nil {
 		lang = *req.Lang
 	}
-	data, err := service.GroupApp.AppContent.GetPageForApp(c.Request.Context(), tenantHeader, req.AppID, contentKey, lang)
+	appID := ""
+	if req.AppID != nil {
+		appID = *req.AppID
+	}
+	data, err := service.GroupApp.AppContent.GetPageForApp(c.Request.Context(), tenantHeader, appID, contentKey, lang)
 	if err != nil {
 		c.Error(err)
 		return

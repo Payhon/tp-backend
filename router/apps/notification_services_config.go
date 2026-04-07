@@ -19,5 +19,6 @@ func (*NotificationServicesConfig) Init(Router *gin.RouterGroup) {
 
 		// 调试
 		url.POST("e-mail/test", api.Controllers.NotificationServicesConfigApi.SendTestEmail)
+		url.POST("sms/test", api.Controllers.NotificationServicesConfigApi.SendTestSMS)
 	}
 }

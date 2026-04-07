@@ -24,6 +24,22 @@ import (
 
 type NotificationServicesConfig struct{}
 
+func normalizeAliyunSMSPhone(phone string) string {
+	normalized := strings.TrimSpace(phone)
+	replacer := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "")
+	normalized = replacer.Replace(normalized)
+
+	// 当前接入的是阿里云国内短信服务，+86 / 86 前缀应转成 11 位手机号。
+	if strings.HasPrefix(normalized, "+86") {
+		return strings.TrimPrefix(normalized, "+86")
+	}
+	if strings.HasPrefix(normalized, "86") && len(normalized) == 13 {
+		return normalized[2:]
+	}
+
+	return normalized
+}
+
 // 统一的通知历史记录保存方法
 func (n *NotificationServicesConfig) saveNotificationHistory(notificationType, tenantID, target, content, status string, remark *string) error {
 	history := &model.NotificationHistory{
@@ -233,48 +249,70 @@ func (*NotificationServicesConfig) SendTestEmail(req *model.SendTestEmailReq) er
 // - templateCode 为空时，回退使用 notification_services_config(SME_CODE) 中的默认 template_code
 // - params 为短信模板参数（会被序列化为 JSON 字符串）
 func (*NotificationServicesConfig) SendSMSByTemplate(ctx context.Context, tenantID, phone, templateCode string, params map[string]string) error {
+	_, err := GroupApp.NotificationServicesConfig.SendSMSByTemplateDetailed(ctx, tenantID, phone, templateCode, params)
+	return err
+}
+
+func (*NotificationServicesConfig) SendSMSByTemplateDetailed(ctx context.Context, tenantID, phone, templateCode string, params map[string]string) (*model.SendSMSProviderResult, error) {
+	result := &model.SendSMSProviderResult{
+		Provider: "ALIYUN",
+	}
+	providerPhone := normalizeAliyunSMSPhone(phone)
+
 	c, err := dal.GetNotificationServicesConfigByType(model.NoticeType_SME_CODE)
 	if err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+		result.ProviderMessage = err.Error()
+		return result, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 			"notice_type": model.NoticeType_SME_CODE,
 			"error":       err.Error(),
 		})
 	}
 	if c == nil || c.Config == nil {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+		result.ProviderMessage = "短信服务配置不存在"
+		return result, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"error": "短信服务配置不存在",
 		})
 	}
 	if c.Status != model.OPEN {
-		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+		result.ProviderMessage = "短信服务未开启"
+		return result, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
 			"error": "短信服务未开启",
 		})
 	}
 
 	var smeConf model.SMEConfig
 	if err := json.Unmarshal([]byte(*c.Config), &smeConf); err != nil {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+		result.ProviderMessage = err.Error()
+		return result, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"error": err.Error(),
 		})
 	}
 	if strings.ToUpper(strings.TrimSpace(smeConf.Provider)) != "ALIYUN" {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+		result.Provider = smeConf.Provider
+		result.ProviderMessage = "unsupported sms provider"
+		return result, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"error":    "unsupported sms provider",
 			"provider": smeConf.Provider,
 		})
 	}
 	if smeConf.AliyunSMSConfig == nil {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+		result.ProviderMessage = "aliyun sms config is empty"
+		return result, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"error": "aliyun sms config is empty",
 		})
 	}
 
 	ali := smeConf.AliyunSMSConfig
+	result.Endpoint = ali.Endpoint
+	result.SignName = ali.SignName
+	result.DefaultTemplateCode = ali.TemplateCode
 	if strings.TrimSpace(templateCode) == "" {
 		templateCode = ali.TemplateCode
 	}
+	result.TemplateCode = strings.TrimSpace(templateCode)
 	if strings.TrimSpace(templateCode) == "" {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+		result.ProviderMessage = "sms template_code is empty"
+		return result, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"error": "sms template_code is empty",
 		})
 	}
@@ -288,20 +326,22 @@ func (*NotificationServicesConfig) SendSMSByTemplate(ctx context.Context, tenant
 	}
 	client, err := dysmsapi.NewClient(openapiConf)
 	if err != nil {
-		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+		result.ProviderMessage = err.Error()
+		return result, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
 			"error": err.Error(),
 		})
 	}
 
 	req := &dysmsapi.SendSmsRequest{
-		PhoneNumbers:  tea.String(phone),
+		PhoneNumbers:  tea.String(providerPhone),
 		SignName:      tea.String(ali.SignName),
 		TemplateCode:  tea.String(templateCode),
 		TemplateParam: tea.String(string(paramJSON)),
 	}
 	resp, err := client.SendSms(req)
 	if err != nil {
-		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+		result.ProviderMessage = err.Error()
+		return result, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
 			"error": err.Error(),
 		})
 	}
@@ -315,19 +355,35 @@ func (*NotificationServicesConfig) SendSMSByTemplate(ctx context.Context, tenant
 			if resp.Body.Message != nil {
 				msg = *resp.Body.Message
 			}
+			if resp.Body.RequestId != nil {
+				result.RequestID = *resp.Body.RequestId
+			}
 		}
-		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
+		result.ProviderCode = code
+		result.ProviderMessage = msg
+		return result, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{
 			"error":      "sms send failed",
 			"provider":   "ALIYUN",
 			"code":       code,
 			"message":    msg,
 			"tenant_id":  tenantID,
-			"phone":      phone,
+			"phone":      providerPhone,
 			"template":   templateCode,
-			"request_id": "",
+			"request_id": result.RequestID,
 		})
 	}
-	return nil
+	if resp.Body != nil {
+		if resp.Body.Code != nil {
+			result.ProviderCode = *resp.Body.Code
+		}
+		if resp.Body.Message != nil {
+			result.ProviderMessage = *resp.Body.Message
+		}
+		if resp.Body.RequestId != nil {
+			result.RequestID = *resp.Body.RequestId
+		}
+	}
+	return result, nil
 }
 
 // Send email message

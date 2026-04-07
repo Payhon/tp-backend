@@ -1,8 +1,12 @@
 package api
 
 import (
+	"strings"
+
+	"project/internal/middleware"
 	"project/internal/model"
 	"project/internal/service"
+	"project/pkg/errcode"
 	"project/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -45,6 +49,29 @@ func (*AppManageApi) GetApp(c *gin.Context) {
 	id := c.Param("id")
 	claims := c.MustGet("claims").(*utils.UserClaims)
 	data, err := service.GroupApp.AppManage.GetApp(c.Request.Context(), id, claims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// GetPublicAppInfo 公开应用信息
+// @Summary 公开应用信息
+// @Tags APP-Manage
+// @Produce json
+// @Param X-TenantID header string true "租户ID"
+// @Param appid query string true "应用AppID"
+// @Success 200 {object} model.AppPublicInfoResp
+// @Router /api/v1/app/public/info [get]
+func (*AppManageApi) GetPublicAppInfo(c *gin.Context) {
+	appID := strings.TrimSpace(c.Query("appid"))
+	if appID == "" {
+		c.Error(errcode.WithData(errcode.CodeParamError, map[string]interface{}{"appid": "required"}))
+		return
+	}
+	tenantID := middleware.GetTenantIDFromHeader(c)
+	data, err := service.GroupApp.AppManage.GetPublicAppInfo(c.Request.Context(), tenantID, appID)
 	if err != nil {
 		c.Error(err)
 		return

@@ -99,10 +99,16 @@ var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
 func normalizeLang(lang string) string {
 	l := strings.TrimSpace(lang)
-	if strings.EqualFold(l, "zh-cn") {
+	switch {
+	case l == "":
+		return langZhCN
+	case strings.EqualFold(l, "zh"), strings.EqualFold(l, "zh-cn"):
+		return langZhCN
+	case strings.EqualFold(l, "en"), strings.EqualFold(l, "en-us"):
+		return langEnUS
+	default:
 		return langZhCN
 	}
-	return langEnUS
 }
 
 func markdownToHTML(markdownText string) string {
@@ -170,6 +176,22 @@ func getAppByAppID(ctx context.Context, tenantID, appid string) (*appRef, error)
 	return &a, nil
 }
 
+func getFirstAppByTenant(ctx context.Context, tenantID string) (*appRef, error) {
+	var a appRef
+	if err := global.DB.WithContext(ctx).Table("apps").
+		Select("id, appid").
+		Where("tenant_id = ?", tenantID).
+		Order("created_at ASC NULLS LAST, id ASC").
+		Limit(1).
+		Scan(&a).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if a.ID == "" {
+		return nil, errcode.New(errcode.CodeNotFound)
+	}
+	return &a, nil
+}
+
 func ensureAppOwned(ctx context.Context, tenantID, appID string) error {
 	var id string
 	if err := global.DB.WithContext(ctx).Table("apps").
@@ -200,9 +222,19 @@ func (*AppContent) GetPageForApp(ctx context.Context, tenantHeader, appid, conte
 	}
 	lang = normalizeLang(lang)
 
-	app, err := getAppByAppID(ctx, tenantID, appid)
-	if err != nil {
-		return nil, err
+	var (
+		app *appRef
+	)
+	if strings.TrimSpace(appid) != "" {
+		app, err = getAppByAppID(ctx, tenantID, appid)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		app, err = getFirstAppByTenant(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	type pageRow struct {
@@ -236,15 +268,27 @@ func (*AppContent) GetPageForApp(ctx context.Context, tenantHeader, appid, conte
 	if err := db.Select("id, title, content_markdown, content_html, updated_at").Limit(1).Scan(&tr).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
-	if tr.ID == "" && lang != langEnUS {
-		if err := global.DB.WithContext(ctx).Table("app_content_page_i18n").
-			Select("id, title, content_markdown, content_html, updated_at").
-			Where("page_id = ? AND lang = ?", p.ID, langEnUS).
-			Limit(1).
-			Scan(&tr).Error; err != nil {
-			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	if tr.ID == "" {
+		fallbackOrder := make([]string, 0, 2)
+		if lang != langZhCN {
+			fallbackOrder = append(fallbackOrder, langZhCN)
 		}
-		lang = langEnUS
+		if lang != langEnUS {
+			fallbackOrder = append(fallbackOrder, langEnUS)
+		}
+		for _, fallbackLang := range fallbackOrder {
+			if err := global.DB.WithContext(ctx).Table("app_content_page_i18n").
+				Select("id, title, content_markdown, content_html, updated_at").
+				Where("page_id = ? AND lang = ?", p.ID, fallbackLang).
+				Limit(1).
+				Scan(&tr).Error; err != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+			if tr.ID != "" {
+				lang = fallbackLang
+				break
+			}
+		}
 	}
 	if tr.ID == "" {
 		return nil, errcode.New(errcode.CodeNotFound)
