@@ -231,6 +231,16 @@ func (s *File) UpsertFileStorageConfig(ctx context.Context, req *model.UpsertFil
 	return dal.UpsertFileStorageConfig(ctx, row)
 }
 
+func validateUploadBizType(fileName, bizType string) error {
+	if err := utils.CheckPath(bizType); err != nil {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"type": "invalid"})
+	}
+	if !utils.ValidateFileType(fileName, bizType) {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"type": "file type not allowed"})
+	}
+	return nil
+}
+
 func (s *File) UploadFile(ctx context.Context, claims *utils.UserClaims, scheme, host string, file *multipart.FileHeader, bizType string) (*model.UploadFileRsp, error) {
 	if claims == nil || claims.TenantID == "" {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"tenant_id": "missing"})
@@ -239,12 +249,8 @@ func (s *File) UploadFile(ctx context.Context, claims *utils.UserClaims, scheme,
 		return nil, errcode.New(errcode.CodeFileEmpty)
 	}
 
-	// 文件类型检查（沿用原逻辑）
-	if err := utils.CheckPath(bizType); err != nil {
-		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"type": "invalid"})
-	}
-	if !utils.ValidateFileType(file.Filename, bizType) {
-		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"type": "file type not allowed"})
+	if err := validateUploadBizType(file.Filename, bizType); err != nil {
+		return nil, err
 	}
 
 	cfg, _, err := s.getEffectiveStorageConfig(ctx)
@@ -527,6 +533,9 @@ func (s *File) CreateCloudUploadCredential(ctx context.Context, claims *utils.Us
 	if claims == nil || claims.TenantID == "" {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"tenant_id": "missing"})
 	}
+	if err := validateUploadBizType(req.FileName, req.BizType); err != nil {
+		return nil, err
+	}
 	cfg, _, err := s.getEffectiveStorageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -635,6 +644,9 @@ func (s *File) CreateCloudUploadCredential(ctx context.Context, claims *utils.Us
 func (s *File) RegisterCloudFile(ctx context.Context, claims *utils.UserClaims, req *model.RegisterCloudFileReq) (*model.UploadFileRsp, error) {
 	if claims == nil || claims.TenantID == "" {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"tenant_id": "missing"})
+	}
+	if err := validateUploadBizType(req.FileName, req.BizType); err != nil {
+		return nil, err
 	}
 	cfg, _, err := s.getEffectiveStorageConfig(ctx)
 	if err != nil {

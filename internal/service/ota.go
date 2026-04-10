@@ -1,8 +1,14 @@
 package service
 
 import (
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -11,7 +17,6 @@ import (
 	query "project/internal/query"
 	"project/mqtt/publish"
 	"project/pkg/common"
-	global "project/pkg/global"
 	utils "project/pkg/utils"
 
 	"github.com/go-basic/uuid"
@@ -19,6 +24,49 @@ import (
 )
 
 type OTA struct{}
+
+func resolveSignatureHash(signType string) (hash.Hash, error) {
+	switch strings.ToUpper(strings.TrimSpace(signType)) {
+	case "", "SHA256":
+		return sha256.New(), nil
+	case "MD5":
+		return md5.New(), nil
+	default:
+		return nil, fmt.Errorf("unsupported signature type: %s", signType)
+	}
+}
+
+func signPackageSource(packageURL, signType string) (string, error) {
+	raw := strings.TrimSpace(packageURL)
+	if raw == "" {
+		return "", fmt.Errorf("package_url is empty")
+	}
+
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		hasher, err := resolveSignatureHash(signType)
+		if err != nil {
+			return "", err
+		}
+
+		resp, err := http.Get(raw)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return "", fmt.Errorf("download package failed: HTTP %d", resp.StatusCode)
+		}
+
+		if _, err = io.Copy(hasher, resp.Body); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(hasher.Sum(nil)), nil
+	}
+
+	filePath := strings.Replace(raw, "/api/v1/ota/download", "", 1)
+	return utils.FileSign(filePath, signType)
+}
 
 func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenantID string) error {
 	var ota = model.OtaUpgradePackage{}
@@ -34,8 +82,13 @@ func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenan
 
 	// 生成文件签名
 	fileurl := *req.PackageUrl
-	filepath := strings.Replace(fileurl, "/api/v1/ota/download", "", 1)
-	signature, err := utils.FileSign(filepath, *req.SignatureType)
+	signatureType := "SHA256"
+	if req.SignatureType != nil && strings.TrimSpace(*req.SignatureType) != "" {
+		signatureType = *req.SignatureType
+	}
+	ota.SignatureType = &signatureType
+
+	signature, err := signPackageSource(fileurl, signatureType)
 	if err != nil {
 		return err
 	}
@@ -82,8 +135,13 @@ func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error
 	if req.PackageUrl != oldota.PackageURL {
 		// 生成文件签名
 		fileurl := *req.PackageUrl
-		filepath := strings.Replace(fileurl, "/api/v1/ota/download", "", 1)
-		signature, err := utils.FileSign(filepath, *req.SignatureType)
+		signatureType := "SHA256"
+		if req.SignatureType != nil && strings.TrimSpace(*req.SignatureType) != "" {
+			signatureType = *req.SignatureType
+		} else if oldota.SignatureType != nil && strings.TrimSpace(*oldota.SignatureType) != "" {
+			signatureType = *oldota.SignatureType
+		}
+		signature, err := signPackageSource(fileurl, signatureType)
 		if err != nil {
 			return err
 		}
@@ -273,7 +331,11 @@ func (*OTA) PushOTAUpgradePackage(taskDetail *model.OtaUpgradeTaskDetail) error 
 	var otamsgparams = make(map[string]interface{})
 	otamsgparams["version"] = otapackage.Version
 	otamsgparams["size"] = "0"
-	otamsgparams["url"] = global.OtaAddress + strings.TrimPrefix(*otapackage.PackageURL, ".")
+	downloadURL := buildOtaDownloadURL(otapackage.PackageURL)
+	if downloadURL == nil {
+		return fmt.Errorf("ota package url is empty")
+	}
+	otamsgparams["url"] = *downloadURL
 	otamsgparams["signMethod"] = otapackage.SignatureType
 	otamsgparams["sign"] = ""
 	otamsgparams["module"] = otapackage.Module

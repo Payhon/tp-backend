@@ -67,10 +67,20 @@ func FileSign(filePath string, sign string) (string, error) {
 
 // 允许的文件扩展名映射
 var (
-	// 允许的文件扩展名映射
-	allowExtMap = map[string]bool{
+	// 图片类上传允许的扩展名映射
+	allowImageExtMap = map[string]bool{
 		".jpg": true, ".jpeg": true, ".png": true, ".svg": true,
-		".ico": true, ".gif": true, ".xlsx": true, ".xls": true, ".csv": true,
+		".ico": true, ".gif": true, ".webp": true,
+	}
+
+	// APP 安装包允许的扩展名映射
+	allowAppPackageMap = map[string]bool{
+		".apk": true, ".hap": true, ".app": true,
+	}
+
+	// WGT 更新包允许的扩展名映射
+	allowWgtPackageMap = map[string]bool{
+		".wgt": true,
 	}
 
 	// 允许的升级包文件扩展名映射
@@ -91,8 +101,17 @@ var (
 // 返回值：如果文件类型允许上传则返回 true，否则返回 false
 func ValidateFileType(filename, fileType string) bool {
 	ext := strings.ToLower(path.Ext(filename))
+	if ext == "" {
+		return false
+	}
 
 	switch fileType {
+	case "image":
+		return allowImageExtMap[ext]
+	case "appPackage":
+		return allowAppPackageMap[ext]
+	case "wgtPackage":
+		return allowWgtPackageMap[ext]
 	case "upgradePackage":
 		return allowUpgradePackageMap[ext]
 	case "importBatch":
@@ -101,7 +120,8 @@ func ValidateFileType(filename, fileType string) bool {
 		// 不做限制
 		return true
 	default:
-		return allowExtMap[ext]
+		// 兼容历史未显式枚举的图片/表格上传类型。
+		return allowImageExtMap[ext] || allowImportBatchMap[ext]
 	}
 }
 
