@@ -3,6 +3,7 @@ package model
 type UsersRes struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
+	Username       string `json:"username"`
 	PhoneNum       string `json:"phone_num"`
 	Email          string `json:"email"`
 	Authority      string `json:"authority"`

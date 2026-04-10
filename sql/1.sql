@@ -787,6 +787,7 @@ SELECT create_hypertable('telemetry_datas', 'ts',chunk_time_interval => 86400000
 CREATE TABLE public.users (
 	id varchar(36) NOT NULL,
 	"name" varchar(255) NULL,
+	username varchar(255) NULL,
 	phone_number varchar(50) NOT NULL,
 	email varchar(255) NOT NULL,
 	status varchar(2) NULL, -- 用户状态 F-冻结 N-正常
@@ -804,9 +805,11 @@ COMMENT ON TABLE public.users IS '用户';
 
 -- Column comments
 
+COMMENT ON COLUMN public.users.username IS '账号用户名';
 COMMENT ON COLUMN public.users.status IS '用户状态 F-冻结 N-正常';
 COMMENT ON COLUMN public.users.authority IS '权限类型 TENANT_ADMIN-租户管理员 TENANT_USER-租户用户 SYS_ADMIN-系统管理员';
 
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS username varchar(255) NULL;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS dealer_id varchar(36) NULL;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS org_id varchar(36) NULL;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS user_kind varchar(50) NULL DEFAULT 'END_USER';
@@ -842,6 +845,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_users_tenant_main_account
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_org_main_account
 	ON public.users(tenant_id, org_id)
 	WHERE authority = 'TENANT_USER' AND user_kind = 'ORG_USER' AND is_main = 1 AND org_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_tenant_username_ci
+	ON public.users(tenant_id, LOWER(username))
+	WHERE username IS NOT NULL AND username <> '';
 
 
 -- public.vis_dashboard definition
@@ -1750,8 +1756,8 @@ INSERT INTO public.sys_dict_language (id, dict_id, language_code, "translation")
 INSERT INTO public.sys_function (id, "name", enable_flag, description, remark) VALUES('function_1', 'use_captcha', 'disable', '验证码登陆', NULL);
 INSERT INTO public.sys_function (id, "name", enable_flag, description, remark) VALUES('function_2', 'enable_reg', 'disable', '租户注册', NULL);
 
-INSERT INTO public.users (id, "name", phone_number, email, status, authority, "password", tenant_id, user_kind, is_main, remark, additional_info, created_at, updated_at) VALUES('00000000-4fe9-b409-67c3-000000000000', 'admin', '+86 13100000000', 'root@system.cn', 'N', 'SYS_ADMIN', '$2a$10$dPDIqoOEt.rSDwEWsSHCqe9/PJEsnWvRK76DwXVZUFM/7J0D3ikfq', 'aaaaaa', 'ORG_USER', 1, 'dolor', '{}'::json, NULL, '2024-03-06 14:52:52.390');
-INSERT INTO public.users (id, "name", phone_number, email, status, authority, "password", tenant_id, user_kind, is_main, remark, additional_info, created_at, updated_at) VALUES('11111111-4fe9-b409-67c3-111111111111', '富嘉电源', '+86 13166666666', 'admin@fjia.com', 'N', 'TENANT_ADMIN', '$2a$10$zvPRDn0okgLt1t/OjQ.K5eZjGc3Mva7tmA8VlASsP8flfv0PwEz76', 'd616bcbb', 'ORG_USER', 1, '', '{}'::json, '2024-06-05 16:48:11.097', '2024-06-05 16:48:11.097');
+INSERT INTO public.users (id, "name", username, phone_number, email, status, authority, "password", tenant_id, user_kind, is_main, remark, additional_info, created_at, updated_at) VALUES('00000000-4fe9-b409-67c3-000000000000', 'admin', 'root@system.cn', '+86 13100000000', 'root@system.cn', 'N', 'SYS_ADMIN', '$2a$10$dPDIqoOEt.rSDwEWsSHCqe9/PJEsnWvRK76DwXVZUFM/7J0D3ikfq', 'aaaaaa', 'ORG_USER', 1, 'dolor', '{}'::json, NULL, '2024-03-06 14:52:52.390');
+INSERT INTO public.users (id, "name", username, phone_number, email, status, authority, "password", tenant_id, user_kind, is_main, remark, additional_info, created_at, updated_at) VALUES('11111111-4fe9-b409-67c3-111111111111', '富嘉电源', 'admin@fjia.com', '+86 13166666666', 'admin@fjia.com', 'N', 'TENANT_ADMIN', '$2a$10$zvPRDn0okgLt1t/OjQ.K5eZjGc3Mva7tmA8VlASsP8flfv0PwEz76', 'd616bcbb', 'ORG_USER', 1, '', '{}'::json, '2024-06-05 16:48:11.097', '2024-06-05 16:48:11.097');
 
 INSERT INTO public.data_policy (id, data_type, retention_days, last_cleanup_time, last_cleanup_data_time, enabled, remark) VALUES('b', '2', 15, '2024-06-05 10:02:00.003', '2024-05-21 10:02:00.003', '1', '');
 INSERT INTO public.data_policy (id, data_type, retention_days, last_cleanup_time, last_cleanup_data_time, enabled, remark) VALUES('a', '1', 15, '2024-06-05 10:02:00.003', '2024-05-21 10:02:00.101', '1', '');

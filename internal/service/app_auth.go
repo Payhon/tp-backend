@@ -421,6 +421,7 @@ func (a *AppAuth) PhoneRegister(ctx context.Context, tenantID, phonePrefix, phon
 	u := &model.User{
 		ID:                  userID,
 		Name:                nil,
+		Username:            defaultUsernameForPhone(phone),
 		PhoneNumber:         phone,
 		Email:               email,
 		Status:              StringPtr("N"),
@@ -497,6 +498,7 @@ func (a *AppAuth) EmailRegister(ctx context.Context, tenantID, email, verifyCode
 	u := &model.User{
 		ID:                  userID,
 		Name:                nil,
+		Username:            defaultUsernameForEmail(email),
 		PhoneNumber:         phone,
 		Email:               email,
 		Status:              StringPtr("N"),
@@ -651,63 +653,7 @@ func (a *AppAuth) BindPhone(ctx context.Context, tenantID, userID, phonePrefix, 
 		return err
 	}
 
-	// 防止手机号被其它用户占用
-	if exists, err := dal.CheckPhoneNumberExists(phone, userID); err != nil {
-		return err
-	} else if exists {
-		return errcode.New(errcode.CodePhoneDuplicated)
-	}
-
-	now := time.Now().UTC()
-	return global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 若已存在该身份，则视为已绑定
-		if _, err := dal.GetUserIdentity(ctx, tenantID, dal.IdentityTypePhone, phone); err == nil {
-			return errcode.New(errcode.CodePhoneDuplicated)
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-
-		// 若用户暂无任何身份，则该手机号作为主身份
-		list, err := dal.ListUserIdentitiesByUser(ctx, tenantID, userID)
-		if err != nil {
-			return err
-		}
-		isPrimary := len(list) == 0
-
-		passHash := ""
-		user, err := dal.GetUsersById(userID)
-		if err == nil && user != nil {
-			passHash = user.Password
-		}
-		var passHashPtr *string
-		if passHash != "" {
-			passHashPtr = &passHash
-		}
-
-		identity := &dal.UserIdentity{
-			ID:             uuid.New(),
-			UserID:         userID,
-			TenantID:       tenantID,
-			IdentityType:   dal.IdentityTypePhone,
-			Identifier:     phone,
-			CredentialType: dal.CredentialTypePassword,
-			PasswordHash:   passHashPtr,
-			VerifiedAt:     &now,
-			IsPrimary:      isPrimary,
-			Status:         "ACTIVE",
-			Extra:          StringPtr("{}"),
-			CreatedAt:      now,
-			UpdatedAt:      now,
-		}
-
-		if err := dal.CreateUserIdentity(ctx, tx, identity); err != nil {
-			return err
-		}
-		return tx.Table("users").Where("id = ?", userID).Updates(map[string]interface{}{
-			"phone_number": phone,
-			"updated_at":   now,
-		}).Error
-	})
+	return a.upsertPhoneBinding(ctx, tenantID, userID, phone)
 }
 
 func (a *AppAuth) BindEmail(ctx context.Context, tenantID, userID, email, verifyCode string) error {
@@ -922,14 +868,14 @@ func (a *AppAuth) UpdateProfile(ctx context.Context, tenantID, userID string, re
 	return global.DB.WithContext(ctx).Table("users").Where("id = ?", userID).Updates(updates).Error
 }
 
-// SetUsername 设置用户名（仅允许设置一次），并校验租户内唯一
-func (a *AppAuth) SetUsername(ctx context.Context, tenantID, userID, name string) error {
-	name = strings.TrimSpace(name)
-	if tenantID == "" || userID == "" || name == "" {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/user_id/name is empty"})
+// SetUsername 设置账号名（仅允许设置一次），并校验租户内唯一
+func (a *AppAuth) SetUsername(ctx context.Context, tenantID, userID, username string) error {
+	username = strings.TrimSpace(username)
+	if tenantID == "" || userID == "" || username == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/user_id/username is empty"})
 	}
-	if len([]rune(name)) < 2 || len([]rune(name)) > 50 {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"field": "name", "error": "name length must be 2-50"})
+	if len([]rune(username)) < 2 || len([]rune(username)) > 50 {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"field": "username", "error": "username length must be 2-50"})
 	}
 
 	user, err := dal.GetUsersById(userID)
@@ -952,30 +898,20 @@ func (a *AppAuth) SetUsername(ctx context.Context, tenantID, userID, name string
 	}
 
 	// 已设置则不可修改
-	if user.Name != nil && strings.TrimSpace(*user.Name) != "" {
+	if trimStringPtr(user.Username) != nil {
 		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
 			"error": "username already set",
 		})
 	}
 
 	// 校验租户内唯一（不区分大小写）
-	var cnt int64
-	if err := global.DB.WithContext(ctx).
-		Table("users").
-		Where("tenant_id = ? AND LOWER(name) = LOWER(?) AND id <> ? AND name IS NOT NULL AND name <> ''", tenantID, name, userID).
-		Count(&cnt).Error; err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
-	}
-	if cnt > 0 {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-			"field": "name",
-			"error": "name already exists",
-		})
+	if err := a.ensureUsernameAvailableForUser(ctx, global.DB.WithContext(ctx), tenantID, userID, username); err != nil {
+		return err
 	}
 
 	now := time.Now().UTC()
 	return global.DB.WithContext(ctx).Table("users").Where("id = ?", userID).Updates(map[string]interface{}{
-		"name":       name,
+		"username":   username,
 		"updated_at": now,
 	}).Error
 }
@@ -1028,6 +964,7 @@ func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code string) (*model.
 	u := &model.User{
 		ID:                  userID,
 		Name:                nil,
+		Username:            nil,
 		PhoneNumber:         "",
 		Email:               placeholderEmail(userID),
 		Status:              StringPtr("N"),
@@ -1278,19 +1215,68 @@ func (a *AppAuth) wxGetPhoneNumber(ctx context.Context, accessToken, phoneCode s
 }
 
 func (a *AppAuth) bindPhoneNoVerify(ctx context.Context, tenantID, userID, phone string) error {
-	// 防止手机号被其它用户占用
+	return a.upsertPhoneBinding(ctx, tenantID, userID, phone)
+}
+
+func (a *AppAuth) ensureUsernameAvailableForUser(ctx context.Context, db *gorm.DB, tenantID, userID, username string) error {
+	var cnt int64
+	if err := db.WithContext(ctx).
+		Table("users").
+		Where("tenant_id = ? AND LOWER(username) = LOWER(?) AND id <> ? AND username IS NOT NULL AND username <> ''", tenantID, username, userID).
+		Count(&cnt).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if cnt > 0 {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"field": "username",
+			"error": "username already exists",
+		})
+	}
+	return nil
+}
+
+func (a *AppAuth) upsertPhoneBinding(ctx context.Context, tenantID, userID, phone string) error {
 	if exists, err := dal.CheckPhoneNumberExists(phone, userID); err != nil {
 		return err
 	} else if exists {
 		return errcode.New(errcode.CodePhoneDuplicated)
 	}
 
+	user, err := dal.GetUsersById(userID)
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_user",
+			"error":     err.Error(),
+		})
+	}
+	if user.TenantID == nil || *user.TenantID != tenantID {
+		return errcode.WithData(errcode.CodeNoPermission, map[string]interface{}{
+			"error": "tenant mismatch",
+		})
+	}
+
 	now := time.Now().UTC()
 	return global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := dal.GetUserIdentity(ctx, tenantID, dal.IdentityTypePhone, phone); err == nil {
+		var targetIdentity dal.UserIdentity
+		err := tx.WithContext(ctx).
+			Table("user_identities").
+			Where("tenant_id = ? AND identity_type = ? AND identifier = ?", tenantID, dal.IdentityTypePhone, phone).
+			Take(&targetIdentity).Error
+		if err == nil && targetIdentity.UserID != userID {
 			return errcode.New(errcode.CodePhoneDuplicated)
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+
+		var currentPhoneIdentity dal.UserIdentity
+		currentPhoneIdentityErr := tx.WithContext(ctx).
+			Table("user_identities").
+			Where("tenant_id = ? AND user_id = ? AND identity_type = ?", tenantID, userID, dal.IdentityTypePhone).
+			Order("is_primary DESC, created_at ASC").
+			Take(&currentPhoneIdentity).Error
+		if currentPhoneIdentityErr != nil && !errors.Is(currentPhoneIdentityErr, gorm.ErrRecordNotFound) {
+			return currentPhoneIdentityErr
 		}
 
 		list, err := dal.ListUserIdentitiesByUser(ctx, tenantID, userID)
@@ -1299,38 +1285,64 @@ func (a *AppAuth) bindPhoneNoVerify(ctx context.Context, tenantID, userID, phone
 		}
 		isPrimary := len(list) == 0
 
-		passHash := ""
-		user, err := dal.GetUsersById(userID)
-		if err == nil && user != nil {
-			passHash = user.Password
-		}
 		var passHashPtr *string
-		if passHash != "" {
+		if strings.TrimSpace(user.Password) != "" {
+			passHash := user.Password
 			passHashPtr = &passHash
 		}
 
-		identity := &dal.UserIdentity{
-			ID:             uuid.New(),
-			UserID:         userID,
-			TenantID:       tenantID,
-			IdentityType:   dal.IdentityTypePhone,
-			Identifier:     phone,
-			CredentialType: dal.CredentialTypePassword,
-			PasswordHash:   passHashPtr,
-			VerifiedAt:     &now,
-			IsPrimary:      isPrimary,
-			Status:         "ACTIVE",
-			Extra:          StringPtr("{}"),
-			CreatedAt:      now,
-			UpdatedAt:      now,
-		}
-		if err := dal.CreateUserIdentity(ctx, tx, identity); err != nil {
+		if errors.Is(currentPhoneIdentityErr, gorm.ErrRecordNotFound) {
+			identity := &dal.UserIdentity{
+				ID:             uuid.New(),
+				UserID:         userID,
+				TenantID:       tenantID,
+				IdentityType:   dal.IdentityTypePhone,
+				Identifier:     phone,
+				CredentialType: dal.CredentialTypePassword,
+				PasswordHash:   passHashPtr,
+				VerifiedAt:     &now,
+				IsPrimary:      isPrimary,
+				Status:         "ACTIVE",
+				Extra:          StringPtr("{}"),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}
+			if err := dal.CreateUserIdentity(ctx, tx, identity); err != nil {
+				return err
+			}
+		} else if currentPhoneIdentity.Identifier != phone {
+			if err := dal.UpdateUserIdentity(ctx, tx, tenantID, currentPhoneIdentity.ID, map[string]interface{}{
+				"identifier":      phone,
+				"credential_type": dal.CredentialTypePassword,
+				"password_hash":   passHashPtr,
+				"verified_at":     now,
+				"status":          "ACTIVE",
+				"updated_at":      now,
+			}); err != nil {
+				return err
+			}
+		} else if err := dal.UpdateUserIdentity(ctx, tx, tenantID, currentPhoneIdentity.ID, map[string]interface{}{
+			"credential_type": dal.CredentialTypePassword,
+			"password_hash":   passHashPtr,
+			"verified_at":     now,
+			"status":          "ACTIVE",
+			"updated_at":      now,
+		}); err != nil {
 			return err
 		}
-		return tx.Table("users").Where("id = ?", userID).Updates(map[string]interface{}{
+
+		updates := map[string]interface{}{
 			"phone_number": phone,
 			"updated_at":   now,
-		}).Error
+		}
+		if sameUsernameAsValue(user.Username, user.PhoneNumber) && strings.TrimSpace(user.PhoneNumber) != strings.TrimSpace(phone) {
+			if err := a.ensureUsernameAvailableForUser(ctx, tx, tenantID, userID, phone); err != nil {
+				return err
+			}
+			updates["username"] = phone
+		}
+
+		return tx.WithContext(ctx).Table("users").Where("id = ?", userID).Updates(updates).Error
 	})
 }
 

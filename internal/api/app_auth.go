@@ -322,7 +322,7 @@ func (*AppAuthApi) SetUsername(c *gin.Context) {
 	}
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
 	tenantID := middleware.GetTenantIDFromHeader(c)
-	if err := service.GroupApp.AppAuth.SetUsername(c.Request.Context(), tenantID, userClaims.ID, req.Name); err != nil {
+	if err := service.GroupApp.AppAuth.SetUsername(c.Request.Context(), tenantID, userClaims.ID, req.Username); err != nil {
 		c.Error(err)
 		return
 	}

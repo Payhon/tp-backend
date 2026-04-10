@@ -48,13 +48,14 @@ type UserListReq struct {
 	Email          *string `json:"email" form:"email" validate:"omitempty"`                                        // 邮箱
 	PhoneNumber    *string `json:"phone_number" form:"phone_number" validate:"omitempty,max=50"`                   // 手机号
 	Name           *string `json:"name" form:"name" validate:"omitempty,max=50"`                                   // 姓名
+	Username       *string `json:"username" form:"username" validate:"omitempty,max=255"`                          // 用户名
 	Status         *string `json:"status" form:"status" validate:"omitempty,oneof=N F"`                            // 用户状态 F-冻结 N-正常
 	Organization   *string `json:"organization" form:"organization" validate:"omitempty,max=200"`                  // 组织机构名称
 	Authority      *string `json:"authority" form:"authority" validate:"omitempty,oneof=TENANT_ADMIN TENANT_USER"` // 账号类型筛选
 	AllAuthorities *bool   `json:"all_authorities" form:"all_authorities" validate:"omitempty"`                    // 是否查询全部账号类型（默认保持原逻辑）
 	UserKind       *string `json:"user_kind" form:"user_kind" validate:"omitempty,oneof=ORG_USER END_USER"`        // 用户类型筛选
 	AllUserKinds   *bool   `json:"all_user_kinds" form:"all_user_kinds" validate:"omitempty"`                      // 是否查询全部用户类型（默认仅组织用户）
-	IsMain         *int16  `json:"is_main" form:"is_main" validate:"omitempty,oneof=0 1"`                         // 主账号筛选
+	IsMain         *int16  `json:"is_main" form:"is_main" validate:"omitempty,oneof=0 1"`                          // 主账号筛选
 	DealerID       *string `json:"dealer_id" form:"dealer_id" validate:"omitempty,max=36"`                         // 关联经销商筛选（当前仅用于前端展示/后处理）
 	OrgID          *string `json:"org_id" form:"org_id" validate:"omitempty,max=36"`                               // 归属组织筛选
 	// 地址相关查询字段
@@ -78,10 +79,10 @@ type UpdateUserReq struct {
 	UserKind        *string               `json:"user_kind" validate:"omitempty,oneof=ORG_USER END_USER"`
 	IsMain          *int16                `json:"is_main" validate:"omitempty,oneof=0 1"`
 	OrgID           *string               `json:"org_id" validate:"omitempty,max=36"`
-	Organization    *string               `json:"organization" validate:"omitempty,max=200"`      // 用户所属组织机构名称
-	Timezone        *string               `json:"timezone" validate:"omitempty,max=50"`           // 所在时区
-	DefaultLanguage *string               `json:"default_language" validate:"omitempty,max=10"`   // 默认语言
-	Address         *UpdateUserAddressReq `json:"address" validate:"omitempty"`                   // 地址信息
+	Organization    *string               `json:"organization" validate:"omitempty,max=200"`    // 用户所属组织机构名称
+	Timezone        *string               `json:"timezone" validate:"omitempty,max=50"`         // 所在时区
+	DefaultLanguage *string               `json:"default_language" validate:"omitempty,max=10"` // 默认语言
+	Address         *UpdateUserAddressReq `json:"address" validate:"omitempty"`                 // 地址信息
 }
 
 type UpdateUserInfoReq struct {

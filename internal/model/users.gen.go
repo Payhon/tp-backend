@@ -14,6 +14,7 @@ const TableNameUser = "users"
 type User struct {
 	ID                  string     `gorm:"column:id;primaryKey" json:"id"`
 	Name                *string    `gorm:"column:name" json:"name"`
+	Username            *string    `gorm:"column:username" json:"username"`
 	PhoneNumber         string     `gorm:"column:phone_number;not null" json:"phone_number"`
 	Email               string     `gorm:"column:email;not null" json:"email"`
 	Status              *string    `gorm:"column:status;comment:用户状态 F-冻结 N-正常" json:"status"`                                                 // 用户状态 F-冻结 N-正常

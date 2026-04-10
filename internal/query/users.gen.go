@@ -29,6 +29,7 @@ func newUser(db *gorm.DB, opts ...gen.DOOption) user {
 	_user.ALL = field.NewAsterisk(tableName)
 	_user.ID = field.NewString(tableName, "id")
 	_user.Name = field.NewString(tableName, "name")
+	_user.Username = field.NewString(tableName, "username")
 	_user.PhoneNumber = field.NewString(tableName, "phone_number")
 	_user.Email = field.NewString(tableName, "email")
 	_user.Status = field.NewString(tableName, "status")
@@ -60,6 +61,7 @@ type user struct {
 	ALL                 field.Asterisk
 	ID                  field.String
 	Name                field.String
+	Username            field.String
 	PhoneNumber         field.String
 	Email               field.String
 	Status              field.String // 用户状态 F-冻结 N-正常
@@ -97,6 +99,7 @@ func (u *user) updateTableName(table string) *user {
 	u.ALL = field.NewAsterisk(table)
 	u.ID = field.NewString(table, "id")
 	u.Name = field.NewString(table, "name")
+	u.Username = field.NewString(table, "username")
 	u.PhoneNumber = field.NewString(table, "phone_number")
 	u.Email = field.NewString(table, "email")
 	u.Status = field.NewString(table, "status")
@@ -132,9 +135,10 @@ func (u *user) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (u *user) fillFieldMap() {
-	u.fieldMap = make(map[string]field.Expr, 21)
+	u.fieldMap = make(map[string]field.Expr, 22)
 	u.fieldMap["id"] = u.ID
 	u.fieldMap["name"] = u.Name
+	u.fieldMap["username"] = u.Username
 	u.fieldMap["phone_number"] = u.PhoneNumber
 	u.fieldMap["email"] = u.Email
 	u.fieldMap["status"] = u.Status

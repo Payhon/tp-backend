@@ -66,7 +66,7 @@ type AppProfileUpdateReq struct {
 
 // AppSetUsernameReq 设置用户名（仅允许设置一次）
 type AppSetUsernameReq struct {
-	Name string `json:"name" validate:"required,min=2,max=50"`
+	Username string `json:"username" validate:"required,min=2,max=50"`
 }
 
 // AppWxmpBindReq 微信小程序绑定微信身份（openid）

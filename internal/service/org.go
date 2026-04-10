@@ -152,6 +152,7 @@ func (*OrgService) CreateOrg(ctx context.Context, req *model.OrgCreateReq, claim
 			u := &model.User{
 				ID:                  userID,
 				Name:                req.ContactPerson,
+				Username:            defaultUsernameForBackoffice(email, phone),
 				PhoneNumber:         phone,
 				Email:               email,
 				Status:              StringPtr("N"),

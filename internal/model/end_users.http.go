@@ -19,6 +19,7 @@ type EndUserListReq struct {
 type EndUserListItemResp struct {
 	UserID    string  `json:"user_id"`
 	UserName  *string `json:"user_name"`
+	Username  *string `json:"username"`
 	UserPhone string  `json:"user_phone"`
 
 	DeviceCount int64   `json:"device_count"`

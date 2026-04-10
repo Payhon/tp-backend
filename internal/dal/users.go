@@ -159,6 +159,7 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 		// 用户字段
 		ID                  string     `gorm:"column:id"`
 		Name                *string    `gorm:"column:name"`
+		Username            *string    `gorm:"column:username"`
 		PhoneNumber         string     `gorm:"column:phone_number"`
 		Email               string     `gorm:"column:email"`
 		Status              *string    `gorm:"column:status"`
@@ -208,6 +209,7 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 		Select(`
 			u.id,
 			u.name,
+			u.username,
 			u.phone_number,
 			u.email,
 			u.status,
@@ -264,6 +266,7 @@ func GetUserByIdWithAddress(uid string) (map[string]interface{}, error) {
 	userMap := map[string]interface{}{
 		"id":                    result.ID,
 		"name":                  result.Name,
+		"username":              result.Username,
 		"phone_number":          result.PhoneNumber,
 		"email":                 result.Email,
 		"status":                result.Status,
@@ -462,6 +465,9 @@ func GetUserListByPageWithAddress(userListReq *model.UserListReq, claims *utils.
 	}
 	if userListReq.Name != nil && *userListReq.Name != "" {
 		queryBuilder = queryBuilder.Where(q.Name.Like(fmt.Sprintf("%%%s%%", *userListReq.Name)))
+	}
+	if userListReq.Username != nil && *userListReq.Username != "" {
+		queryBuilder = queryBuilder.Where(q.Username.Like(fmt.Sprintf("%%%s%%", *userListReq.Username)))
 	}
 	if userListReq.Status != nil && *userListReq.Status != "" {
 		queryBuilder = queryBuilder.Where(q.Status.Eq(*userListReq.Status))
@@ -718,6 +724,9 @@ func (UserVo) PoToVo(userInfo *model.User) (info *model.UsersRes) {
 	}
 	if userInfo.Name != nil {
 		info.Name = *userInfo.Name
+	}
+	if userInfo.Username != nil {
+		info.Username = *userInfo.Username
 	}
 	if userInfo.Authority != nil {
 		info.Authority = *userInfo.Authority

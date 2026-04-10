@@ -20,6 +20,7 @@ func endUserListSelectSQL(orgScopeID string) (string, []interface{}) {
 	selectSQL := `
 		u.id AS user_id,
 		u.name AS user_name,
+		u.username AS username,
 		u.phone_number AS user_phone,
 		COUNT(DISTINCT d.id) AS device_count,
 		MAX(dub.binding_time) AS last_bind_at,
@@ -71,6 +72,7 @@ func (*EndUser) GetEndUserList(ctx context.Context, req model.EndUserListReq, cl
 	type row struct {
 		UserID       string     `gorm:"column:user_id"`
 		UserName     *string    `gorm:"column:user_name"`
+		Username     *string    `gorm:"column:username"`
 		UserPhone    string     `gorm:"column:user_phone"`
 		DeviceCount  int64      `gorm:"column:device_count"`
 		LastBindAt   *time.Time `gorm:"column:last_bind_at"`
@@ -86,7 +88,7 @@ func (*EndUser) GetEndUserList(ctx context.Context, req model.EndUserListReq, cl
 	selectSQL, selectArgs := endUserListSelectSQL(effectiveOrgID)
 
 	if err := base.Select(selectSQL, selectArgs...).
-		Group("u.id, u.name, u.phone_number, owner_org_id, owner_org_name").
+		Group("u.id, u.name, u.username, u.phone_number, owner_org_id, owner_org_name").
 		Order("last_bind_at DESC").
 		Offset(offset).
 		Limit(req.PageSize).
@@ -104,6 +106,7 @@ func (*EndUser) GetEndUserList(ctx context.Context, req model.EndUserListReq, cl
 		list = append(list, model.EndUserListItemResp{
 			UserID:       r.UserID,
 			UserName:     r.UserName,
+			Username:     r.Username,
 			UserPhone:    r.UserPhone,
 			DeviceCount:  r.DeviceCount,
 			LastBindAt:   lastBindAt,

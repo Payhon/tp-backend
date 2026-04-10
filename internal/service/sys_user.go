@@ -108,6 +108,7 @@ func (u *User) CreateUser(createUserReq *model.CreateUserReq, claims *utils.User
 	// uuid生成用户id
 	user.ID = uuid.New()
 	user.Name = createUserReq.Name
+	user.Username = defaultUsernameForBackoffice(createUserReq.Email, createUserReq.PhoneNumber)
 	user.PhoneNumber = createUserReq.PhoneNumber
 	user.Email = createUserReq.Email
 	user.Status = StringPtr("N")
@@ -1130,6 +1131,7 @@ func (u *User) EmailRegister(ctx context.Context, req *model.EmailRegisterReq) (
 	userInfo := &model.User{
 		ID:                  uuid.New(),
 		Name:                &req.Email,
+		Username:            defaultUsernameForBackoffice(req.Email, fmt.Sprintf("%s %s", req.PhonePrefix, req.PhoneNumber)),
 		PhoneNumber:         fmt.Sprintf("%s %s", req.PhonePrefix, req.PhoneNumber),
 		Email:               req.Email,
 		Status:              StringPtr("N"),
