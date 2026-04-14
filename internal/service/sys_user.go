@@ -981,6 +981,17 @@ func (*User) GetUserDetail(claims *utils.UserClaims) (interface{}, error) {
 			"user_id": claims.ID,
 		})
 	}
+	if avatarRaw, ok := userWithAddress["avatar_url"]; ok && avatarRaw != nil {
+		switch v := avatarRaw.(type) {
+		case *string:
+			if v != nil {
+				resolved := resolveStoredFileURL(context.Background(), *v)
+				userWithAddress["avatar_url"] = resolved
+			}
+		case string:
+			userWithAddress["avatar_url"] = resolveStoredFileURL(context.Background(), v)
+		}
+	}
 	return userWithAddress, nil
 }
 

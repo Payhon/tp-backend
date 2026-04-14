@@ -859,6 +859,7 @@ func (a *AppAuth) UpdateProfile(ctx context.Context, tenantID, userID string, re
 	if req.AvatarURL != nil {
 		av := strings.TrimSpace(*req.AvatarURL)
 		if av != "" {
+			av = resolveStoredFileURL(ctx, av)
 			updates["avatar_url"] = av
 		}
 	}
@@ -1403,8 +1404,11 @@ func (a *AppAuth) WxmpUpdateProfile(ctx context.Context, tenantID, userID string
 	updates := map[string]interface{}{
 		"updated_at": now,
 	}
+	var normalizedAvatarURL *string
 	if req.AvatarURL != nil && strings.TrimSpace(*req.AvatarURL) != "" {
-		updates["avatar_url"] = strings.TrimSpace(*req.AvatarURL)
+		avatarURL := resolveStoredFileURL(ctx, strings.TrimSpace(*req.AvatarURL))
+		normalizedAvatarURL = &avatarURL
+		updates["avatar_url"] = avatarURL
 	}
 
 	// 追加到 additional_info.wx_profile
@@ -1417,7 +1421,7 @@ func (a *AppAuth) WxmpUpdateProfile(ctx context.Context, tenantID, userID string
 	}
 	additional["wx_profile"] = map[string]interface{}{
 		"nick_name":  req.NickName,
-		"avatar_url": req.AvatarURL,
+		"avatar_url": normalizedAvatarURL,
 		"gender":     req.Gender,
 		"country":    req.Country,
 		"province":   req.Province,

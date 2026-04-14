@@ -33,6 +33,7 @@ type File struct{}
 const (
 	fileStorageConfigID = "file_storage_config_1"
 	secretMask          = "********"
+	cloudFilePathPrefix = "./files-cloud/"
 )
 
 func boolOrDefault(v *bool, def bool) bool {
@@ -67,6 +68,34 @@ func requestOrigin(scheme, host string) string {
 		scheme = "http"
 	}
 	return scheme + "://" + host
+}
+
+func resolveStoredFileURL(ctx context.Context, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return raw
+	}
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return raw
+	}
+	if !strings.HasPrefix(raw, cloudFilePathPrefix) {
+		return raw
+	}
+
+	fileID := strings.TrimSpace(strings.TrimPrefix(raw, cloudFilePathPrefix))
+	if fileID == "" {
+		return raw
+	}
+
+	f, err := dal.GetFileByID(ctx, fileID)
+	if err != nil {
+		logrus.WithError(err).WithField("file_id", fileID).Warn("resolve stored file url failed")
+		return raw
+	}
+	if f == nil || strings.TrimSpace(f.FullURL) == "" {
+		return raw
+	}
+	return strings.TrimSpace(f.FullURL)
 }
 
 func generateObjectKey(bizType, filename string) (string, string, error) {
