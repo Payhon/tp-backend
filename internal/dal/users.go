@@ -340,6 +340,20 @@ func GetUsersByEmail(email string) (*model.User, error) {
 	return user, err
 }
 
+func GetUsersByUsername(username string) (*model.User, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, errors.New("username is empty")
+	}
+
+	q := query.User
+	user, err := q.Where(q.Username.Eq(username)).First()
+	if err != nil {
+		return nil, err
+	}
+	return user, err
+}
+
 // 通过手机号获取用户
 // 支持国际手机号匹配：
 // - 如果输入带区号(+XX NNNN)：精确匹配

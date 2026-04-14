@@ -42,8 +42,8 @@ func (*UserApi) Login(c *gin.Context) {
 	}
 
 	if result.Type == utils.Phone {
-		// 通过手机号获取用户邮箱
-		email, err := service.GroupApp.User.GetUserEmailByPhoneNumber(loginReq.Email)
+		// 纯数字登录优先按 username 匹配，查不到再回退手机号。
+		email, err := service.GroupApp.User.ResolvePasswordLoginEmail(loginReq.Email)
 		if err != nil {
 			c.Error(err)
 			return

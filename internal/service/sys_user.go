@@ -35,6 +35,13 @@ const (
 	tenantIDGenerateMaxAttempt = 20
 )
 
+var (
+	dalGetUsersByUsername         = dal.GetUsersByUsername
+	userGetUserEmailByPhoneNumber = func(u *User, phoneNumber string) (string, error) {
+		return u.GetUserEmailByPhoneNumber(phoneNumber)
+	}
+)
+
 func int16Ptr(v int16) *int16 {
 	return &v
 }
@@ -429,6 +436,40 @@ func (u *User) Login(ctx context.Context, loginReq *model.LoginReq) (*model.Logi
 	}
 
 	return logrsp, nil
+}
+
+func (u *User) ResolvePasswordLoginEmail(identifier string) (string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return "", errcode.WithData(200013, map[string]interface{}{
+			"error": "input cannot be empty",
+		})
+	}
+
+	result := utils.ValidateInput(identifier)
+	if !result.IsValid {
+		return "", errcode.WithData(200013, map[string]interface{}{
+			"error": result.Message,
+		})
+	}
+
+	if result.Type != utils.Phone {
+		return identifier, nil
+	}
+
+	user, err := dalGetUsersByUsername(identifier)
+	if err == nil {
+		return user.Email, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"message":    "get_user_by_username",
+			"identifier": identifier,
+			"error":      err.Error(),
+		})
+	}
+
+	return userGetUserEmailByPhoneNumber(u, identifier)
 }
 
 // UserLoginAfter
