@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -23,6 +24,24 @@ import (
 // OrgTypePermission 机构类型权限配置
 type OrgTypePermission struct{}
 
+var deviceParamPermissionAliasMap = map[string]string{
+	"403:feedback_delay":        "403",
+	"40e:alarm_release_v":       "40e",
+	"40f:protect_release_v":     "40f",
+	"410:alarm_release":         "410",
+	"410:protect_release":       "410",
+	"423:small_delay":           "423",
+	"42a:alarm_delay":           "42a",
+	"42a:large_delay":           "42a",
+	"42b:small_delay":           "42b",
+	"43a:protect_delay":         "43a",
+	"43b:protect_release_delay": "43b",
+	"44b:protect_release":       "44b",
+}
+
+var plainDeviceParamPermissionKeyPattern = regexp.MustCompile(`^[0-9a-f]+$`)
+var specialDeviceParamPermissionCanonicalMap = buildSpecialDeviceParamPermissionCanonicalMap()
+
 type orgTypePermissionPO struct {
 	TenantID               string         `gorm:"column:tenant_id;primaryKey"`
 	OrgType                string         `gorm:"column:org_type;primaryKey"`
@@ -36,6 +55,26 @@ func (orgTypePermissionPO) TableName() string { return "org_type_permissions" }
 
 func orgTypeRoleName(tenantID, orgType string) string {
 	return fmt.Sprintf("TENANT_%s_ORGTYPE_%s", tenantID, orgType)
+}
+
+func buildSpecialDeviceParamPermissionCanonicalMap() map[string]string {
+	out := make(map[string]string)
+
+	var walk func(nodes []model.DeviceParamTreeNode)
+	walk = func(nodes []model.DeviceParamTreeNode) {
+		for _, node := range nodes {
+			value := strings.TrimSpace(node.Value)
+			if value != "" && strings.Contains(value, ":") && !strings.HasPrefix(value, "group:") {
+				out[strings.ToLower(value)] = value
+			}
+			if len(node.Children) > 0 {
+				walk(node.Children)
+			}
+		}
+	}
+
+	walk(buildDeviceParamPermissionTree())
+	return out
 }
 
 func normalizeUICodes(codes []string) []string {
@@ -276,13 +315,14 @@ func (s *OrgTypePermission) List(ctx context.Context, claims *utils.UserClaims, 
 	for _, r := range rows {
 		var uiCodes []string
 		_ = json.Unmarshal(r.UICodes, &uiCodes)
+		devicePerm := ""
+		if r.DeviceParamPermissions != nil {
+			devicePerm = strings.Join(splitDeviceParamPermissions(*r.DeviceParamPermissions), ",")
+		}
 		resp := model.OrgTypePermissionResp{
 			OrgType:                r.OrgType,
 			UICodes:                uiCodes,
-			DeviceParamPermissions: "",
-		}
-		if r.DeviceParamPermissions != nil {
-			resp.DeviceParamPermissions = *r.DeviceParamPermissions
+			DeviceParamPermissions: devicePerm,
 		}
 		out = append(out, resp)
 	}
@@ -314,7 +354,7 @@ func (s *OrgTypePermission) Upsert(ctx context.Context, claims *utils.UserClaims
 	uiCodesJSON, _ := json.Marshal(uiCodes)
 
 	now := time.Now().UTC()
-	devicePerm := strings.TrimSpace(req.DeviceParamPermissions)
+	devicePerm := strings.Join(splitDeviceParamPermissions(req.DeviceParamPermissions), ",")
 	po := &orgTypePermissionPO{
 		TenantID:               resolvedTenantID,
 		OrgType:                orgType,
@@ -442,18 +482,40 @@ func splitDeviceParamPermissions(raw string) []string {
 		return []string{}
 	}
 	parts := strings.Split(raw, ",")
+	return normalizeDeviceParamPermissionKeys(parts)
+}
+
+func normalizeDeviceParamPermissionKey(raw string) string {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return ""
+	}
+	lowerKey := strings.ToLower(key)
+	if alias, ok := deviceParamPermissionAliasMap[lowerKey]; ok {
+		return alias
+	}
+	if plainDeviceParamPermissionKeyPattern.MatchString(lowerKey) {
+		return lowerKey
+	}
+	if canonical, ok := specialDeviceParamPermissionCanonicalMap[lowerKey]; ok {
+		return canonical
+	}
+	return key
+}
+
+func normalizeDeviceParamPermissionKeys(parts []string) []string {
 	out := make([]string, 0, len(parts))
 	seen := make(map[string]struct{}, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
+	for _, part := range parts {
+		key := normalizeDeviceParamPermissionKey(part)
+		if key == "" {
 			continue
 		}
-		if _, ok := seen[p]; ok {
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[p] = struct{}{}
-		out = append(out, p)
+		seen[key] = struct{}{}
+		out = append(out, key)
 	}
 	return out
 }
