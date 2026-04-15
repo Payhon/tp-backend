@@ -329,37 +329,37 @@ func (*AppBattery) GetBatteryMqttCredentialForApp(ctx context.Context, deviceID 
 // CheckBatteryOtaForApp APP端OTA升级检查（根据设备配置匹配升级包）
 func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatteryOtaCheckReq, claims *utils.UserClaims) (*model.AppBatteryOtaCheckResp, error) {
 	deviceID := strings.TrimSpace(req.DeviceID)
-	if deviceID == "" {
-		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
-	}
 	if claims == nil || claims.ID == "" || claims.TenantID == "" {
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
 	}
 
-	// 复用绑定校验逻辑（管理员允许跨设备查看，仍受 tenant 约束）
-	if _, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims); err != nil {
-		return nil, err
-	}
-
 	var row appBatteryOtaCheckRow
-	err := global.DB.WithContext(ctx).
-		Table("devices AS d").
-		Select(`
-			d.id AS device_id,
-			d.current_version AS current_version,
-			d.tenant_id AS tenant_id,
-			dbat.battery_model_id AS battery_model_id,
-			bm.name AS battery_model_name
-		`).
-		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
-		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
-		Where("d.id = ? AND d.tenant_id = ?", deviceID, claims.TenantID).
-		Scan(&row).Error
-	if err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
-	}
-	if row.DeviceID == "" {
-		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not found")
+
+	if deviceID != "" {
+		// 复用绑定校验逻辑（管理员允许跨设备查看，仍受 tenant 约束）
+		if _, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims); err != nil {
+			return nil, err
+		}
+
+		err := global.DB.WithContext(ctx).
+			Table("devices AS d").
+			Select(`
+				d.id AS device_id,
+				d.current_version AS current_version,
+				d.tenant_id AS tenant_id,
+				dbat.battery_model_id AS battery_model_id,
+				bm.name AS battery_model_name
+			`).
+			Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
+			Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+			Where("d.id = ? AND d.tenant_id = ?", deviceID, claims.TenantID).
+			Scan(&row).Error
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		if row.DeviceID == "" {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not found")
+		}
 	}
 
 	resp := &model.AppBatteryOtaCheckResp{
