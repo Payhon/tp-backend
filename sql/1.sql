@@ -2237,12 +2237,23 @@ BEGIN
 		);
 	END IF;
 
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_factory_out') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1021', battery_list_id, 'bms_battery_list_batch_factory_out', 4, 13024,
+			'bms_battery_list_batch_factory_out', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'批量出厂', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_factory_out', ''
+		);
+	END IF;
+
 	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_assign_dealer') THEN
 		INSERT INTO public.sys_ui_elements (
 			id, parent_id, element_code, element_type, orders,
 			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
 		) VALUES (
-			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1017', battery_list_id, 'bms_battery_list_batch_assign_dealer', 4, 13024,
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1017', battery_list_id, 'bms_battery_list_batch_assign_dealer', 4, 13025,
 			'bms_battery_list_batch_assign_dealer', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
 			'批量分配经销商', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_assign_dealer', ''
 		);
@@ -2253,7 +2264,7 @@ BEGIN
 			id, parent_id, element_code, element_type, orders,
 			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
 		) VALUES (
-			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1018', battery_list_id, 'bms_battery_list_batch_tag', 4, 13025,
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1018', battery_list_id, 'bms_battery_list_batch_tag', 4, 13026,
 			'bms_battery_list_batch_tag', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
 			'批量设置标签', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_tag', ''
 		);
@@ -2264,7 +2275,7 @@ BEGIN
 			id, parent_id, element_code, element_type, orders,
 			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
 		) VALUES (
-			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1019', battery_list_id, 'bms_battery_list_batch_command', 4, 13026,
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1019', battery_list_id, 'bms_battery_list_batch_command', 4, 13027,
 			'bms_battery_list_batch_command', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
 			'批量下发指令', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_command', ''
 		);
@@ -2275,7 +2286,7 @@ BEGIN
 			id, parent_id, element_code, element_type, orders,
 			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
 		) VALUES (
-			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1020', battery_list_id, 'bms_battery_list_batch_ota', 4, 13027,
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1020', battery_list_id, 'bms_battery_list_batch_ota', 4, 13028,
 			'bms_battery_list_batch_ota', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
 			'批量OTA推送', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_ota', ''
 		);
@@ -2308,6 +2319,7 @@ WITH target_rows AS (
 				FROM (
 					SELECT jsonb_array_elements_text(tr.ui_codes) AS code
 					UNION ALL SELECT 'bms_battery_list_batch_info_complete'
+					UNION ALL SELECT 'bms_battery_list_batch_factory_out'
 					UNION ALL SELECT 'bms_battery_list_batch_assign_dealer'
 					UNION ALL SELECT 'bms_battery_list_batch_tag'
 					UNION ALL SELECT 'bms_battery_list_batch_command'

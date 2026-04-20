@@ -20,6 +20,28 @@ import (
 	"gorm.io/gorm"
 )
 
+func findUniquePackFactoryByName(ctx context.Context, tenantID, rawName string) (*model.Org, bool, error) {
+	name := strings.TrimSpace(rawName)
+	if name == "" {
+		return nil, false, nil
+	}
+
+	orgs, err := query.Org.WithContext(ctx).
+		Where(
+			query.Org.TenantID.Eq(tenantID),
+			query.Org.OrgType.Eq(model.OrgTypePACKFactory),
+			query.Org.Name.Eq(name),
+		).
+		Find()
+	if err != nil {
+		return nil, false, err
+	}
+	if len(orgs) != 1 {
+		return nil, false, nil
+	}
+	return orgs[0], true, nil
+}
+
 // CreateSingleBattery BMS：添加/更新单个电池信息（device_batteries）
 func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreateReq, claims *utils.UserClaims, orgID string) (*model.BatteryCreateResp, error) {
 	// 电池型号：兼容历史 PACK 型号与当前 BMS 型号
@@ -165,6 +187,27 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		"remark":           req.Remark,
 		"created_device":   createdDevice,
 	})
+
+	if req.PackFactoryName != nil && strings.TrimSpace(*req.PackFactoryName) != "" {
+		packFactoryOrg, matched, err := findUniquePackFactoryByName(ctx, claims.TenantID, *req.PackFactoryName)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		if matched && packFactoryOrg != nil {
+			if err := GroupApp.Battery.FactoryOutBattery(ctx, model.BatteryFactoryOutReq{
+				DeviceID: device.ID,
+				ToOrgID:  packFactoryOrg.ID,
+			}, claims, ""); err != nil {
+				return nil, err
+			}
+		} else {
+			desc := fmt.Sprintf("OpenAPI 自动出厂跳过：PACK厂家名称未唯一匹配（%s）", strings.TrimSpace(*req.PackFactoryName))
+			_ = CreateBatteryOperationLog(ctx, claims.TenantID, device.ID, req.ItemUUID, BatteryOpTypeCreate, &claims.ID, &desc, map[string]any{
+				"pack_factory_name": strings.TrimSpace(*req.PackFactoryName),
+				"auto_factory_out":  "skipped",
+			})
+		}
+	}
 
 	// 查询回显（包含型号名称）
 	return loadBatteryCreateRespByDeviceID(ctx, device.ID, device.DeviceNumber, batteryModelName), nil

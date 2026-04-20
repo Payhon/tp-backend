@@ -354,6 +354,32 @@ func (*BatteryApi) FactoryOutBattery(c *gin.Context) {
 	c.Set("data", map[string]interface{}{"message": "出厂成功"})
 }
 
+// BatchFactoryOutBattery 批量电池出厂
+// @Summary 批量电池出厂
+// @Description BMS 电池管理-批量出厂（厂家 -> PACK/经销商）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryBatchFactoryOutReq true "请求参数"
+// @Success 200 {object} model.BatteryBatchFactoryOutResp
+// @Router /api/v1/battery/batch-factory-out [post]
+func (*BatteryApi) BatchFactoryOutBattery(c *gin.Context) {
+	var req model.BatteryBatchFactoryOutReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	data, err := service.GroupApp.Battery.BatchFactoryOutBattery(context.Background(), req, userClaims, orgID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // TransferBattery 电池调拨
 // @Summary 电池调拨
 // @Description BMS 电池管理-调拨（组织转移）

@@ -103,6 +103,7 @@ Content-Type: application/json
 | comm_chip_id | string | 否 | 通讯芯片 ID（最大 64） |
 | battery_model_id | string | 否 | 电池型号 ID（与 `battery_model_name` 二选一） |
 | battery_model_name | string | 否 | 电池型号名称（与 `battery_model_id` 二选一） |
+| pack_factory_name | string | 否 | PACK 厂家名称，按当前租户 `orgs.name` 精确匹配且 `org_type=PACK_FACTORY` |
 | production_date | string | 否 | 出厂日期，格式：`YYYY-MM-DD` |
 | warranty_expire_date | string | 否 | 质保到期日期，格式：`YYYY-MM-DD` |
 | remark | string | 否 | 备注（最大 255） |
@@ -121,6 +122,7 @@ curl -X POST "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery" \
     "order_number": "MES-PO-20260305",
     "bms_comm_type": 1,
     "battery_model_name": "FJBMS-100A",
+    "pack_factory_name": "示例PACK厂家",
     "ble_mac": "AC:11:22:33:44:55",
     "production_date": "2026-03-05",
     "warranty_expire_date": "2027-03-05",
@@ -157,6 +159,8 @@ curl -X POST "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery" \
 - 当 `item_uuid` 在当前租户不存在时，系统会自动创建对应 `devices` 记录，再写入电池信息。
 - 当 `item_uuid` 已存在时，系统会更新该设备对应的电池档案。
 - 如果 `item_uuid` 已存在于其他租户，系统会拒绝写入（租户隔离保护）。
+- 当 `pack_factory_name` 唯一匹配当前租户的 `PACK_FACTORY` 机构时，系统会在建档后自动执行一次出厂。
+- 当 `pack_factory_name` 未匹配或匹配不唯一时，系统仍返回建档成功，但会跳过自动出厂。
 
 ---
 

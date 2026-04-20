@@ -12,6 +12,7 @@ type BatteryCreateReq struct {
 	CommChipID         *string `json:"comm_chip_id" binding:"omitempty,max=64"`
 	BatteryModelID     *string `json:"battery_model_id" binding:"omitempty,max=36"`
 	BatteryModelName   *string `json:"battery_model_name" binding:"omitempty,max=100"`
+	PackFactoryName    *string `json:"pack_factory_name" binding:"omitempty,max=100"`
 	ProductionDate     *string `json:"production_date" binding:"omitempty"`      // YYYY-MM-DD
 	WarrantyExpireDate *string `json:"warranty_expire_date" binding:"omitempty"` // YYYY-MM-DD
 	Remark             *string `json:"remark" binding:"omitempty,max=255"`
@@ -104,6 +105,25 @@ type BatteryFactoryOutReq struct {
 	DeviceID string  `json:"device_id" binding:"required"`
 	ToOrgID  string  `json:"to_org_id" binding:"required"`
 	Remark   *string `json:"remark"`
+}
+
+type BatteryBatchFactoryOutReq struct {
+	DeviceIDs []string `json:"device_ids" binding:"required,min=1"`
+	ToOrgID   string   `json:"to_org_id" binding:"required"`
+	Remark    *string  `json:"remark"`
+}
+
+type BatteryBatchFactoryOutFailure struct {
+	DeviceID     string `json:"device_id"`
+	DeviceNumber string `json:"device_number"`
+	Message      string `json:"message"`
+}
+
+type BatteryBatchFactoryOutResp struct {
+	Total    int                             `json:"total"`
+	Success  int                             `json:"success"`
+	Failed   int                             `json:"failed"`
+	Failures []BatteryBatchFactoryOutFailure `json:"failures"`
 }
 
 // BatteryTransferReq 电池调拨（组织转移）

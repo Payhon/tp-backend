@@ -93,6 +93,7 @@ def main() -> int:
         "product_spec": "51.2V100Ah",
         "order_number": now.strftime("MES-PO-%Y%m%d-%H%M%S"),
         "bms_comm_type": 1,
+        "pack_factory_name": "示例PACK厂家",
         "ble_mac": "AC:11:22:33:44:55",
         "production_date": now.strftime("%Y-%m-%d"),
     }

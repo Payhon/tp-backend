@@ -15,6 +15,11 @@ import (
 	"gorm.io/gorm"
 )
 
+type factoryOutDeviceResult struct {
+	DeviceID     string
+	DeviceNumber string
+}
+
 func getOrgByID(ctx context.Context, tenantID, orgID string) (*model.Org, error) {
 	if orgID == "" {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
@@ -37,14 +42,13 @@ func getOrgByID(ctx context.Context, tenantID, orgID string) (*model.Org, error)
 	return org, nil
 }
 
-// FactoryOutBattery 电池出厂（厂家 -> PACK/经销商）
-func (*Battery) FactoryOutBattery(ctx context.Context, req model.BatteryFactoryOutReq, claims *utils.UserClaims, operatorOrgID string) error {
+func (*Battery) factoryOutBatteryOnce(ctx context.Context, req model.BatteryFactoryOutReq, claims *utils.UserClaims, operatorOrgID string) (*factoryOutDeviceResult, error) {
 	targetOrg, err := getOrgByID(ctx, claims.TenantID, req.ToOrgID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if targetOrg.OrgType != model.OrgTypePACKFactory && targetOrg.OrgType != model.OrgTypeDealer {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
 			"message": "出厂目标仅支持 PACK 厂或经销商",
 		})
 	}
@@ -53,10 +57,10 @@ func (*Battery) FactoryOutBattery(ctx context.Context, req model.BatteryFactoryO
 	if operatorOrgID != "" {
 		operatorOrg, err := getOrgByID(ctx, claims.TenantID, operatorOrgID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if operatorOrg.OrgType != model.OrgTypeBMSFactory {
-			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+			return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
 				"message": "仅厂家账号可执行出厂操作",
 			})
 		}
@@ -64,7 +68,8 @@ func (*Battery) FactoryOutBattery(ctx context.Context, req model.BatteryFactoryO
 
 	now := time.Now().UTC()
 
-	return global.DB.Transaction(func(tx *gorm.DB) error {
+	result := &factoryOutDeviceResult{DeviceID: req.DeviceID}
+	err = global.DB.Transaction(func(tx *gorm.DB) error {
 		// 设备校验
 		var device model.Device
 		if err := tx.Where("id = ? AND tenant_id = ?", req.DeviceID, claims.TenantID).First(&device).Error; err != nil {
@@ -77,6 +82,7 @@ func (*Battery) FactoryOutBattery(ctx context.Context, req model.BatteryFactoryO
 				"sql_error": err.Error(),
 			})
 		}
+		result.DeviceNumber = device.DeviceNumber
 
 		var dbat model.DeviceBattery
 		err := tx.Where("device_id = ?", device.ID).First(&dbat).Error
@@ -170,6 +176,50 @@ func (*Battery) FactoryOutBattery(ctx context.Context, req model.BatteryFactoryO
 
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// FactoryOutBattery 电池出厂（厂家 -> PACK/经销商）
+func (b *Battery) FactoryOutBattery(ctx context.Context, req model.BatteryFactoryOutReq, claims *utils.UserClaims, operatorOrgID string) error {
+	_, err := b.factoryOutBatteryOnce(ctx, req, claims, operatorOrgID)
+	return err
+}
+
+// BatchFactoryOutBattery 电池批量出厂（厂家 -> PACK/经销商）
+func (b *Battery) BatchFactoryOutBattery(ctx context.Context, req model.BatteryBatchFactoryOutReq, claims *utils.UserClaims, operatorOrgID string) (*model.BatteryBatchFactoryOutResp, error) {
+	resp := &model.BatteryBatchFactoryOutResp{
+		Total:    len(req.DeviceIDs),
+		Success:  0,
+		Failed:   0,
+		Failures: make([]model.BatteryBatchFactoryOutFailure, 0),
+	}
+
+	for _, deviceID := range req.DeviceIDs {
+		result, err := b.factoryOutBatteryOnce(ctx, model.BatteryFactoryOutReq{
+			DeviceID: deviceID,
+			ToOrgID:  req.ToOrgID,
+			Remark:   req.Remark,
+		}, claims, operatorOrgID)
+		if err != nil {
+			deviceNumber := ""
+			if result != nil {
+				deviceNumber = result.DeviceNumber
+			}
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryBatchFactoryOutFailure{
+				DeviceID:     deviceID,
+				DeviceNumber: deviceNumber,
+				Message:      err.Error(),
+			})
+			continue
+		}
+		resp.Success++
+	}
+
+	return resp, nil
 }
 
 // TransferBattery 电池调拨（组织转移）
