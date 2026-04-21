@@ -174,6 +174,19 @@ BEGIN
     '生命周期-调拨', NOW(), '页面元素权限', 'perm.bms_battery_list_action_lifecycle_transfer', ''
   WHERE NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_lifecycle_transfer');
 
+  -- 生命周期：回退
+  INSERT INTO public.sys_ui_elements (
+    id, parent_id, element_code, element_type, orders,
+    param1, param2, param3, authority, description,
+    created_at, remark, multilingual, route_path
+  )
+  SELECT
+    'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1010', battery_list_id,
+    'bms_battery_list_action_lifecycle_rollback', 4, 13034,
+    'bms_battery_list_action_lifecycle_rollback', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+    '生命周期-回退', NOW(), '页面元素权限', 'perm.bms_battery_list_action_lifecycle_rollback', ''
+  WHERE NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_lifecycle_rollback');
+
   -- 修正已存在按钮权限的显示名称（避免“菜单管理”表格显示 i18n key）
   UPDATE public.sys_ui_elements
   SET description = '导出', multilingual = 'perm.bms_battery_list_export'
@@ -206,6 +219,10 @@ BEGIN
   UPDATE public.sys_ui_elements
   SET description = '生命周期-调拨', multilingual = 'perm.bms_battery_list_action_lifecycle_transfer'
   WHERE element_code = 'bms_battery_list_action_lifecycle_transfer';
+
+  UPDATE public.sys_ui_elements
+  SET description = '生命周期-回退', multilingual = 'perm.bms_battery_list_action_lifecycle_rollback'
+  WHERE element_code = 'bms_battery_list_action_lifecycle_rollback';
 END $$;
 
 -- 为已授予“电池列表”的机构类型自动补齐详情/按钮权限编码
@@ -233,6 +250,7 @@ WITH target_rows AS (
           UNION ALL SELECT 'bms_battery_list_action_lifecycle_factory'
           UNION ALL SELECT 'bms_battery_list_action_lifecycle_activate'
           UNION ALL SELECT 'bms_battery_list_action_lifecycle_transfer'
+          UNION ALL SELECT 'bms_battery_list_action_lifecycle_rollback'
         ) AS raw_codes
         WHERE btrim(code) <> ''
       ) AS dedup_codes

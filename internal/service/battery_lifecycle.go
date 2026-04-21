@@ -20,6 +20,14 @@ type factoryOutDeviceResult struct {
 	DeviceNumber string
 }
 
+type rollbackResolvedContext struct {
+	device      *model.Device
+	battery     *model.DeviceBattery
+	operatorOrg *model.Org
+	currentOrg  *model.Org
+	targetOrg   *model.Org
+}
+
 func getOrgByID(ctx context.Context, tenantID, orgID string) (*model.Org, error) {
 	if orgID == "" {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
@@ -182,6 +190,165 @@ func (*Battery) factoryOutBatteryOnce(ctx context.Context, req model.BatteryFact
 	return result, nil
 }
 
+func newRollbackPreview(deviceID, deviceNumber string) *model.BatteryRollbackPreviewResp {
+	return &model.BatteryRollbackPreviewResp{
+		DeviceID:     deviceID,
+		DeviceNumber: deviceNumber,
+		CanRollback:  false,
+	}
+}
+
+func setRollbackPreviewReason(resp *model.BatteryRollbackPreviewResp, reason string) *model.BatteryRollbackPreviewResp {
+	resp.CanRollback = false
+	resp.Reason = &reason
+	return resp
+}
+
+func getOrgByIDWithDB(ctx context.Context, db *gorm.DB, tenantID, orgID string) (*model.Org, error) {
+	if orgID == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var org model.Org
+	if err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", orgID, tenantID).First(&org).Error; err != nil {
+		return nil, err
+	}
+	return &org, nil
+}
+
+func ensureAncestorRelation(ctx context.Context, db *gorm.DB, tenantID, ancestorID, descendantID string) (bool, error) {
+	var count int64
+	if err := db.WithContext(ctx).Table("org_closure").
+		Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", tenantID, ancestorID, descendantID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (b *Battery) resolveRollbackContext(ctx context.Context, db *gorm.DB, deviceID string, claims *utils.UserClaims, operatorOrgID string) (*rollbackResolvedContext, *model.BatteryRollbackPreviewResp, error) {
+	resp := newRollbackPreview(deviceID, "")
+
+	if operatorOrgID == "" {
+		return nil, setRollbackPreviewReason(resp, "仅经销商或门店账号可执行回退"), nil
+	}
+
+	operatorOrg, err := getOrgByID(ctx, claims.TenantID, operatorOrgID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if operatorOrg.OrgType != model.OrgTypeDealer && operatorOrg.OrgType != model.OrgTypeStore {
+		return nil, setRollbackPreviewReason(resp, "仅经销商或门店账号可执行回退"), nil
+	}
+
+	var device model.Device
+	if err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", deviceID, claims.TenantID).First(&device).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+				"message": "设备不存在",
+			})
+		}
+		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+	resp.DeviceNumber = device.DeviceNumber
+
+	var dbat model.DeviceBattery
+	if err := db.WithContext(ctx).Where("device_id = ?", device.ID).First(&dbat).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, setRollbackPreviewReason(resp, "设备未出厂，无法回退"), nil
+		}
+		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+	if dbat.OwnerOrgID == nil || *dbat.OwnerOrgID == "" {
+		return nil, setRollbackPreviewReason(resp, "设备未分配组织，无法回退"), nil
+	}
+
+	currentOrg, err := getOrgByID(ctx, claims.TenantID, *dbat.OwnerOrgID)
+	if err != nil {
+		return nil, nil, err
+	}
+	resp.CurrentOrgID = &currentOrg.ID
+	resp.CurrentOrgName = &currentOrg.Name
+
+	if currentOrg.ID != operatorOrg.ID {
+		return nil, setRollbackPreviewReason(resp, "仅支持回退当前机构自身库存"), nil
+	}
+	if currentOrg.OrgType != model.OrgTypeDealer && currentOrg.OrgType != model.OrgTypeStore {
+		return nil, setRollbackPreviewReason(resp, "当前库存不支持回退"), nil
+	}
+
+	var lastTransfer model.DeviceOrgTransfer
+	if err := db.WithContext(ctx).
+		Where("tenant_id = ? AND device_id = ? AND to_org_id = ?", claims.TenantID, device.ID, currentOrg.ID).
+		Order("transfer_time DESC").
+		Order("created_at DESC").
+		Order("id DESC").
+		First(&lastTransfer).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, setRollbackPreviewReason(resp, "未找到可回退的来源机构"), nil
+		}
+		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	if lastTransfer.FromOrgID == nil || *lastTransfer.FromOrgID == "" {
+		return nil, setRollbackPreviewReason(resp, "未找到可回退的来源机构"), nil
+	}
+
+	targetOrg, err := getOrgByIDWithDB(ctx, db, claims.TenantID, *lastTransfer.FromOrgID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, setRollbackPreviewReason(resp, "回退来源机构不存在"), nil
+		}
+		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+	resp.RollbackToOrgID = &targetOrg.ID
+	resp.RollbackToOrgName = &targetOrg.Name
+
+	validChain := false
+	switch currentOrg.OrgType {
+	case model.OrgTypeDealer:
+		if targetOrg.OrgType != model.OrgTypePACKFactory {
+			return nil, setRollbackPreviewReason(resp, "经销商仅支持回退到上级PACK厂"), nil
+		}
+		validChain, err = ensureAncestorRelation(ctx, db, claims.TenantID, targetOrg.ID, currentOrg.ID)
+	case model.OrgTypeStore:
+		if targetOrg.OrgType != model.OrgTypeDealer {
+			return nil, setRollbackPreviewReason(resp, "门店仅支持回退到上级经销商"), nil
+		}
+		validChain, err = ensureAncestorRelation(ctx, db, claims.TenantID, targetOrg.ID, currentOrg.ID)
+	}
+	if err != nil {
+		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+	if !validChain {
+		return nil, setRollbackPreviewReason(resp, "回退来源机构不在合法上级链路中"), nil
+	}
+
+	resp.CanRollback = true
+	resp.Reason = nil
+	return &rollbackResolvedContext{
+		device:      &device,
+		battery:     &dbat,
+		operatorOrg: operatorOrg,
+		currentOrg:  currentOrg,
+		targetOrg:   targetOrg,
+	}, resp, nil
+}
+
+func (b *Battery) PreviewRollbackBattery(ctx context.Context, deviceID string, claims *utils.UserClaims, operatorOrgID string) (*model.BatteryRollbackPreviewResp, error) {
+	_, preview, err := b.resolveRollbackContext(ctx, global.DB, deviceID, claims, operatorOrgID)
+	return preview, err
+}
+
 // FactoryOutBattery 电池出厂（厂家 -> PACK/经销商）
 func (b *Battery) FactoryOutBattery(ctx context.Context, req model.BatteryFactoryOutReq, claims *utils.UserClaims, operatorOrgID string) error {
 	_, err := b.factoryOutBatteryOnce(ctx, req, claims, operatorOrgID)
@@ -339,56 +506,15 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 					"message": "经销商仅支持调拨自身库存",
 				})
 			}
-			if targetOrg.OrgType != model.OrgTypePACKFactory && targetOrg.OrgType != model.OrgTypeStore {
+			if targetOrg.OrgType != model.OrgTypeStore {
 				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-					"message": "经销商调拨目标仅支持 PACK 厂或门店",
-				})
-			}
-			if operatorOrgID != "" {
-				var count int64
-				if targetOrg.OrgType == model.OrgTypePACKFactory {
-					if err := tx.Table("org_closure").
-						Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, targetOrg.ID, operatorOrgID).
-						Count(&count).Error; err != nil {
-						return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-							"sql_error": err.Error(),
-						})
-					}
-					if count == 0 {
-						return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
-							"message": "目标 PACK 厂不在当前经销商上级链路中",
-						})
-					}
-				} else {
-					if err := tx.Table("org_closure").
-						Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, operatorOrgID, targetOrg.ID).
-						Count(&count).Error; err != nil {
-						return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-							"sql_error": err.Error(),
-						})
-					}
-					if count == 0 {
-						return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
-							"message": "目标门店不在当前经销商范围内",
-						})
-					}
-				}
-			}
-		case model.OrgTypeStore:
-			if fromOrg.OrgType != model.OrgTypeStore {
-				return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
-					"message": "门店仅支持调拨自身库存",
-				})
-			}
-			if targetOrg.OrgType != model.OrgTypeDealer {
-				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-					"message": "门店调拨目标仅支持经销商",
+					"message": "经销商调拨目标仅支持门店",
 				})
 			}
 			if operatorOrgID != "" {
 				var count int64
 				if err := tx.Table("org_closure").
-					Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, targetOrg.ID, operatorOrgID).
+					Where("tenant_id = ? AND ancestor_id = ? AND descendant_id = ?", claims.TenantID, operatorOrgID, targetOrg.ID).
 					Count(&count).Error; err != nil {
 					return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 						"sql_error": err.Error(),
@@ -396,10 +522,14 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 				}
 				if count == 0 {
 					return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
-						"message": "目标经销商不在当前门店上级链路中",
+						"message": "目标门店不在当前经销商范围内",
 					})
 				}
 			}
+		case model.OrgTypeStore:
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"message": "门店账号无调拨权限",
+			})
 		default:
 			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
 				"message": "当前账号无调拨权限",
@@ -437,6 +567,64 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 		_ = CreateBatteryOperationLogTx(tx, claims.TenantID, device.ID, device.DeviceNumber, BatteryOpTypeTransfer, &claims.ID, &desc, map[string]any{
 			"from_org_id": dbat.OwnerOrgID,
 			"to_org_id":   targetOrg.ID,
+			"remark":      req.Remark,
+		})
+
+		return nil
+	})
+}
+
+// RollbackBattery 电池回退（按最近一次入库来源回退）
+func (b *Battery) RollbackBattery(ctx context.Context, req model.BatteryRollbackReq, claims *utils.UserClaims, operatorOrgID string) error {
+	now := time.Now().UTC()
+
+	return global.DB.Transaction(func(tx *gorm.DB) error {
+		resolved, preview, err := b.resolveRollbackContext(ctx, tx, req.DeviceID, claims, operatorOrgID)
+		if err != nil {
+			return err
+		}
+		if !preview.CanRollback || resolved == nil {
+			message := "当前电池不支持回退"
+			if preview != nil && preview.Reason != nil && *preview.Reason != "" {
+				message = *preview.Reason
+			}
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"message": message,
+			})
+		}
+
+		if err := tx.Model(&model.DeviceBattery{}).
+			Where("device_id = ?", resolved.device.ID).
+			Updates(map[string]interface{}{
+				"owner_org_id": resolved.targetOrg.ID,
+				"updated_at":   now,
+			}).Error; err != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+
+		transferLog := model.DeviceOrgTransfer{
+			ID:           uuid.New(),
+			DeviceID:     resolved.device.ID,
+			FromOrgID:    resolved.battery.OwnerOrgID,
+			ToOrgID:      &resolved.targetOrg.ID,
+			OperatorID:   &claims.ID,
+			TransferTime: &now,
+			Remark:       req.Remark,
+			TenantID:     claims.TenantID,
+			CreatedAt:    &now,
+		}
+		if err := tx.Create(&transferLog).Error; err != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+
+		desc := fmt.Sprintf("回退：%s -> %s", resolved.currentOrg.Name, resolved.targetOrg.Name)
+		_ = CreateBatteryOperationLogTx(tx, claims.TenantID, resolved.device.ID, resolved.device.DeviceNumber, BatteryOpTypeRollback, &claims.ID, &desc, map[string]any{
+			"from_org_id": resolved.battery.OwnerOrgID,
+			"to_org_id":   resolved.targetOrg.ID,
 			"remark":      req.Remark,
 		})
 

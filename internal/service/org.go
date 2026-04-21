@@ -26,6 +26,33 @@ func (*OrgService) CreateOrg(ctx context.Context, req *model.OrgCreateReq, claim
 	now := time.Now()
 	orgID := uuid.New()
 
+	if claims.Authority == "TENANT_USER" && strings.TrimSpace(claims.OrgID) != "" && req.OrgType == model.OrgTypeStore {
+		currentOrg, err := query.Org.WithContext(ctx).
+			Where(query.Org.ID.Eq(claims.OrgID), query.Org.TenantID.Eq(claims.TenantID)).
+			First()
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+					"message": "当前账号机构不存在，无法创建门店",
+				})
+			}
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+		if currentOrg.OrgType == model.OrgTypeDealer {
+			parentID := ""
+			if req.ParentID != nil {
+				parentID = strings.TrimSpace(*req.ParentID)
+			}
+			if parentID == "" || parentID != claims.OrgID {
+				return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+					"message": "经销商创建门店时，上级组织必须为当前机构",
+				})
+			}
+		}
+	}
+
 	org := &model.Org{
 		ID:            orgID,
 		Name:          req.Name,

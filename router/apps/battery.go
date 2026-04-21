@@ -35,6 +35,8 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.POST("/factory_out", api.Controllers.BatteryApi.FactoryOutBattery)
 		batteryApi.POST("/batch-factory-out", api.Controllers.BatteryApi.BatchFactoryOutBattery)
 		batteryApi.POST("/transfer", api.Controllers.BatteryApi.TransferBattery)
+		batteryApi.GET("/rollback/preview", api.Controllers.BatteryApi.PreviewRollbackBattery)
+		batteryApi.POST("/rollback", api.Controllers.BatteryApi.RollbackBattery)
 		batteryApi.POST("/activate", api.Controllers.BatteryApi.ActivateBattery)
 		batteryApi.POST("/complete-info", api.Controllers.BatteryApi.CompleteBatteryInfo)
 		// 批量分配经销商

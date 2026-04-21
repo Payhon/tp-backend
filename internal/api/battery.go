@@ -405,6 +405,57 @@ func (*BatteryApi) TransferBattery(c *gin.Context) {
 	c.Set("data", map[string]interface{}{"message": "调拨成功"})
 }
 
+// PreviewRollbackBattery 电池回退预览
+// @Summary 电池回退预览
+// @Description BMS 电池管理-回退前查询目标机构
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param device_id query string true "设备ID"
+// @Success 200 {object} model.BatteryRollbackPreviewResp
+// @Router /api/v1/battery/rollback/preview [get]
+func (*BatteryApi) PreviewRollbackBattery(c *gin.Context) {
+	var req model.BatteryRollbackPreviewReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	data, err := service.GroupApp.Battery.PreviewRollbackBattery(context.Background(), req.DeviceID, userClaims, orgID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// RollbackBattery 电池回退
+// @Summary 电池回退
+// @Description BMS 电池管理-按最近一次入库来源回退
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryRollbackReq true "请求参数"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/battery/rollback [post]
+func (*BatteryApi) RollbackBattery(c *gin.Context) {
+	var req model.BatteryRollbackReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	if err := service.GroupApp.Battery.RollbackBattery(context.Background(), req, userClaims, orgID); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", map[string]interface{}{"message": "回退成功"})
+}
+
 // ActivateBattery 电池激活
 // @Summary 电池激活
 // @Description BMS 电池管理-激活（绑定 APP 用户）

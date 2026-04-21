@@ -133,6 +133,26 @@ type BatteryTransferReq struct {
 	Remark   *string `json:"remark"`
 }
 
+type BatteryRollbackPreviewReq struct {
+	DeviceID string `form:"device_id" binding:"required"`
+}
+
+type BatteryRollbackPreviewResp struct {
+	DeviceID          string  `json:"device_id"`
+	DeviceNumber      string  `json:"device_number"`
+	CurrentOrgID      *string `json:"current_org_id,omitempty"`
+	CurrentOrgName    *string `json:"current_org_name,omitempty"`
+	RollbackToOrgID   *string `json:"rollback_to_org_id,omitempty"`
+	RollbackToOrgName *string `json:"rollback_to_org_name,omitempty"`
+	CanRollback       bool    `json:"can_rollback"`
+	Reason            *string `json:"reason,omitempty"`
+}
+
+type BatteryRollbackReq struct {
+	DeviceID string  `json:"device_id" binding:"required"`
+	Remark   *string `json:"remark"`
+}
+
 // BatteryActivateReq 电池激活（绑定到 APP 用户）
 type BatteryActivateReq struct {
 	DeviceID string  `json:"device_id" binding:"required"`

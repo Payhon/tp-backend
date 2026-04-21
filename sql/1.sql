@@ -2575,6 +2575,17 @@ BEGIN
 		);
 	END IF;
 
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_action_lifecycle_rollback') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'b9d0a501-6d9d-4de0-a2eb-8f4fd15f1010', battery_list_id, 'bms_battery_list_action_lifecycle_rollback', 4, 13034,
+			'bms_battery_list_action_lifecycle_rollback', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'生命周期-回退', NOW(), '页面元素权限', 'perm.bms_battery_list_action_lifecycle_rollback', ''
+		);
+	END IF;
+
 	UPDATE public.sys_ui_elements
 	SET
 		parent_id = bms_root_id,
@@ -2620,4 +2631,8 @@ BEGIN
 	UPDATE public.sys_ui_elements
 	SET description = '生命周期-调拨', multilingual = 'perm.bms_battery_list_action_lifecycle_transfer'
 	WHERE element_code = 'bms_battery_list_action_lifecycle_transfer';
+
+	UPDATE public.sys_ui_elements
+	SET description = '生命周期-回退', multilingual = 'perm.bms_battery_list_action_lifecycle_rollback'
+	WHERE element_code = 'bms_battery_list_action_lifecycle_rollback';
 END $$;
