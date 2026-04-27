@@ -280,36 +280,19 @@ func (b *Battery) resolveRollbackContext(ctx context.Context, db *gorm.DB, devic
 		return nil, setRollbackPreviewReason(resp, "当前库存不支持回退"), nil
 	}
 
-	var lastTransfer model.DeviceOrgTransfer
-	if err := db.WithContext(ctx).
-		Where("tenant_id = ? AND device_id = ? AND to_org_id = ?", claims.TenantID, device.ID, currentOrg.ID).
-		Order("transfer_time DESC").
-		Order("created_at DESC").
-		Order("id DESC").
-		First(&lastTransfer).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, setRollbackPreviewReason(resp, "未找到可回退的来源机构"), nil
-		}
-		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
-			"sql_error": err.Error(),
-		})
+	if currentOrg.ParentID == nil || *currentOrg.ParentID == "" {
+		return nil, setRollbackPreviewReason(resp, "未配置上级机构，无法回退"), nil
 	}
 
-	if lastTransfer.FromOrgID == nil || *lastTransfer.FromOrgID == "" {
-		return nil, setRollbackPreviewReason(resp, "未找到可回退的来源机构"), nil
-	}
-
-	targetOrg, err := getOrgByIDWithDB(ctx, db, claims.TenantID, *lastTransfer.FromOrgID)
+	targetOrg, err := getOrgByIDWithDB(ctx, db, claims.TenantID, *currentOrg.ParentID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, setRollbackPreviewReason(resp, "回退来源机构不存在"), nil
+			return nil, setRollbackPreviewReason(resp, "未配置上级机构，无法回退"), nil
 		}
 		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 			"sql_error": err.Error(),
 		})
 	}
-	resp.RollbackToOrgID = &targetOrg.ID
-	resp.RollbackToOrgName = &targetOrg.Name
 
 	validChain := false
 	switch currentOrg.OrgType {
@@ -319,8 +302,8 @@ func (b *Battery) resolveRollbackContext(ctx context.Context, db *gorm.DB, devic
 		}
 		validChain, err = ensureAncestorRelation(ctx, db, claims.TenantID, targetOrg.ID, currentOrg.ID)
 	case model.OrgTypeStore:
-		if targetOrg.OrgType != model.OrgTypeDealer {
-			return nil, setRollbackPreviewReason(resp, "门店仅支持回退到上级经销商"), nil
+		if targetOrg.OrgType != model.OrgTypeDealer && targetOrg.OrgType != model.OrgTypePACKFactory {
+			return nil, setRollbackPreviewReason(resp, "门店仅支持回退到上级经销商或PACK厂"), nil
 		}
 		validChain, err = ensureAncestorRelation(ctx, db, claims.TenantID, targetOrg.ID, currentOrg.ID)
 	}
@@ -332,6 +315,25 @@ func (b *Battery) resolveRollbackContext(ctx context.Context, db *gorm.DB, devic
 	if !validChain {
 		return nil, setRollbackPreviewReason(resp, "回退来源机构不在合法上级链路中"), nil
 	}
+
+	var lastTransfer model.DeviceOrgTransfer
+	if err := db.WithContext(ctx).
+		Where("tenant_id = ? AND device_id = ? AND to_org_id = ? AND from_org_id = ?",
+			claims.TenantID, device.ID, currentOrg.ID, targetOrg.ID).
+		Order("transfer_time DESC").
+		Order("created_at DESC").
+		Order("id DESC").
+		First(&lastTransfer).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, setRollbackPreviewReason(resp, "未找到来自上级机构的可回退记录"), nil
+		}
+		return nil, nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"sql_error": err.Error(),
+		})
+	}
+
+	resp.RollbackToOrgID = &targetOrg.ID
+	resp.RollbackToOrgName = &targetOrg.Name
 
 	resp.CanRollback = true
 	resp.Reason = nil
