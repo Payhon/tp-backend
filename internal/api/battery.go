@@ -307,6 +307,7 @@ func (*BatteryApi) GetBatteryImportJobLogs(c *gin.Context) {
 // @Produce json
 // @Param page query int true "页码"
 // @Param page_size query int true "每页数量"
+// @Param device_id query string false "设备ID(电池详情精确过滤)"
 // @Param device_number query string false "电池编号(模糊)"
 // @Param operation_type query string false "操作类型"
 // @Param start_time query string false "开始时间(RFC3339 或 YYYY-MM-DD)"

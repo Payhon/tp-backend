@@ -38,7 +38,7 @@ func (*Battery) GetBatteryOperationLogList(ctx context.Context, req model.Batter
 		return nil, err
 	}
 
-	total, rows, err := GetBatteryOperationLogList(ctx, claims.TenantID, orgID, req.Page, req.PageSize, req.DeviceNumber, req.OperationType, start, end)
+	total, rows, err := GetBatteryOperationLogList(ctx, claims.TenantID, orgID, req.Page, req.PageSize, req.DeviceID, req.DeviceNumber, req.OperationType, start, end)
 	if err != nil {
 		return nil, err
 	}

@@ -72,6 +72,9 @@ type BatteryOperationLogListReq struct {
 	Page     int `form:"page" binding:"required,min=1"`
 	PageSize int `form:"page_size" binding:"required,min=1,max=100"`
 
+	// 设备ID（电池详情按设备精确查询）
+	DeviceID *string `form:"device_id"`
+
 	// 电池编号（支持模糊查询）
 	DeviceNumber *string `form:"device_number"`
 

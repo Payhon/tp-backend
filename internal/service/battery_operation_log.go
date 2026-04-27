@@ -76,7 +76,7 @@ func createBatteryOperationLogWithDB(db *gorm.DB, tenantID, deviceID, deviceNumb
 }
 
 // GetBatteryOperationLogList 查询运营日志列表（分页）
-func GetBatteryOperationLogList(ctx context.Context, tenantID string, orgID string, page, pageSize int, deviceNumberLike *string, operationType *string, startTime, endTime *time.Time) (total int64, list []batteryOperationLogRow, err error) {
+func GetBatteryOperationLogList(ctx context.Context, tenantID string, orgID string, page, pageSize int, deviceID *string, deviceNumberLike *string, operationType *string, startTime, endTime *time.Time) (total int64, list []batteryOperationLogRow, err error) {
 	db := global.DB.WithContext(ctx)
 
 	q := db.Table("battery_operation_logs AS bol").
@@ -101,6 +101,9 @@ func GetBatteryOperationLogList(ctx context.Context, tenantID string, orgID stri
 		)`, tenantID, orgID)
 	}
 
+	if deviceID != nil && *deviceID != "" {
+		q = q.Where("bol.device_id = ?", *deviceID)
+	}
 	if deviceNumberLike != nil && *deviceNumberLike != "" {
 		q = q.Where("bol.device_number ILIKE ?", "%"+*deviceNumberLike+"%")
 	}
