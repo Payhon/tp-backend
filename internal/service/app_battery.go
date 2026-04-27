@@ -98,6 +98,52 @@ var appBatteryCoreKeyWhitelist = map[string]struct{}{
 	"seriesCount":           {},
 }
 
+var appBatteryCurrentTelemetryKeys = []string{
+	"soc",
+	"soh",
+	"packCellSumVoltageV",
+	"vPackV",
+	"currentA",
+	"avgCellVoltageMv",
+	"highestCellVoltageMv",
+	"lowestCellVoltageMv",
+	"maxCellVoltageDiffMv",
+	"chargeMosC",
+	"dischargeMosC",
+	"ambientC",
+	"cycleCount",
+	"chargeRemainingMin",
+	"dischargeRemainingMin",
+	"chargeFetOn",
+	"dischargeFetOn",
+	"charging",
+	"discharging",
+	"balancingOn",
+	"protectOn",
+	"alarmCount",
+	"protectCount",
+	"faultCount",
+	"seriesCount",
+	"meta.seriesCount",
+	"meta.cellTempCount",
+	"electrical.packCellSumVoltageV",
+	"electrical.vPackV",
+	"electrical.currentA",
+	"electrical.avgCellVoltageMv",
+	"electrical.highestCellVoltageMv",
+	"electrical.lowestCellVoltageMv",
+	"electrical.maxCellVoltageDiffMv",
+	"electrical.cellVoltageIndex.highest",
+	"electrical.cellVoltageIndex.lowest",
+	"temperature.chargeMosC",
+	"temperature.dischargeMosC",
+	"temperature.ambientC",
+	"temperature.cellTempsC",
+	"cell.voltagesMv",
+	"cell.balancing",
+	appBatterySnapshotKey,
+}
+
 func canAccessOrgDevice(ctx context.Context, tenantID, userID, deviceID string) (bool, error) {
 	orgID, err := getUserOrgID(userID)
 	if err != nil {
@@ -267,6 +313,62 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 	}, nil
 }
 
+// GetBatteryCurrentTelemetryForApp 获取APP端电池当前遥测（要求设备已绑定到当前用户）。
+func (*AppBattery) GetBatteryCurrentTelemetryForApp(ctx context.Context, deviceID string, claims *utils.UserClaims) (*model.AppBatteryCurrentTelemetryResp, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+
+	detail, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := dal.GetCurrentTelemetryDataEvolutionByKeys(deviceID, appBatteryCurrentTelemetryKeys)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "query_app_battery_current_telemetry",
+			"device_id": deviceID,
+			"error":     err.Error(),
+		})
+	}
+
+	current := make(map[string]model.AppBatteryCurrentTelemetryValue, len(rows))
+	var snapshot map[string]interface{}
+	var lastReportTs int64
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		value := telemetryCurrentValue(row)
+		ts := row.T.UnixMilli()
+		if ts > lastReportTs {
+			lastReportTs = ts
+		}
+		current[row.Key] = model.AppBatteryCurrentTelemetryValue{
+			Value: value,
+			Ts:    ts,
+		}
+		if row.Key == appBatterySnapshotKey {
+			if raw, ok := value.(string); ok && strings.TrimSpace(raw) != "" {
+				var parsed map[string]interface{}
+				if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+					snapshot = parsed
+				}
+			}
+		}
+	}
+
+	return &model.AppBatteryCurrentTelemetryResp{
+		DeviceID:     deviceID,
+		IsOnline:     detail.IsOnline,
+		LastReportTs: lastReportTs,
+		Current:      current,
+		Snapshot:     snapshot,
+	}, nil
+}
+
 // GetBatteryMqttCredentialForApp 获取APP端直连MQTT所需凭证（要求设备已绑定）
 func (*AppBattery) GetBatteryMqttCredentialForApp(ctx context.Context, deviceID string, claims *utils.UserClaims) (*model.AppBatteryMqttCredentialResp, error) {
 	if deviceID == "" {
@@ -409,7 +511,8 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 
 	var packages []model.OtaUpgradePackage
 	pkgQuery := global.DB.WithContext(ctx).Table(model.TableNameOtaUpgradePackage).
-		Where("device_config_id = ?", strings.TrimSpace(*deviceConfigID))
+		Where("device_config_id = ?", strings.TrimSpace(*deviceConfigID)).
+		Where("device_kind = ?", model.OTADeviceKindBMS)
 	// 允许租户级或公共包（tenant_id 为 NULL）
 	pkgQuery = pkgQuery.Where("tenant_id = ? OR tenant_id IS NULL", claims.TenantID)
 	if err := pkgQuery.Order("created_at DESC").Find(&packages).Error; err != nil {
@@ -486,6 +589,71 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 	resp.Module = selected.Module
 	resp.AdditionalInfo = selected.AdditionalInfo
 	resp.Remark = selected.Remark
+
+	return resp, nil
+}
+
+func resolveAppBatteryTenantID(ctx context.Context, claims *utils.UserClaims, tenantHeader string) (string, error) {
+	tid := strings.TrimSpace(tenantHeader)
+	claimsTenantID := ""
+	if claims != nil {
+		claimsTenantID = strings.TrimSpace(claims.TenantID)
+	}
+	if tid != "" && claimsTenantID != "" && tid != claimsTenantID {
+		logrus.WithFields(logrus.Fields{
+			"header_tenant": tid,
+			"claims_tenant": claimsTenantID,
+			"operation":     "resolve_app_battery_tenant_id",
+		}).Warn("app battery tenant header mismatched with claims, prefer claims tenant")
+	}
+	if claimsTenantID != "" {
+		return claimsTenantID, nil
+	}
+	if tid != "" {
+		return tid, nil
+	}
+	return resolveTenantID(ctx, "")
+}
+
+func (*AppBattery) GetMeterOtaPackagesForApp(ctx context.Context, claims *utils.UserClaims, tenantHeader string) ([]model.AppBatteryMeterOtaPackageResp, error) {
+	resolvedTenantID, err := resolveAppBatteryTenantID(ctx, claims, tenantHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	var packages []model.OtaUpgradePackage
+	if err := global.DB.WithContext(ctx).
+		Table(model.TableNameOtaUpgradePackage).
+		Where("(tenant_id = ? OR tenant_id IS NULL)", resolvedTenantID).
+		Where("device_kind = ?", model.OTADeviceKindMeter).
+		Order("created_at DESC").
+		Find(&packages).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+
+	resp := make([]model.AppBatteryMeterOtaPackageResp, 0, len(packages))
+	for _, pkg := range packages {
+		resp = append(resp, model.AppBatteryMeterOtaPackageResp{
+			ID:          pkg.ID,
+			Name:        pkg.Name,
+			Description: pkg.Description,
+			PackageURL:  pkg.PackageURL,
+		})
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"tenant_id":     resolvedTenantID,
+		"header_tenant": strings.TrimSpace(tenantHeader),
+		"claims_tenant": func() string {
+			if claims == nil {
+				return ""
+			}
+			return strings.TrimSpace(claims.TenantID)
+		}(),
+		"package_count":   len(resp),
+		"device_kind":     model.OTADeviceKindMeter,
+		"query_operation": "app_meter_ota_packages",
+	}).Info("app battery meter ota packages fetched")
 
 	return resp, nil
 }
@@ -1078,6 +1246,22 @@ func toTelemetryColumns(v interface{}) (*bool, *float64, *string) {
 		s := strings.TrimSpace(toString(v))
 		return nil, nil, &s
 	}
+}
+
+func telemetryCurrentValue(row *model.TelemetryCurrentData) interface{} {
+	if row == nil {
+		return nil
+	}
+	if row.BoolV != nil {
+		return *row.BoolV
+	}
+	if row.NumberV != nil {
+		return *row.NumberV
+	}
+	if row.StringV != nil {
+		return *row.StringV
+	}
+	return nil
 }
 
 func toFloat64(v interface{}) (float64, bool) {

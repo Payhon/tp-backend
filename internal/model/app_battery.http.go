@@ -38,6 +38,19 @@ type AppBatteryMqttCredentialResp struct {
 	ReadTopic  string `json:"read_topic"`
 }
 
+type AppBatteryCurrentTelemetryValue struct {
+	Value interface{} `json:"value"`
+	Ts    int64       `json:"ts"`
+}
+
+type AppBatteryCurrentTelemetryResp struct {
+	DeviceID     string                                     `json:"device_id"`
+	IsOnline     int16                                      `json:"is_online"`
+	LastReportTs int64                                      `json:"last_report_ts"`
+	Current      map[string]AppBatteryCurrentTelemetryValue `json:"current"`
+	Snapshot     map[string]interface{}                     `json:"snapshot,omitempty"`
+}
+
 // AppBatteryOtaCheckResp APP端OTA检查结果
 type AppBatteryOtaCheckResp struct {
 	DeviceID       string  `json:"device_id"`
@@ -60,6 +73,13 @@ type AppBatteryOtaCheckReq struct {
 	DeviceID string  `json:"device_id"`
 	Model    *string `json:"model,omitempty"`
 	Version  *string `json:"version,omitempty"`
+}
+
+type AppBatteryMeterOtaPackageResp struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	PackageURL  *string `json:"package_url,omitempty"`
 }
 
 // AppBatteryReportReq APP端BMS上报请求

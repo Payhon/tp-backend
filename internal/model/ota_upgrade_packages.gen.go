@@ -28,6 +28,7 @@ type OtaUpgradePackage struct {
 	Remark         *string    `gorm:"column:remark;comment:备注" json:"remark"`                                  // 备注
 	Signature      *string    `gorm:"column:signature;comment:升级包签名" json:"signature"`                         // 升级包签名
 	TenantID       *string    `gorm:"column:tenant_id" json:"tenant_id"`
+	DeviceKind     int16      `gorm:"column:device_kind;not null;default:1;comment:设备类型 1-BMS 2-仪表" json:"device_kind"`
 }
 
 // TableName OtaUpgradePackage's table name

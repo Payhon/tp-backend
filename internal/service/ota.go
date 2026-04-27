@@ -25,6 +25,35 @@ import (
 
 type OTA struct{}
 
+func resolveOTADeviceKind(kind *int16) int16 {
+	if kind == nil || *kind == 0 {
+		return model.OTADeviceKindBMS
+	}
+	if *kind == model.OTADeviceKindMeter {
+		return model.OTADeviceKindMeter
+	}
+	return model.OTADeviceKindBMS
+}
+
+func validateOTAUpgradePackageReq(kind int16, name, version, deviceConfigID string, packageURL *string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if packageURL == nil || strings.TrimSpace(*packageURL) == "" {
+		return fmt.Errorf("package_url is required")
+	}
+	if kind == model.OTADeviceKindMeter {
+		return nil
+	}
+	if strings.TrimSpace(version) == "" {
+		return fmt.Errorf("version is required")
+	}
+	if strings.TrimSpace(deviceConfigID) == "" {
+		return fmt.Errorf("device_config_id is required")
+	}
+	return nil
+}
+
 func resolveSignatureHash(signType string) (hash.Hash, error) {
 	switch strings.ToUpper(strings.TrimSpace(signType)) {
 	case "", "SHA256":
@@ -69,16 +98,31 @@ func signPackageSource(packageURL, signType string) (string, error) {
 }
 
 func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenantID string) error {
+	deviceKind := resolveOTADeviceKind(req.DeviceKind)
+	if err := validateOTAUpgradePackageReq(deviceKind, req.Name, req.Version, req.DeviceConfigID, req.PackageUrl); err != nil {
+		return err
+	}
+
 	var ota = model.OtaUpgradePackage{}
 	ota.ID = uuid.New()
 	ota.Name = req.Name
-	ota.Version = req.Version
+	ota.DeviceKind = deviceKind
+	ota.Version = strings.TrimSpace(req.Version)
 	ota.TargetVersion = req.TargetVersion
-	// 临时注释
-	ota.DeviceConfigID = req.DeviceConfigID
+	ota.DeviceConfigID = strings.TrimSpace(req.DeviceConfigID)
 	ota.Module = req.Module
-	ota.PackageType = *req.PackageType
 	ota.SignatureType = req.SignatureType
+	ota.PackageType = 2
+	if req.PackageType != nil {
+		ota.PackageType = *req.PackageType
+	}
+	if deviceKind == model.OTADeviceKindMeter {
+		ota.Version = ""
+		ota.TargetVersion = nil
+		ota.DeviceConfigID = ""
+		ota.Module = nil
+		ota.PackageType = 2
+	}
 
 	// 生成文件签名
 	fileurl := *req.PackageUrl
@@ -112,26 +156,60 @@ func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenan
 }
 
 func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error {
-
 	oldota, err := dal.GetOtaUpgradePackageByID(req.Id)
 	if err != nil {
 		return err
 	}
 
+	deviceKind := oldota.DeviceKind
+	if req.DeviceKind != nil && *req.DeviceKind != 0 {
+		deviceKind = resolveOTADeviceKind(req.DeviceKind)
+	}
+	nextName := oldota.Name
+	if strings.TrimSpace(req.Name) != "" {
+		nextName = req.Name
+	}
+	nextVersion := oldota.Version
+	if strings.TrimSpace(req.Version) != "" {
+		nextVersion = req.Version
+	}
+	nextDeviceConfigID := oldota.DeviceConfigID
+	if strings.TrimSpace(req.DeviceConfigID) != "" {
+		nextDeviceConfigID = req.DeviceConfigID
+	}
+	nextPackageURL := oldota.PackageURL
+	if req.PackageUrl != nil {
+		nextPackageURL = req.PackageUrl
+	}
+	if err := validateOTAUpgradePackageReq(deviceKind, nextName, nextVersion, nextDeviceConfigID, nextPackageURL); err != nil {
+		return err
+	}
+
 	var ota = model.OtaUpgradePackage{}
 	ota.ID = req.Id
+	ota.DeviceKind = deviceKind
 
 	ota.Name = req.Name
-	// ota.Version = req.Version
-	// ota.TargetVersion = req.TargetVersion
-	// 临时注释
-	// ota.DeviceConfigsID = req.DeviceConfigsID
-	// ota.Module = req.Module
-	// ota.PackageType = *req.PackageType
-	// ota.SignatureType = req.SignatureType
+	ota.Version = req.Version
+	ota.TargetVersion = req.TargetVersion
+	ota.DeviceConfigID = req.DeviceConfigID
+	ota.Module = req.Module
+	if req.PackageType != nil {
+		ota.PackageType = *req.PackageType
+	}
+	if req.SignatureType != nil {
+		ota.SignatureType = req.SignatureType
+	}
 	ota.AdditionalInfo = req.AdditionalInfo
 	ota.Description = req.Description
 	ota.PackageURL = req.PackageUrl
+	if deviceKind == model.OTADeviceKindMeter {
+		ota.Version = ""
+		ota.TargetVersion = nil
+		ota.DeviceConfigID = ""
+		ota.Module = nil
+		ota.PackageType = 2
+	}
 	if req.PackageUrl != oldota.PackageURL {
 		// 生成文件签名
 		fileurl := *req.PackageUrl

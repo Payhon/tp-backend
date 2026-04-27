@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"project/internal/middleware"
 	"project/internal/model"
 	"project/internal/service"
 	"project/pkg/errcode"
@@ -36,6 +37,27 @@ func (*AppBatteryApi) GetBatteryDetail(c *gin.Context) {
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
 
 	data, err := service.GroupApp.AppBattery.GetBatteryDetailForApp(context.Background(), deviceID, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// GetBatteryCurrentTelemetry 获取APP端电池当前遥测
+// @Summary 获取电池当前遥测(APP)
+// @Description APP端4G设备详情页使用：复用绑定/组织权限校验后读取当前遥测与bms.snapshot
+// @Tags APP-Battery
+// @Accept json
+// @Produce json
+// @Param device_id path string true "设备ID(UUID)"
+// @Success 200 {object} model.AppBatteryCurrentTelemetryResp
+// @Router /api/v1/app/battery/current-telemetry/{device_id} [get]
+func (*AppBatteryApi) GetBatteryCurrentTelemetry(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	data, err := service.GroupApp.AppBattery.GetBatteryCurrentTelemetryForApp(context.Background(), deviceID, userClaims)
 	if err != nil {
 		c.Error(err)
 		return
@@ -82,6 +104,26 @@ func (*AppBatteryApi) CheckBatteryOta(c *gin.Context) {
 	}
 
 	data, err := service.GroupApp.AppBattery.CheckBatteryOtaForApp(context.Background(), req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// GetMeterOtaPackages 获取APP端仪表升级包列表
+// @Summary 获取仪表升级包列表
+// @Description 返回当前租户全部仪表升级包
+// @Tags APP-Battery
+// @Accept json
+// @Produce json
+// @Success 200 {array} model.AppBatteryMeterOtaPackageResp
+// @Router /api/v1/app/battery/ota/meter-packages [get]
+func (*AppBatteryApi) GetMeterOtaPackages(c *gin.Context) {
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	tenantHeader := middleware.GetTenantIDFromHeader(c)
+
+	data, err := service.GroupApp.AppBattery.GetMeterOtaPackagesForApp(context.Background(), userClaims, tenantHeader)
 	if err != nil {
 		c.Error(err)
 		return

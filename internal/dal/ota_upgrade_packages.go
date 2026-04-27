@@ -47,6 +47,11 @@ func GetOtaUpgradePackageListByPage(p *model.GetOTAUpgradePackageLisyByPageReq, 
 	var packageList []model.GetOTAUpgradeTaskListByPageRsp
 	queryBuilder := q.WithContext(context.Background())
 	queryBuilder = queryBuilder.Where(q.TenantID.Eq(tenantId))
+	deviceKind := p.DeviceKind
+	if deviceKind == 0 {
+		deviceKind = model.OTADeviceKindBMS
+	}
+	queryBuilder = queryBuilder.Where(q.DeviceKind.Eq(deviceKind))
 	if p.Name != "" {
 		queryBuilder = queryBuilder.Where(q.Name.Like(fmt.Sprintf("%%%s%%", p.Name)))
 	}
