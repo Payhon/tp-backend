@@ -29,14 +29,18 @@ type Bridge struct {
 	queue chan incoming
 	wg    sync.WaitGroup
 
-	boolState *BoolStateStore
+	boolState  *BoolStateStore
+	traceMeta  sync.Map
+	idMap      sync.Map
+	statusMeta sync.Map
 }
 
 type incoming struct {
-	topic      string
-	deviceID   string
-	payload    []byte
-	receivedAt time.Time
+	topic       string
+	rawDeviceID string
+	deviceID    string
+	payload     []byte
+	receivedAt  time.Time
 }
 
 type socketPayload struct {
@@ -119,20 +123,38 @@ func (b *Bridge) Wait() {
 
 func (b *Bridge) subscribe(client mqtt.Client) error {
 	token := client.Subscribe(b.cfg.MQTT.SubscribeTopic, b.cfg.MQTT.SubscribeQoS, func(_ mqtt.Client, m mqtt.Message) {
-		deviceID := extractDeviceIDFromTxTopic(m.Topic())
-		if deviceID == "" {
+		rawDeviceID := extractDeviceIDFromTxTopic(m.Topic())
+		if rawDeviceID == "" {
 			return
 		}
+		deviceID := b.resolvePlatformDeviceID(context.Background(), rawDeviceID)
 		msg := incoming{
-			topic:      m.Topic(),
-			deviceID:   deviceID,
-			payload:    append([]byte(nil), m.Payload()...),
-			receivedAt: time.Now(),
+			topic:       m.Topic(),
+			rawDeviceID: rawDeviceID,
+			deviceID:    deviceID,
+			payload:     append([]byte(nil), m.Payload()...),
+			receivedAt:  time.Now(),
 		}
+		payloadRaw := string(msg.payload)
+		payloadFormat := "json"
+		b.traceCommDebug(context.Background(), commDebugTraceEntry{
+			DeviceID:      deviceID,
+			EventType:     commDebugEventUplinkRaw,
+			Direction:     commDebugDirectionInbound,
+			MQTTTopic:     stringPtr(m.Topic()),
+			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			PayloadRaw:    &payloadRaw,
+			PayloadFormat: &payloadFormat,
+			Status:        commDebugStatusSuccess,
+			OccurredAt:    msg.receivedAt,
+		})
 		select {
 		case b.queue <- msg:
 		default:
-			b.log.WithField("device_id", deviceID).Warn("bms bridge queue full, dropping message")
+			b.log.WithFields(logrus.Fields{
+				"device_id":  deviceID,
+				"raw_device": rawDeviceID,
+			}).Warn("bms bridge queue full, dropping message")
 		}
 	})
 	if token.Wait() && token.Error() != nil {
@@ -153,6 +175,40 @@ func extractDeviceIDFromTxTopic(topic string) string {
 	return parts[3]
 }
 
+func (b *Bridge) resolvePlatformDeviceID(ctx context.Context, identifier string) string {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" || b.db == nil {
+		return identifier
+	}
+	if cached, ok := b.idMap.Load(identifier); ok {
+		if resolved, ok := cached.(string); ok && strings.TrimSpace(resolved) != "" {
+			return resolved
+		}
+		return identifier
+	}
+
+	var row struct {
+		DeviceID string `gorm:"column:device_id"`
+	}
+	err := b.db.WithContext(ctx).
+		Table("devices AS d").
+		Select("d.id AS device_id").
+		Joins("LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id").
+		Where(
+			`d.id = ? OR d.device_number = ? OR dbat.item_uuid = ? OR dbat.comm_chip_id = ? OR dbat.imei = ? OR dbat.iccid = ?`,
+			identifier, identifier, identifier, identifier, identifier, identifier,
+		).
+		Limit(1).
+		Scan(&row).Error
+	if err == nil && strings.TrimSpace(row.DeviceID) != "" {
+		b.idMap.Store(identifier, row.DeviceID)
+		return row.DeviceID
+	}
+
+	b.idMap.Store(identifier, "")
+	return identifier
+}
+
 func (b *Bridge) workerLoop(ctx context.Context, workerID int) {
 	for {
 		select {
@@ -161,9 +217,10 @@ func (b *Bridge) workerLoop(ctx context.Context, workerID int) {
 		case msg := <-b.queue:
 			if err := b.handleIncoming(ctx, msg); err != nil {
 				b.log.WithFields(logrus.Fields{
-					"worker":    workerID,
-					"device_id": msg.deviceID,
-					"topic":     msg.topic,
+					"worker":     workerID,
+					"device_id":  msg.deviceID,
+					"raw_device": msg.rawDeviceID,
+					"topic":      msg.topic,
 				}).WithError(err).Warn("bms bridge handle message failed")
 			}
 		}
@@ -173,12 +230,21 @@ func (b *Bridge) workerLoop(ctx context.Context, workerID int) {
 func (b *Bridge) cleanupLoop(ctx context.Context) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
+	lastCommCleanupAt := time.Time{}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
 			b.boolState.Cleanup(now)
+			if b.db != nil && (lastCommCleanupAt.IsZero() || now.Sub(lastCommCleanupAt) >= time.Hour) {
+				cutoff := now.Add(-7 * 24 * time.Hour)
+				if err := b.db.WithContext(ctx).Table("bms_bridge_comm_logs").Where("occurred_at < ?", cutoff).Delete(nil).Error; err != nil {
+					b.log.WithError(err).Warn("bms bridge comm debug cleanup failed")
+				} else {
+					lastCommCleanupAt = now
+				}
+			}
 		}
 	}
 }
@@ -218,29 +284,29 @@ func debugFrameValue(parsed protocol.ParsedFrame) any {
 	switch f := parsed.(type) {
 	case protocol.ReadFrame:
 		return map[string]any{
-			"type":           f.Type,
-			"sourceAddress":  f.SourceAddress,
-			"targetAddress":  f.TargetAddress,
-			"functionCode":   f.FunctionCode,
-			"byteCount":      f.ByteCount,
-			"dataHex":        protocol.BytesToHexUpper(f.Data),
-			"rawHex":         protocol.BytesToHexUpper(f.Raw),
-			"dataLength":     len(f.Data),
-			"rawLength":      len(f.Raw),
+			"type":          f.Type,
+			"sourceAddress": f.SourceAddress,
+			"targetAddress": f.TargetAddress,
+			"functionCode":  f.FunctionCode,
+			"byteCount":     f.ByteCount,
+			"dataHex":       protocol.BytesToHexUpper(f.Data),
+			"rawHex":        protocol.BytesToHexUpper(f.Raw),
+			"dataLength":    len(f.Data),
+			"rawLength":     len(f.Raw),
 		}
 	case protocol.WriteRequestFrame:
 		return map[string]any{
-			"type":           f.Type,
-			"sourceAddress":  f.SourceAddress,
-			"targetAddress":  f.TargetAddress,
-			"functionCode":   f.FunctionCode,
-			"startAddress":   f.StartAddress,
-			"quantity":       f.Quantity,
-			"byteCount":      f.ByteCount,
-			"dataHex":        protocol.BytesToHexUpper(f.Data),
-			"rawHex":         protocol.BytesToHexUpper(f.Raw),
-			"dataLength":     len(f.Data),
-			"rawLength":      len(f.Raw),
+			"type":          f.Type,
+			"sourceAddress": f.SourceAddress,
+			"targetAddress": f.TargetAddress,
+			"functionCode":  f.FunctionCode,
+			"startAddress":  f.StartAddress,
+			"quantity":      f.Quantity,
+			"byteCount":     f.ByteCount,
+			"dataHex":       protocol.BytesToHexUpper(f.Data),
+			"rawHex":        protocol.BytesToHexUpper(f.Raw),
+			"dataLength":    len(f.Data),
+			"rawLength":     len(f.Raw),
 		}
 	case protocol.ReadRequestFrame:
 		return map[string]any{
@@ -281,7 +347,7 @@ func debugFrameValue(parsed protocol.ParsedFrame) any {
 
 func extractReadFramePayload(f protocol.ReadFrame, reportFunctionCode byte, defaultStart uint16) (reportStart uint16, registers []uint16, ok bool, err error) {
 	switch f.FunctionCode {
-	case protocol.FuncSocketRead, protocol.FuncReadHoldingRegisters:
+	case protocol.FuncSocketRead, protocol.FuncReadHoldingRegisters, protocol.FuncReadUUID:
 		if len(f.Data) >= 4 {
 			startAddress, quantity, rest, parseErr := protocol.ParseSocketReadPayload(f.Data)
 			if parseErr == nil && quantity > 0 && int(quantity)*2 == len(rest) {
@@ -305,6 +371,50 @@ func extractReadFramePayload(f protocol.ReadFrame, reportFunctionCode byte, defa
 	return defaultStart, regs, true, nil
 }
 
+func parseStatusRegistersCompatible(startAddress uint16, registers []uint16) (status.BmsStatus, error) {
+	st, err := status.ParseStatusRegisters(startAddress, registers)
+	if err == nil {
+		return st, nil
+	}
+	if startAddress != 0x100 || len(registers) == 0 {
+		return status.BmsStatus{}, err
+	}
+
+	seriesCount := int((registers[0] >> 8) & 0xFF)
+	cellTempCount := int(registers[0] & 0xFF)
+	requiredEnd := 0x175 + seriesCount + cellTempCount
+	requiredLen := requiredEnd - int(startAddress) + 1
+	if requiredLen <= len(registers) {
+		return status.ParseStatusRegisters(startAddress, registers)
+	}
+
+	padded := make([]uint16, requiredLen)
+	for i := range padded {
+		padded[i] = 0xFFFF
+	}
+	copy(padded, registers)
+	return status.ParseStatusRegisters(startAddress, padded)
+}
+
+func stripPaddedDynamicStatusFields(flat map[string]any, startAddress uint16, registers []uint16, st status.BmsStatus) {
+	if startAddress != 0x100 || st.Meta.SeriesCount <= 0 {
+		return
+	}
+	cellStartOffset := int(0x141 - startAddress)
+	requiredLen := cellStartOffset + st.Meta.SeriesCount + st.Meta.CellTempCount
+	if len(registers) >= requiredLen {
+		return
+	}
+	for _, key := range []string{
+		"cell.voltagesMv",
+		"temperature.cellTempsC",
+		"electrical.packCellSumVoltageV",
+		"electrical.avgCellVoltageMv",
+	} {
+		delete(flat, key)
+	}
+}
+
 func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 	b.log.WithFields(logrus.Fields{
 		"topic":      msg.topic,
@@ -314,12 +424,40 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 
 	hexStr, err := b.decodeSocketHex(msg.payload)
 	if err != nil {
+		payloadRaw := string(msg.payload)
+		payloadFormat := "json"
+		errMsg := err.Error()
+		b.traceCommDebug(ctx, commDebugTraceEntry{
+			DeviceID:      msg.deviceID,
+			EventType:     commDebugEventUplinkError,
+			Direction:     commDebugDirectionInbound,
+			MQTTTopic:     stringPtr(msg.topic),
+			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			PayloadRaw:    &payloadRaw,
+			PayloadFormat: &payloadFormat,
+			Status:        commDebugStatusError,
+			ErrorMessage:  &errMsg,
+			OccurredAt:    msg.receivedAt,
+		})
 		return err
 	}
 	b.log.WithFields(logrus.Fields{
 		"device_id": msg.deviceID,
 		"hexLen":    len(hexStr),
 	}).Debug("bms bridge decoded hex payload")
+	hexRaw := strings.ToUpper(strings.TrimSpace(hexStr))
+	hexFormat := "hex"
+	b.traceCommDebug(ctx, commDebugTraceEntry{
+		DeviceID:      msg.deviceID,
+		EventType:     commDebugEventUplinkDecoded,
+		Direction:     commDebugDirectionInbound,
+		MQTTTopic:     stringPtr(msg.topic),
+		QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+		PayloadRaw:    &hexRaw,
+		PayloadFormat: &hexFormat,
+		Status:        commDebugStatusSuccess,
+		OccurredAt:    msg.receivedAt,
+	})
 	if b.debugEnabled() {
 		b.log.WithFields(logrus.Fields{
 			"device_id": msg.deviceID,
@@ -329,6 +467,19 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 
 	frameBytes, err := protocol.DecodeHexString(hexStr)
 	if err != nil {
+		errMsg := err.Error()
+		b.traceCommDebug(ctx, commDebugTraceEntry{
+			DeviceID:      msg.deviceID,
+			EventType:     commDebugEventUplinkError,
+			Direction:     commDebugDirectionInbound,
+			MQTTTopic:     stringPtr(msg.topic),
+			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			PayloadRaw:    &hexRaw,
+			PayloadFormat: &hexFormat,
+			Status:        commDebugStatusError,
+			ErrorMessage:  &errMsg,
+			OccurredAt:    msg.receivedAt,
+		})
 		return err
 	}
 	b.log.WithFields(logrus.Fields{
@@ -338,8 +489,34 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 
 	parsed, err := protocol.ParseFrame(frameBytes)
 	if err != nil {
+		errMsg := err.Error()
+		b.traceCommDebug(ctx, commDebugTraceEntry{
+			DeviceID:      msg.deviceID,
+			EventType:     commDebugEventUplinkError,
+			Direction:     commDebugDirectionInbound,
+			MQTTTopic:     stringPtr(msg.topic),
+			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			PayloadRaw:    &hexRaw,
+			PayloadFormat: &hexFormat,
+			Status:        commDebugStatusError,
+			ErrorMessage:  &errMsg,
+			OccurredAt:    msg.receivedAt,
+		})
 		return err
 	}
+	frameSummary := debugFrameValue(parsed)
+	b.traceCommDebug(ctx, commDebugTraceEntry{
+		DeviceID:      msg.deviceID,
+		EventType:     commDebugEventUplinkParsed,
+		Direction:     commDebugDirectionInbound,
+		MQTTTopic:     stringPtr(msg.topic),
+		QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+		PayloadRaw:    &hexRaw,
+		PayloadFormat: &hexFormat,
+		ParsedSummary: frameSummary,
+		Status:        commDebugStatusSuccess,
+		OccurredAt:    msg.receivedAt,
+	})
 	b.debugLogJSON("bms bridge parsed frame json", msg.deviceID, debugFrameValue(parsed))
 
 	switch f := parsed.(type) {
@@ -353,40 +530,45 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			"byteCount":     f.ByteCount,
 		}).Debug("bms bridge parsed read frame")
 
-			reportStart, registers, ok, err := extractReadFramePayload(f, b.cfg.Report.FunctionCode, b.cfg.Report.StatusStartAddress)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				// Generic 0x03 response does not carry enough addressing info unless the payload
-				// embeds [startAddress, quantity, data...]. If it doesn't, we skip semantic decode.
-				return nil
-			}
+		reportStart, registers, ok, err := extractReadFramePayload(f, b.cfg.Report.FunctionCode, b.cfg.Report.StatusStartAddress)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			// Generic 0x03 response does not carry enough addressing info unless the payload
+			// embeds [startAddress, quantity, data...]. If it doesn't, we skip semantic decode.
+			return nil
+		}
 
-			flat := make(map[string]any, 256)
-			flat["report.startAddress"] = int(reportStart)
+		flat := make(map[string]any, 256)
+		flat["report.startAddress"] = int(reportStart)
 		flat["report.quantity"] = len(registers)
 		flat = merge(flat, flattenRegisters(reportStart, registers))
 		if extra := decodeSocketRegisters(reportStart, registers); extra != nil {
 			flat = merge(flat, extra)
 		}
 
-			// If it's a status block report, decode semantic status and merge.
-			if reportStart == 0x100 {
-				if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
-					b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed")
-				} else {
-					st, err := status.ParseStatusRegisters(reportStart, registers)
-					if err != nil {
-						return err
-					}
-					b.debugLogJSON("bms bridge parsed status json", msg.deviceID, st)
-					flat = merge(flat, FlattenStatus(st))
-				}
+		// If it's a status block report, decode semantic status and merge.
+		if reportStart == 0x100 {
+			if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
+				b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed, trying compatible parse")
 			}
-			b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
+			st, err := parseStatusRegistersCompatible(reportStart, registers)
+			if err != nil {
+				return err
+			}
+			b.debugLogJSON("bms bridge parsed status json", msg.deviceID, st)
+			b.rememberStatusMeta(msg.deviceID, st)
+			flat = merge(flat, FlattenStatus(st))
+			stripPaddedDynamicStatusFields(flat, reportStart, registers, st)
+		} else if reportStart == 0x141 {
+			if extra := b.decodeDynamicCellReport(ctx, msg.deviceID, reportStart, registers); extra != nil {
+				flat = merge(flat, extra)
+			}
+		}
+		b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
 
-			return b.applyRules(ctx, msg.deviceID, flat)
+		return b.applyRules(ctx, msg.deviceID, flat)
 
 	case protocol.WriteRequestFrame:
 		b.log.WithFields(logrus.Fields{
@@ -417,21 +599,26 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			flat = merge(flat, extra)
 		}
 
-			if reportStart == 0x100 {
-				if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
-					b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed")
-				} else {
-					st, err := status.ParseStatusRegisters(reportStart, registers)
-					if err != nil {
-						return err
-					}
-					b.debugLogJSON("bms bridge parsed status json", msg.deviceID, st)
-					flat = merge(flat, FlattenStatus(st))
-				}
+		if reportStart == 0x100 {
+			if err := status.EnsureStatusRangeLooksValid(reportStart, registers); err != nil {
+				b.log.WithField("device_id", msg.deviceID).WithError(err).Debug("status range sanity check failed, trying compatible parse")
 			}
-			b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
+			st, err := parseStatusRegistersCompatible(reportStart, registers)
+			if err != nil {
+				return err
+			}
+			b.debugLogJSON("bms bridge parsed status json", msg.deviceID, st)
+			b.rememberStatusMeta(msg.deviceID, st)
+			flat = merge(flat, FlattenStatus(st))
+			stripPaddedDynamicStatusFields(flat, reportStart, registers, st)
+		} else if reportStart == 0x141 {
+			if extra := b.decodeDynamicCellReport(ctx, msg.deviceID, reportStart, registers); extra != nil {
+				flat = merge(flat, extra)
+			}
+		}
+		b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
 
-			return b.applyRules(ctx, msg.deviceID, flat)
+		return b.applyRules(ctx, msg.deviceID, flat)
 
 	default:
 		// Other frames are not handled yet (passthrough rules are TODO).
@@ -495,7 +682,7 @@ func (b *Bridge) publishTelemetry(deviceID string, values map[string]any) error 
 		"device_id": deviceID,
 		"values":    values,
 	}
-	return b.publishJSON(b.cfg.MQTT.TelemetryTopic, b.cfg.MQTT.TelemetryQoS, payload)
+	return b.publishJSON(deviceID, commDebugEventDownlinkPub, b.cfg.MQTT.TelemetryTopic, b.cfg.MQTT.TelemetryQoS, nil, payload)
 }
 
 func (b *Bridge) publishAttributes(deviceID string, values map[string]any) error {
@@ -505,7 +692,7 @@ func (b *Bridge) publishAttributes(deviceID string, values map[string]any) error
 		"device_id": deviceID,
 		"values":    values,
 	}
-	return b.publishJSON(topic, b.cfg.MQTT.AttributesQoS, payload)
+	return b.publishJSON(deviceID, commDebugEventDownlinkPub, topic, b.cfg.MQTT.AttributesQoS, &messageID, payload)
 }
 
 func (b *Bridge) emitEventsFromStatusChange(deviceID string, flat map[string]any, rules EventRules) error {
@@ -532,7 +719,7 @@ func (b *Bridge) emitEventsFromStatusChange(deviceID string, flat map[string]any
 				},
 			},
 		}
-		if err := b.publishJSON(topic, b.cfg.MQTT.EventsQoS, payload); err != nil {
+		if err := b.publishJSON(deviceID, commDebugEventDownlinkPub, topic, b.cfg.MQTT.EventsQoS, &messageID, payload); err != nil {
 			return err
 		}
 	}
@@ -545,17 +732,89 @@ func makeMessageID() string {
 	return fmt.Sprintf("%07d", ms%10000000)
 }
 
-func (b *Bridge) publishJSON(topic string, qos byte, payload any) error {
+func (b *Bridge) publishJSON(deviceID, eventType, topic string, qos byte, messageID *string, payload any) error {
 	bs, err := json.Marshal(payload)
 	if err != nil {
+		errMsg := err.Error()
+		payloadRaw := string(bs)
+		payloadFormat := "json"
+		b.traceCommDebug(context.Background(), commDebugTraceEntry{
+			DeviceID:      deviceID,
+			EventType:     commDebugEventDownlinkError,
+			Direction:     commDebugDirectionOutbound,
+			MQTTTopic:     stringPtr(topic),
+			QoS:           intPtr(int(qos)),
+			MessageID:     messageID,
+			PayloadRaw:    &payloadRaw,
+			PayloadFormat: &payloadFormat,
+			Status:        commDebugStatusError,
+			ErrorMessage:  &errMsg,
+			OccurredAt:    time.Now(),
+		})
 		return err
 	}
+	payloadRaw := string(bs)
+	payloadFormat := "json"
+	now := time.Now()
+	b.traceCommDebug(context.Background(), commDebugTraceEntry{
+		DeviceID:      deviceID,
+		EventType:     eventType,
+		Direction:     commDebugDirectionOutbound,
+		MQTTTopic:     stringPtr(topic),
+		QoS:           intPtr(int(qos)),
+		MessageID:     messageID,
+		PayloadRaw:    &payloadRaw,
+		PayloadFormat: &payloadFormat,
+		ParsedSummary: payload,
+		Status:        commDebugStatusSuccess,
+		OccurredAt:    now,
+	})
 	token := b.client.Publish(topic, qos, false, bs)
 	timeout := time.Duration(b.cfg.MQTT.PublishTimeoutMs) * time.Millisecond
 	if !token.WaitTimeout(timeout) {
-		return fmt.Errorf("mqtt publish timeout: topic=%s", topic)
+		err := fmt.Errorf("mqtt publish timeout: topic=%s", topic)
+		errMsg := err.Error()
+		b.traceCommDebug(context.Background(), commDebugTraceEntry{
+			DeviceID:      deviceID,
+			EventType:     commDebugEventDownlinkError,
+			Direction:     commDebugDirectionOutbound,
+			MQTTTopic:     stringPtr(topic),
+			QoS:           intPtr(int(qos)),
+			MessageID:     messageID,
+			PayloadRaw:    &payloadRaw,
+			PayloadFormat: &payloadFormat,
+			Status:        commDebugStatusError,
+			ErrorMessage:  &errMsg,
+			OccurredAt:    time.Now(),
+		})
+		return err
 	}
-	return token.Error()
+	if err := token.Error(); err != nil {
+		errMsg := err.Error()
+		b.traceCommDebug(context.Background(), commDebugTraceEntry{
+			DeviceID:      deviceID,
+			EventType:     commDebugEventDownlinkError,
+			Direction:     commDebugDirectionOutbound,
+			MQTTTopic:     stringPtr(topic),
+			QoS:           intPtr(int(qos)),
+			MessageID:     messageID,
+			PayloadRaw:    &payloadRaw,
+			PayloadFormat: &payloadFormat,
+			Status:        commDebugStatusError,
+			ErrorMessage:  &errMsg,
+			OccurredAt:    time.Now(),
+		})
+		return err
+	}
+	return nil
+}
+
+func stringPtr(v string) *string {
+	return &v
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 var allowedDeviceBatteryColumns = map[string]struct{}{

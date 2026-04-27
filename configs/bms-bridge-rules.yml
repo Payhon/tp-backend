@@ -15,6 +15,17 @@ default:
     highestCellVoltageMv: electrical.highestCellVoltageMv
     lowestCellVoltageMv: electrical.lowestCellVoltageMv
     maxCellVoltageDiffMv: electrical.maxCellVoltageDiffMv
+    avgCellVoltageMv: electrical.avgCellVoltageMv
+    cellVoltageHighestIndex: electrical.cellVoltageIndex.highest
+    cellVoltageLowestIndex: electrical.cellVoltageIndex.lowest
+    cellVoltagesMv: cell.voltagesMv
+    cellTempsC: temperature.cellTempsC
+    cell.voltagesMv: cell.voltagesMv
+    temperature.cellTempsC: temperature.cellTempsC
+    electrical.cellVoltageIndex.highest: electrical.cellVoltageIndex.highest
+    electrical.cellVoltageIndex.lowest: electrical.cellVoltageIndex.lowest
+    electrical.packCellSumVoltageV: electrical.packCellSumVoltageV
+    electrical.avgCellVoltageMv: electrical.avgCellVoltageMv
 
   # Attributes: relatively static info (QoS recommended 1).
   attributes:

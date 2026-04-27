@@ -396,11 +396,6 @@ func (f *TelemetryUplink) refreshHeartbeat(device *model.Device) {
 		return
 	}
 
-	// 无心跳配置,不处理
-	if config == nil {
-		return
-	}
-
 	// 检查是否需要自动上线
 	if device.IsOnline != 1 {
 		// 设备当前离线,收到消息后自动上线
@@ -427,6 +422,13 @@ func (f *TelemetryUplink) refreshHeartbeat(device *model.Device) {
 			// SSE通知、自动化、预期数据(异步)
 			go f.notifyDeviceOnline(updatedDevice)
 		}
+	}
+
+	if config == nil {
+		if err := f.heartbeatService.RefreshDefaultHeartbeat(device.ID); err != nil {
+			f.logger.WithError(err).WithField("device_id", device.ID).Error("Failed to refresh default heartbeat")
+		}
+		return
 	}
 
 	// 刷新心跳 key (优先级: heartbeat > online_timeout)

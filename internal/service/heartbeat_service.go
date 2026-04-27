@@ -8,6 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 
 	"project/internal/dal"
 	"project/internal/model"
@@ -123,6 +124,23 @@ func (s *HeartbeatService) RefreshHeartbeat(device *model.Device, config *Heartb
 	}
 
 	return nil
+}
+
+// DefaultOnlineTTL 获取业务数据上报兜底在线保活秒数
+func (s *HeartbeatService) DefaultOnlineTTL() int {
+	ttlSec := 120
+	if viper.IsSet("heartbeat.default_online_ttl_sec") {
+		ttlSec = viper.GetInt("heartbeat.default_online_ttl_sec")
+	}
+	if ttlSec < 5 {
+		ttlSec = 5
+	}
+	return ttlSec
+}
+
+// RefreshDefaultHeartbeat 在无显式心跳配置时，按默认 TTL 续期在线状态
+func (s *HeartbeatService) RefreshDefaultHeartbeat(deviceID string) error {
+	return s.SetHeartbeat(deviceID, s.DefaultOnlineTTL())
 }
 
 // DeleteHeartbeatKey 删除心跳key(用于设备删除等场景)
