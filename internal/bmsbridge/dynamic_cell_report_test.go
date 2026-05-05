@@ -10,6 +10,36 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func TestCollectDeviceBatterySyncValuesDoesNotSyncItemUUID(t *testing.T) {
+	values := collectDeviceBatterySyncValues(
+		map[string]any{
+			"identity.boardCode":    "USER-BOARD-CODE",
+			"identity.bluetoothMac": "AA:BB:CC:DD:EE:FF",
+			"socket.imei":           "",
+			"energy.socPct":         float64(88),
+		},
+		map[string]string{
+			"item_uuid": "identity.boardCode",
+			"ble_mac":   "identity.bluetoothMac",
+			"imei":      "socket.imei",
+			"soc":       "energy.socPct",
+		},
+	)
+
+	if _, ok := values["item_uuid"]; ok {
+		t.Fatalf("item_uuid should not be synced from identity.boardCode")
+	}
+	if _, ok := values["imei"]; ok {
+		t.Fatalf("empty string should not be synced")
+	}
+	if got := values["ble_mac"]; got != "AA:BB:CC:DD:EE:FF" {
+		t.Fatalf("ble_mac = %v, want AA:BB:CC:DD:EE:FF", got)
+	}
+	if got := values["soc"]; got != float64(88) {
+		t.Fatalf("soc = %v, want 88", got)
+	}
+}
+
 func TestDecodeDynamicCellReportFromSocketFrame(t *testing.T) {
 	raw := "7F55FAFEFF3C0141001C0BAE0BAA0BA90BA70BB20BAC0BA90BB10BBA0BA50BAD0BA90BA60B9D0BB90BC30BB90BB94A4632422D355644324331343030302D3630412DED41FD"
 	frameBytes, err := protocol.DecodeHexString(raw)

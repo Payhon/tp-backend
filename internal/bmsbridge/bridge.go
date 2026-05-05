@@ -821,7 +821,6 @@ var allowedDeviceBatteryColumns = map[string]struct{}{
 	"soc":               {},
 	"soh":               {},
 	"ble_mac":           {},
-	"item_uuid":         {},
 	"comm_chip_id":      {},
 	"longitude":         {},
 	"latitude":          {},
@@ -835,10 +834,7 @@ var allowedDeviceBatteryColumns = map[string]struct{}{
 	"module_sw_version": {},
 }
 
-func (b *Bridge) syncDeviceBatteries(ctx context.Context, deviceID string, flat map[string]any, mapping map[string]string) error {
-	if b.db == nil {
-		return nil
-	}
+func collectDeviceBatterySyncValues(flat map[string]any, mapping map[string]string) map[string]any {
 	values := make(map[string]any, len(mapping))
 	for col, flatKey := range mapping {
 		if _, ok := allowedDeviceBatteryColumns[col]; !ok {
@@ -848,8 +844,22 @@ func (b *Bridge) syncDeviceBatteries(ctx context.Context, deviceID string, flat 
 		if !ok || v == nil {
 			continue
 		}
+		if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
+			continue
+		}
 		values[col] = v
 	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+func (b *Bridge) syncDeviceBatteries(ctx context.Context, deviceID string, flat map[string]any, mapping map[string]string) error {
+	if b.db == nil {
+		return nil
+	}
+	values := collectDeviceBatterySyncValues(flat, mapping)
 	if len(values) == 0 {
 		return nil
 	}

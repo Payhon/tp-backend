@@ -71,6 +71,9 @@ func FlattenStatus(s status.BmsStatus) map[string]any {
 	for k, v := range s.Status.ProtectionStatus {
 		out[fmt.Sprintf("status.protectionStatus.%s", k)] = v
 	}
+	for k, v := range s.Status.FailureStatus {
+		out[fmt.Sprintf("status.failureStatus.%s", k)] = v
+	}
 	for k, v := range s.Status.IndicatorStatus {
 		out[fmt.Sprintf("status.indicatorStatus.%s", k)] = v
 	}

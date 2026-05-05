@@ -51,18 +51,32 @@ func decodeBitField32(u32 uint32, mapping map[uint]func() string) map[string]boo
 	return out
 }
 
+func decodeBitField16(u16 uint16, mapping map[uint]func() string) map[string]bool {
+	out := make(map[string]bool, len(mapping))
+	for bit, nameFn := range mapping {
+		out[nameFn()] = (u16 & (1 << bit)) != 0
+	}
+	return out
+}
+
 var protectionBits = map[uint]func() string{
-	0:  func() string { return "chargeMosFault" },
-	1:  func() string { return "dischargeMosFault" },
+	0:  func() string { return "cellOverVoltageProtectionLv1" },
+	1:  func() string { return "cellUnderVoltageProtectionLv1" },
 	2:  func() string { return "poleTempOverTempProtection" },
-	3:  func() string { return "antiReverseMosFault" },
+	3:  func() string { return "preDischargeShortCircuitProtection" },
 	4:  func() string { return "chargeOverCurrentProtectionLv1" },
 	5:  func() string { return "dischargeOverCurrentProtectionLv1" },
 	6:  func() string { return "shortCircuitProtection" },
 	7:  func() string { return "insulationProtection" },
 	8:  func() string { return "cellOverVoltageProtectionLv2" },
 	9:  func() string { return "cellUnderVoltageProtectionLv2" },
-	14: func() string { return "ambientNtcInvalid" },
+	10: func() string { return "chargeOverCurrentProtectionLv2" },
+	11: func() string { return "dischargeOverCurrentProtectionLv2" },
+	12: func() string { return "afeOverTempProtection" },
+	14: func() string { return "ambientUnderTempProtection" },
+	15: func() string { return "ambientOverTempProtection" },
+	16: func() string { return "chargeHighTempProtectionCell" },
+	17: func() string { return "dischargeHighTempProtectionCell" },
 	18: func() string { return "chargeLowTempProtectionCell" },
 	19: func() string { return "dischargeLowTempProtectionCell" },
 	20: func() string { return "cellUnderTempProtection" },
@@ -75,6 +89,24 @@ var protectionBits = map[uint]func() string{
 	28: func() string { return "heatingFilmTempProtection" },
 	29: func() string { return "packUnderVoltageProtection" },
 	30: func() string { return "packOverVoltageProtection" },
+}
+
+var failureBits = map[uint]func() string{
+	0:  func() string { return "chargeMosFault" },
+	1:  func() string { return "dischargeMosFault" },
+	2:  func() string { return "prechargeMosFault" },
+	3:  func() string { return "antiReverseMosFault" },
+	4:  func() string { return "heatingMosFault" },
+	5:  func() string { return "cellSamplingOpenCircuitFault" },
+	6:  func() string { return "rtcOrCellUltraLowVoltageChargeDisableFault" },
+	8:  func() string { return "fuseBlownFault" },
+	9:  func() string { return "voltageSamplingFault" },
+	10: func() string { return "currentSamplingFault" },
+	11: func() string { return "cellAbnormalOverTempFault" },
+	12: func() string { return "afeCommunicationFault" },
+	13: func() string { return "cellNtcInvalid" },
+	14: func() string { return "ambientNtcInvalid" },
+	15: func() string { return "mosNtcInvalid" },
 }
 
 var indicatorBits = map[uint]func() string{
@@ -180,6 +212,10 @@ func ParseStatusRegisters(startAddress uint16, registers []uint16) (BmsStatus, e
 	}
 
 	protU32, err := view.U32(0x12F)
+	if err != nil {
+		return BmsStatus{}, err
+	}
+	failU16, err := view.U16(0x131)
 	if err != nil {
 		return BmsStatus{}, err
 	}
@@ -498,6 +534,7 @@ func ParseStatusRegisters(startAddress uint16, registers []uint16) (BmsStatus, e
 		},
 		Status: StatusBits{
 			ProtectionStatus: decodeBitField32(uint32(protU32), protectionBits),
+			FailureStatus:    decodeBitField16(failU16, failureBits),
 			IndicatorStatus:  decodeBitField32(uint32(indU32), indicatorBits),
 			AlarmStatus:      decodeBitField32(uint32(alarmU32), alarmBits),
 			CustomStatus:     customStatus,

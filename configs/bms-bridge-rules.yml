@@ -54,7 +54,6 @@ default:
       soc: energy.socPct
       soh: energy.sohPct
       ble_mac: identity.bluetoothMac
-      item_uuid: identity.boardCode
       longitude: socket.longitude
       latitude: socket.latitude
       speed: socket.speedKmh

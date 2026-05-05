@@ -227,8 +227,14 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		return
 	}
 	// 校验：设备必须绑定到当前用户（避免任意设备透传）
-	if _, err := service.GroupApp.AppBattery.GetBatteryDetailForApp(context.Background(), deviceID, claims); err != nil {
+	detail, err := service.GroupApp.AppBattery.GetBatteryDetailForApp(context.Background(), deviceID, claims)
+	if err != nil {
 		conn.WriteMessage(msgType, []byte(err.Error()))
+		return
+	}
+	socketTopicID := strings.TrimSpace(detail.DeviceNumber)
+	if socketTopicID == "" {
+		conn.WriteMessage(msgType, []byte("device_number is required for mqtt socket topic"))
 		return
 	}
 
@@ -244,7 +250,11 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 	user := viper.GetString("mqtt.user")
 	pass := viper.GetString("mqtt.pass")
 
-	mqttClientID := fmt.Sprintf("app_ws_%s_%d", deviceID[:8], time.Now().UnixNano())
+	clientIDPart := deviceID
+	if len(clientIDPart) > 8 {
+		clientIDPart = clientIDPart[:8]
+	}
+	mqttClientID := fmt.Sprintf("app_ws_%s_%d", clientIDPart, time.Now().UnixNano())
 	brokerURL := broker
 	if !strings.Contains(brokerURL, "://") {
 		brokerURL = "tcp://" + brokerURL
@@ -266,8 +276,8 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		mc.Disconnect(250)
 	}()
 
-	txTopic := fmt.Sprintf("device/socket/tx/%s", deviceID)
-	rxTopic := fmt.Sprintf("device/socket/rx/%s", deviceID)
+	txTopic := fmt.Sprintf("device/socket/tx/%s", socketTopicID)
+	rxTopic := fmt.Sprintf("device/socket/rx/%s", socketTopicID)
 
 	// websocket 写锁（paho 回调可能并发）
 	var writeMu sync.Mutex

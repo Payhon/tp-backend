@@ -39,7 +39,7 @@ func (r RuleSet) withDefaults() RuleSet {
 		out.Events.MethodPrefix = "bms."
 	}
 	if out.Events.TrackKeyPrefixes == nil {
-		out.Events.TrackKeyPrefixes = []string{"status.alarmStatus.", "status.protectionStatus."}
+		out.Events.TrackKeyPrefixes = []string{"status.alarmStatus.", "status.protectionStatus.", "status.failureStatus."}
 	}
 	return out
 }

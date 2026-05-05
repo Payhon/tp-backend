@@ -83,6 +83,7 @@ type Cell struct {
 
 type StatusBits struct {
 	ProtectionStatus map[string]bool `json:"protectionStatus"`
+	FailureStatus    map[string]bool `json:"failureStatus"`
 	IndicatorStatus  map[string]bool `json:"indicatorStatus"`
 	AlarmStatus      map[string]bool `json:"alarmStatus"`
 	CustomStatus     uint32          `json:"customStatus"`
