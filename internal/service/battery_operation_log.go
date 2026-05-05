@@ -15,6 +15,7 @@ const (
 	BatteryOpTypeCreate            = "CREATE"
 	BatteryOpTypeImport            = "IMPORT"
 	BatteryOpTypeFactoryOut        = "FACTORY_OUT"
+	BatteryOpTypeFactoryRestore    = "FACTORY_RESTORE"
 	BatteryOpTypeTransfer          = "TRANSFER"
 	BatteryOpTypeRollback          = "ROLLBACK"
 	BatteryOpTypeActivate          = "ACTIVATE"

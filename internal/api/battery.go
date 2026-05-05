@@ -381,6 +381,31 @@ func (*BatteryApi) BatchFactoryOutBattery(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// FactoryRestoreBattery 电池恢复出厂
+// @Summary 电池恢复出厂
+// @Description BMS 电池管理-恢复出厂（退回厂家库存）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryFactoryRestoreReq true "请求参数"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/battery/factory_restore [post]
+func (*BatteryApi) FactoryRestoreBattery(c *gin.Context) {
+	var req model.BatteryFactoryRestoreReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	if err := service.GroupApp.Battery.FactoryRestoreBattery(context.Background(), req, userClaims, orgID); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", map[string]interface{}{"message": "恢复出厂成功"})
+}
+
 // TransferBattery 电池调拨
 // @Summary 电池调拨
 // @Description BMS 电池管理-调拨（组织转移）

@@ -136,6 +136,12 @@ type BatteryTransferReq struct {
 	Remark   *string `json:"remark"`
 }
 
+// BatteryFactoryRestoreReq 电池恢复出厂（退回厂家库存）
+type BatteryFactoryRestoreReq struct {
+	DeviceID string  `json:"device_id" binding:"required"`
+	Remark   *string `json:"remark"`
+}
+
 type BatteryRollbackPreviewReq struct {
 	DeviceID string `form:"device_id" binding:"required"`
 }

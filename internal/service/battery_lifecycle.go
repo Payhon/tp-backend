@@ -391,6 +391,107 @@ func (b *Battery) BatchFactoryOutBattery(ctx context.Context, req model.BatteryB
 	return resp, nil
 }
 
+// FactoryRestoreBattery 电池恢复出厂（退回厂家库存）
+func (*Battery) FactoryRestoreBattery(ctx context.Context, req model.BatteryFactoryRestoreReq, claims *utils.UserClaims, operatorOrgID string) error {
+	// 权限口径复用出厂：有组织时必须为厂家组织；无组织管理员沿用放行
+	if operatorOrgID != "" {
+		operatorOrg, err := getOrgByID(ctx, claims.TenantID, operatorOrgID)
+		if err != nil {
+			return err
+		}
+		if operatorOrg.OrgType != model.OrgTypeBMSFactory {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"message": "仅厂家账号可执行恢复出厂操作",
+			})
+		}
+	}
+
+	now := time.Now().UTC()
+	return global.DB.Transaction(func(tx *gorm.DB) error {
+		var device model.Device
+		if err := tx.Where("id = ? AND tenant_id = ?", req.DeviceID, claims.TenantID).First(&device).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"message": "设备不存在",
+				})
+			}
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+
+		var dbat model.DeviceBattery
+		if err := tx.Where("device_id = ?", device.ID).First(&dbat).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"message": "设备未出厂，无法恢复出厂",
+				})
+			}
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+		if dbat.OwnerOrgID == nil || *dbat.OwnerOrgID == "" {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"message": "当前已在厂家库存，无需恢复出厂",
+			})
+		}
+
+		fromOrg, err := getOrgByIDWithDB(ctx, tx, claims.TenantID, *dbat.OwnerOrgID)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+					"message": "当前归属机构不存在",
+				})
+			}
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+		if fromOrg.OrgType == model.OrgTypeBMSFactory {
+			return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{
+				"message": "当前已在厂家库存，无需恢复出厂",
+			})
+		}
+
+		if err := tx.Model(&model.DeviceBattery{}).
+			Where("device_id = ?", device.ID).
+			Updates(map[string]interface{}{
+				"owner_org_id": nil,
+				"updated_at":   now,
+			}).Error; err != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+
+		transferLog := model.DeviceOrgTransfer{
+			ID:           uuid.New(),
+			DeviceID:     device.ID,
+			FromOrgID:    dbat.OwnerOrgID,
+			ToOrgID:      nil,
+			OperatorID:   &claims.ID,
+			TransferTime: &now,
+			Remark:       req.Remark,
+			TenantID:     claims.TenantID,
+			CreatedAt:    &now,
+		}
+		if err := tx.Create(&transferLog).Error; err != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+				"sql_error": err.Error(),
+			})
+		}
+
+		desc := fmt.Sprintf("恢复出厂：%s -> 厂家", fromOrg.Name)
+		_ = CreateBatteryOperationLogTx(tx, claims.TenantID, device.ID, device.DeviceNumber, BatteryOpTypeFactoryRestore, &claims.ID, &desc, map[string]any{
+			"from_org_id": dbat.OwnerOrgID,
+			"to_org_id":   nil,
+			"remark":      req.Remark,
+		})
+		return nil
+	})
+}
+
 // TransferBattery 电池调拨（组织转移）
 func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferReq, claims *utils.UserClaims, operatorOrgID string) error {
 	targetOrg, err := getOrgByID(ctx, claims.TenantID, req.ToOrgID)
