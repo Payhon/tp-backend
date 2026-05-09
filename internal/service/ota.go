@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,10 +18,13 @@ import (
 	query "project/internal/query"
 	"project/mqtt/publish"
 	"project/pkg/common"
+	"project/pkg/errcode"
+	global "project/pkg/global"
 	utils "project/pkg/utils"
 
 	"github.com/go-basic/uuid"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type OTA struct{}
@@ -31,6 +35,9 @@ func resolveOTADeviceKind(kind *int16) int16 {
 	}
 	if *kind == model.OTADeviceKindMeter {
 		return model.OTADeviceKindMeter
+	}
+	if *kind == model.OTADeviceKind4GModule {
+		return model.OTADeviceKind4GModule
 	}
 	return model.OTADeviceKindBMS
 }
@@ -48,10 +55,22 @@ func validateOTAUpgradePackageReq(kind int16, name, version, deviceConfigID stri
 	if strings.TrimSpace(version) == "" {
 		return fmt.Errorf("version is required")
 	}
+	if kind == model.OTADeviceKind4GModule {
+		return nil
+	}
 	if strings.TrimSpace(deviceConfigID) == "" {
 		return fmt.Errorf("device_config_id is required")
 	}
 	return nil
+}
+
+func unsetOtherLatest4GPackages(tx *gorm.DB, tenantID, packageID string) error {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(packageID) == "" {
+		return nil
+	}
+	return tx.Model(&model.OtaUpgradePackage{}).
+		Where("tenant_id = ? AND device_kind = ? AND id <> ?", tenantID, model.OTADeviceKind4GModule, packageID).
+		Update("is_latest", false).Error
 }
 
 func resolveSignatureHash(signType string) (hash.Hash, error) {
@@ -116,8 +135,18 @@ func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenan
 	if req.PackageType != nil {
 		ota.PackageType = *req.PackageType
 	}
+	if req.IsLatest != nil {
+		ota.IsLatest = *req.IsLatest
+	}
 	if deviceKind == model.OTADeviceKindMeter {
 		ota.Version = ""
+		ota.TargetVersion = nil
+		ota.DeviceConfigID = ""
+		ota.Module = nil
+		ota.PackageType = 2
+		ota.IsLatest = false
+	}
+	if deviceKind == model.OTADeviceKind4GModule {
 		ota.TargetVersion = nil
 		ota.DeviceConfigID = ""
 		ota.Module = nil
@@ -151,8 +180,15 @@ func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenan
 	ota.CreatedAt = t
 	ota.UpdatedAt = &t
 	ota.Remark = req.Remark
-	err = dal.CreateOtaUpgradePackage(&ota)
-	return err
+	return global.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&ota).Error; err != nil {
+			return err
+		}
+		if ota.DeviceKind == model.OTADeviceKind4GModule && ota.IsLatest {
+			return unsetOtherLatest4GPackages(tx, tenantID, ota.ID)
+		}
+		return nil
+	})
 }
 
 func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error {
@@ -185,32 +221,64 @@ func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error
 		return err
 	}
 
-	var ota = model.OtaUpgradePackage{}
-	ota.ID = req.Id
-	ota.DeviceKind = deviceKind
-
-	ota.Name = req.Name
-	ota.Version = req.Version
-	ota.TargetVersion = req.TargetVersion
-	ota.DeviceConfigID = req.DeviceConfigID
-	ota.Module = req.Module
+	updates := map[string]interface{}{
+		"device_kind": deviceKind,
+	}
+	if strings.TrimSpace(req.Name) != "" {
+		updates["name"] = req.Name
+	}
+	if strings.TrimSpace(req.Version) != "" {
+		updates["version"] = strings.TrimSpace(req.Version)
+	}
+	if req.TargetVersion != nil {
+		updates["target_version"] = req.TargetVersion
+	}
+	if strings.TrimSpace(req.DeviceConfigID) != "" {
+		updates["device_config_id"] = strings.TrimSpace(req.DeviceConfigID)
+	}
+	if req.Module != nil {
+		updates["module"] = req.Module
+	}
 	if req.PackageType != nil {
-		ota.PackageType = *req.PackageType
+		updates["package_type"] = *req.PackageType
 	}
 	if req.SignatureType != nil {
-		ota.SignatureType = req.SignatureType
+		updates["signature_type"] = req.SignatureType
 	}
-	ota.AdditionalInfo = req.AdditionalInfo
-	ota.Description = req.Description
-	ota.PackageURL = req.PackageUrl
+	if req.AdditionalInfo != nil {
+		updates["additional_info"] = req.AdditionalInfo
+	}
+	if req.Description != nil {
+		updates["description"] = req.Description
+	}
+	if req.PackageUrl != nil {
+		updates["package_url"] = req.PackageUrl
+	}
+	if req.Remark != nil {
+		updates["remark"] = req.Remark
+	}
+	if req.IsLatest != nil {
+		updates["is_latest"] = *req.IsLatest
+	}
 	if deviceKind == model.OTADeviceKindMeter {
-		ota.Version = ""
-		ota.TargetVersion = nil
-		ota.DeviceConfigID = ""
-		ota.Module = nil
-		ota.PackageType = 2
+		updates["version"] = ""
+		updates["target_version"] = nil
+		updates["device_config_id"] = ""
+		updates["module"] = nil
+		updates["package_type"] = int16(2)
+		updates["is_latest"] = false
 	}
-	if req.PackageUrl != oldota.PackageURL {
+	if deviceKind == model.OTADeviceKind4GModule {
+		updates["target_version"] = nil
+		updates["device_config_id"] = ""
+		updates["module"] = nil
+		updates["package_type"] = int16(2)
+		if req.IsLatest == nil {
+			updates["is_latest"] = oldota.IsLatest
+		}
+	}
+	packageChanged := req.PackageUrl != nil && (oldota.PackageURL == nil || strings.TrimSpace(*req.PackageUrl) != strings.TrimSpace(*oldota.PackageURL))
+	if packageChanged {
 		// 生成文件签名
 		fileurl := *req.PackageUrl
 		signatureType := "SHA256"
@@ -223,20 +291,30 @@ func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error
 		if err != nil {
 			return err
 		}
-		ota.Signature = &signature
+		updates["signature"] = signature
 	}
 
 	t := time.Now().UTC()
-	ota.UpdatedAt = &t
-	ota.Remark = req.Remark
-	info, err := dal.UpdateOtaUpgradePackage(&ota)
-	if err != nil {
-		return err
+	updates["updated_at"] = &t
+	tenantID := ""
+	if oldota.TenantID != nil {
+		tenantID = strings.TrimSpace(*oldota.TenantID)
 	}
-	if info.RowsAffected == 0 {
-		return fmt.Errorf("no data updated")
-	}
-	return nil
+	return global.DB.Transaction(func(tx *gorm.DB) error {
+		info := tx.Model(&model.OtaUpgradePackage{}).Where("id = ?", req.Id).Updates(updates)
+		if info.Error != nil {
+			return info.Error
+		}
+		if info.RowsAffected == 0 {
+			return fmt.Errorf("no data updated")
+		}
+		if deviceKind == model.OTADeviceKind4GModule {
+			if latest, ok := updates["is_latest"].(bool); ok && latest {
+				return unsetOtherLatest4GPackages(tx, tenantID, req.Id)
+			}
+		}
+		return nil
+	})
 }
 
 func (*OTA) DeleteOTAUpgradePackage(packageId string) error {
@@ -254,6 +332,81 @@ func (*OTA) GetOTAUpgradePackageListByPage(req *model.GetOTAUpgradePackageLisyBy
 	packageListRspMap["list"] = list
 	return packageListRspMap, nil
 
+}
+
+func (*OTA) Check4GModuleUpgrade(ctx context.Context, req *model.GetOTA4GModuleUpgradeCheckReq, tenantID string) (*model.OTA4GModuleUpgradeCheckResp, error) {
+	version := strings.TrimSpace(req.Version)
+	iccid := strings.TrimSpace(req.Iccid)
+	resp := &model.OTA4GModuleUpgradeCheckResp{
+		NeedUpgrade:    false,
+		CurrentVersion: version,
+		Iccid:          iccid,
+	}
+
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "X-Tenant-ID is required")
+	}
+
+	var deviceCount int64
+	if err := global.DB.WithContext(ctx).
+		Table(model.TableNameDeviceBattery+" db").
+		Joins("JOIN "+model.TableNameDevice+" d ON d.id = db.device_id").
+		Where("d.tenant_id = ? AND db.iccid = ?", tenantID, iccid).
+		Count(&deviceCount).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if deviceCount == 0 {
+		return resp, nil
+	}
+
+	var packages []model.OtaUpgradePackage
+	if err := global.DB.WithContext(ctx).
+		Table(model.TableNameOtaUpgradePackage).
+		Where("(tenant_id = ? OR tenant_id IS NULL)", tenantID).
+		Where("device_kind = ?", model.OTADeviceKind4GModule).
+		Order("created_at DESC").
+		Find(&packages).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if len(packages) == 0 {
+		return resp, nil
+	}
+
+	candidates := make([]model.OtaUpgradePackage, 0, len(packages))
+	for _, pkg := range packages {
+		if compareVersion(pkg.Version, version) > 0 {
+			candidates = append(candidates, pkg)
+		}
+	}
+	if len(candidates) == 0 {
+		return resp, nil
+	}
+
+	selected := candidates[0]
+	if len(candidates) > 1 {
+		foundLatest := false
+		for _, pkg := range candidates {
+			if pkg.IsLatest {
+				if !foundLatest || compareVersion(pkg.Version, selected.Version) > 0 {
+					selected = pkg
+				}
+				foundLatest = true
+			}
+		}
+		if !foundLatest {
+			return resp, nil
+		}
+	}
+
+	resp.NeedUpgrade = true
+	resp.Version = &selected.Version
+	resp.FirmwareURL = buildOtaDownloadURL(selected.PackageURL)
+	resp.PackageID = &selected.ID
+	resp.Name = &selected.Name
+	resp.Description = selected.Description
+	resp.IsLatest = selected.IsLatest
+	return resp, nil
 }
 
 func (o *OTA) CreateOTAUpgradeTask(req *model.CreateOTAUpgradeTaskReq) error {

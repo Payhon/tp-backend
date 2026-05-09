@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"project/internal/middleware"
 	model "project/internal/model"
 	service "project/internal/service"
 	"project/pkg/errcode"
@@ -80,6 +81,40 @@ func (*OTAApi) HandleOTAUpgradePackageByPage(c *gin.Context) {
 	}
 
 	c.Set("data", list)
+}
+
+// Check4GModuleUpgrade
+// @Router   /api/v1/ota/4g-module/check [get]
+func (*OTAApi) Check4GModuleUpgrade(c *gin.Context) {
+	var req model.GetOTA4GModuleUpgradeCheckReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	tenantID := resolve4GModuleTenantID(c)
+	if tenantID == "" {
+		c.Error(errcode.NewWithMessage(errcode.CodeParamError, "tenant_id or X-Tenant-ID is required"))
+		return
+	}
+	data, err := service.GroupApp.OTA.Check4GModuleUpgrade(c.Request.Context(), &req, tenantID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+func resolve4GModuleTenantID(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	tenantID := strings.TrimSpace(c.Query("tenant_id"))
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(c.GetHeader("X-Tenant-ID"))
+	}
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(c.GetHeader(middleware.TenantHeaderName))
+	}
+	return tenantID
 }
 
 // CreateOTAUpgradeTask

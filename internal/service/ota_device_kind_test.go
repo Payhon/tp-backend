@@ -19,6 +19,13 @@ func TestResolveOTADeviceKind(t *testing.T) {
 			t.Fatalf("expected meter, got %d", got)
 		}
 	})
+
+	t.Run("4g module", func(t *testing.T) {
+		kind := model.OTADeviceKind4GModule
+		if got := resolveOTADeviceKind(&kind); got != model.OTADeviceKind4GModule {
+			t.Fatalf("expected 4g module, got %d", got)
+		}
+	})
 }
 
 func TestValidateOTAUpgradePackageReq(t *testing.T) {
@@ -30,5 +37,13 @@ func TestValidateOTAUpgradePackageReq(t *testing.T) {
 
 	if err := validateOTAUpgradePackageReq(model.OTADeviceKindBMS, "bms", "", "", &url); err == nil {
 		t.Fatalf("bms package should still require version and device_config_id")
+	}
+
+	if err := validateOTAUpgradePackageReq(model.OTADeviceKind4GModule, "4g", "1.0.1", "", &url); err != nil {
+		t.Fatalf("4g module package should require version but not device_config_id, got %v", err)
+	}
+
+	if err := validateOTAUpgradePackageReq(model.OTADeviceKind4GModule, "4g", "", "", &url); err == nil {
+		t.Fatalf("4g module package should require version")
 	}
 }

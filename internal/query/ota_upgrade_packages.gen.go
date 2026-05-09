@@ -44,6 +44,7 @@ func newOtaUpgradePackage(db *gorm.DB, opts ...gen.DOOption) otaUpgradePackage {
 	_otaUpgradePackage.Signature = field.NewString(tableName, "signature")
 	_otaUpgradePackage.TenantID = field.NewString(tableName, "tenant_id")
 	_otaUpgradePackage.DeviceKind = field.NewInt16(tableName, "device_kind")
+	_otaUpgradePackage.IsLatest = field.NewBool(tableName, "is_latest")
 
 	_otaUpgradePackage.fillFieldMap()
 
@@ -70,7 +71,8 @@ type otaUpgradePackage struct {
 	Remark         field.String // 备注
 	Signature      field.String // 升级包签名
 	TenantID       field.String
-	DeviceKind     field.Int16 // 设备类型 1-BMS 2-仪表
+	DeviceKind     field.Int16 // 设备类型 1-BMS 2-仪表 3-4G模块
+	IsLatest       field.Bool  // 是否最新固件
 
 	fieldMap map[string]field.Expr
 }
@@ -104,6 +106,7 @@ func (o *otaUpgradePackage) updateTableName(table string) *otaUpgradePackage {
 	o.Signature = field.NewString(table, "signature")
 	o.TenantID = field.NewString(table, "tenant_id")
 	o.DeviceKind = field.NewInt16(table, "device_kind")
+	o.IsLatest = field.NewBool(table, "is_latest")
 
 	o.fillFieldMap()
 
@@ -120,7 +123,7 @@ func (o *otaUpgradePackage) GetFieldByName(fieldName string) (field.OrderExpr, b
 }
 
 func (o *otaUpgradePackage) fillFieldMap() {
-	o.fieldMap = make(map[string]field.Expr, 17)
+	o.fieldMap = make(map[string]field.Expr, 18)
 	o.fieldMap["id"] = o.ID
 	o.fieldMap["name"] = o.Name
 	o.fieldMap["version"] = o.Version
@@ -138,6 +141,7 @@ func (o *otaUpgradePackage) fillFieldMap() {
 	o.fieldMap["signature"] = o.Signature
 	o.fieldMap["tenant_id"] = o.TenantID
 	o.fieldMap["device_kind"] = o.DeviceKind
+	o.fieldMap["is_latest"] = o.IsLatest
 }
 
 func (o otaUpgradePackage) clone(db *gorm.DB) otaUpgradePackage {

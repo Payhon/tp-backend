@@ -147,6 +147,7 @@ func RouterInit() *gin.Engine {
 			// APP端电池设备：BLE Relay 实时通道（ws）
 			v1.GET("app/battery/relay/ws", controllers.AppBatteryApi.ServeBatteryRelayByWS)
 			v1.GET("ota/download/files/upgradePackage/:path/:file", controllers.OTAApi.DownloadOTAUpgradePackage)
+			v1.GET("ota/4g-module/check", controllers.OTAApi.Check4GModuleUpgrade)
 			// 获取系统时间
 			v1.GET("systime", controllers.SystemApi.HandleSystime)
 			// 查询系统功能设置

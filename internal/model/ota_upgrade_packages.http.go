@@ -1,8 +1,9 @@
 package model
 
 const (
-	OTADeviceKindBMS   int16 = 1
-	OTADeviceKindMeter int16 = 2
+	OTADeviceKindBMS      int16 = 1
+	OTADeviceKindMeter    int16 = 2
+	OTADeviceKind4GModule int16 = 3
 )
 
 type CreateOTAUpgradePackageReq struct {
@@ -17,7 +18,8 @@ type CreateOTAUpgradePackageReq struct {
 	Description    *string `json:"description" validate:"omitempty,max=500"`             // 描述
 	PackageUrl     *string `json:"package_url" validate:"omitempty,max=500"`             // 升级包地址
 	Remark         *string `json:"remark" validate:"omitempty,max=255"`
-	DeviceKind     *int16  `json:"device_kind" validate:"omitempty,oneof=1 2"` // 设备类型 1-BMS 2-仪表
+	DeviceKind     *int16  `json:"device_kind" validate:"omitempty,oneof=1 2 3"` // 设备类型 1-BMS 2-仪表 3-4G模块
+	IsLatest       *bool   `json:"is_latest" validate:"omitempty"`               // 是否最新固件
 }
 
 type UpdateOTAUpgradePackageReq struct {
@@ -33,17 +35,36 @@ type UpdateOTAUpgradePackageReq struct {
 	Description    *string `json:"description" validate:"omitempty,max=500"`             // 描述
 	PackageUrl     *string `json:"package_url" validate:"omitempty,max=500"`             // 升级包地址
 	Remark         *string `json:"remark" validate:"omitempty,max=255"`                  // 备注
-	DeviceKind     *int16  `json:"device_kind" validate:"omitempty,oneof=1 2"`           // 设备类型 1-BMS 2-仪表
+	DeviceKind     *int16  `json:"device_kind" validate:"omitempty,oneof=1 2 3"`         // 设备类型 1-BMS 2-仪表 3-4G模块
+	IsLatest       *bool   `json:"is_latest" validate:"omitempty"`                       // 是否最新固件
 }
 
 type GetOTAUpgradePackageLisyByPageReq struct {
 	PageReq
 	DeviceConfigID string `json:"device_configs_id" form:"device_config_id" validate:"omitempty,max=36" example:"uuid"` // 设备配置ID
 	Name           string `json:"name" form:"name" validate:"omitempty,max=200"`                                        //  升级包名称
-	DeviceKind     int16  `json:"device_kind" form:"device_kind" validate:"omitempty,oneof=1 2"`                        // 设备类型 1-BMS 2-仪表
+	DeviceKind     int16  `json:"device_kind" form:"device_kind" validate:"omitempty,oneof=1 2 3"`                      // 设备类型 1-BMS 2-仪表 3-4G模块
 }
 
 type GetOTAUpgradeTaskListByPageRsp struct {
 	OtaUpgradePackage
 	DeviceConfigName string `json:"device_config_name" validate:"omitempty,max=200"` // 设备配置名称
+}
+
+type GetOTA4GModuleUpgradeCheckReq struct {
+	Version  string `json:"version" form:"version" validate:"required,max=36"`      // 4G模块当前版本号
+	Iccid    string `json:"iccid" form:"iccid" validate:"required,max=22"`          // 4G模块 ICCID
+	TenantID string `json:"tenant_id" form:"tenant_id" validate:"omitempty,max=36"` // 租户ID
+}
+
+type OTA4GModuleUpgradeCheckResp struct {
+	NeedUpgrade    bool    `json:"need_upgrade"`
+	CurrentVersion string  `json:"current_version"`
+	Version        *string `json:"version,omitempty"`
+	FirmwareURL    *string `json:"firmware_url,omitempty"`
+	PackageID      *string `json:"package_id,omitempty"`
+	Name           *string `json:"name,omitempty"`
+	Description    *string `json:"description,omitempty"`
+	IsLatest       bool    `json:"is_latest"`
+	Iccid          string  `json:"iccid"`
 }

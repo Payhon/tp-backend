@@ -410,6 +410,8 @@ CREATE TABLE public.ota_upgrade_packages (
 	remark varchar(255) NULL, -- 备注
 	signature varchar(255) NULL, -- 升级包签名
 	tenant_id varchar(36) NULL,
+	device_kind int2 NOT NULL DEFAULT 1, -- 设备类型 1-BMS 2-仪表 3-4G模块
+	is_latest boolean NOT NULL DEFAULT false, -- 是否最新固件
 	CONSTRAINT ota_upgrade_packages_pkey PRIMARY KEY (id)
 );
 
@@ -430,6 +432,14 @@ COMMENT ON COLUMN public.ota_upgrade_packages.created_at IS '创建时间';
 COMMENT ON COLUMN public.ota_upgrade_packages.updated_at IS '修改时间';
 COMMENT ON COLUMN public.ota_upgrade_packages.remark IS '备注';
 COMMENT ON COLUMN public.ota_upgrade_packages.signature IS '升级包签名';
+COMMENT ON COLUMN public.ota_upgrade_packages.device_kind IS '设备类型 1-BMS 2-仪表 3-4G模块';
+COMMENT ON COLUMN public.ota_upgrade_packages.is_latest IS '是否最新固件';
+
+CREATE INDEX IF NOT EXISTS idx_ota_upgrade_packages_tenant_device_kind
+	ON public.ota_upgrade_packages (tenant_id, device_kind);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ota_upgrade_packages_4g_latest_per_tenant
+	ON public.ota_upgrade_packages (tenant_id)
+	WHERE device_kind = 3 AND is_latest IS TRUE AND tenant_id IS NOT NULL;
 
 
 -- public.ota_upgrade_tasks definition
