@@ -58,10 +58,18 @@ func validateOTAUpgradePackageReq(kind int16, name, version, deviceConfigID stri
 	if kind == model.OTADeviceKind4GModule {
 		return nil
 	}
-	if strings.TrimSpace(deviceConfigID) == "" {
-		return fmt.Errorf("device_config_id is required")
-	}
 	return nil
+}
+
+func cleanOptionalStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	s := strings.TrimSpace(*v)
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func unsetOtherLatest4GPackages(tx *gorm.DB, tenantID, packageID string) error {
@@ -129,6 +137,9 @@ func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenan
 	ota.Version = strings.TrimSpace(req.Version)
 	ota.TargetVersion = req.TargetVersion
 	ota.DeviceConfigID = strings.TrimSpace(req.DeviceConfigID)
+	ota.BatteryModelID = cleanOptionalStringPtr(req.BatteryModelID)
+	ota.BatchNumber = cleanOptionalStringPtr(req.BatchNumber)
+	ota.ItemUUID = cleanOptionalStringPtr(req.ItemUUID)
 	ota.Module = req.Module
 	ota.SignatureType = req.SignatureType
 	ota.PackageType = 2
@@ -138,10 +149,16 @@ func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenan
 	if req.IsLatest != nil {
 		ota.IsLatest = *req.IsLatest
 	}
+	if deviceKind == model.OTADeviceKindBMS {
+		ota.DeviceConfigID = ""
+	}
 	if deviceKind == model.OTADeviceKindMeter {
 		ota.Version = ""
 		ota.TargetVersion = nil
 		ota.DeviceConfigID = ""
+		ota.BatteryModelID = nil
+		ota.BatchNumber = nil
+		ota.ItemUUID = nil
 		ota.Module = nil
 		ota.PackageType = 2
 		ota.IsLatest = false
@@ -149,6 +166,9 @@ func (*OTA) CreateOTAUpgradePackage(req *model.CreateOTAUpgradePackageReq, tenan
 	if deviceKind == model.OTADeviceKind4GModule {
 		ota.TargetVersion = nil
 		ota.DeviceConfigID = ""
+		ota.BatteryModelID = nil
+		ota.BatchNumber = nil
+		ota.ItemUUID = nil
 		ota.Module = nil
 		ota.PackageType = 2
 	}
@@ -236,6 +256,15 @@ func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error
 	if strings.TrimSpace(req.DeviceConfigID) != "" {
 		updates["device_config_id"] = strings.TrimSpace(req.DeviceConfigID)
 	}
+	if req.BatteryModelID != nil {
+		updates["battery_model_id"] = cleanOptionalStringPtr(req.BatteryModelID)
+	}
+	if req.BatchNumber != nil {
+		updates["batch_number"] = cleanOptionalStringPtr(req.BatchNumber)
+	}
+	if req.ItemUUID != nil {
+		updates["item_uuid"] = cleanOptionalStringPtr(req.ItemUUID)
+	}
 	if req.Module != nil {
 		updates["module"] = req.Module
 	}
@@ -260,10 +289,16 @@ func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error
 	if req.IsLatest != nil {
 		updates["is_latest"] = *req.IsLatest
 	}
+	if deviceKind == model.OTADeviceKindBMS {
+		updates["device_config_id"] = ""
+	}
 	if deviceKind == model.OTADeviceKindMeter {
 		updates["version"] = ""
 		updates["target_version"] = nil
 		updates["device_config_id"] = ""
+		updates["battery_model_id"] = nil
+		updates["batch_number"] = nil
+		updates["item_uuid"] = nil
 		updates["module"] = nil
 		updates["package_type"] = int16(2)
 		updates["is_latest"] = false
@@ -271,6 +306,9 @@ func (*OTA) UpdateOTAUpgradePackage(req *model.UpdateOTAUpgradePackageReq) error
 	if deviceKind == model.OTADeviceKind4GModule {
 		updates["target_version"] = nil
 		updates["device_config_id"] = ""
+		updates["battery_model_id"] = nil
+		updates["batch_number"] = nil
+		updates["item_uuid"] = nil
 		updates["module"] = nil
 		updates["package_type"] = int16(2)
 		if req.IsLatest == nil {
@@ -336,11 +374,11 @@ func (*OTA) GetOTAUpgradePackageListByPage(req *model.GetOTAUpgradePackageLisyBy
 
 func (*OTA) Check4GModuleUpgrade(ctx context.Context, req *model.GetOTA4GModuleUpgradeCheckReq, tenantID string) (*model.OTA4GModuleUpgradeCheckResp, error) {
 	version := strings.TrimSpace(req.Version)
-	iccid := strings.TrimSpace(req.Iccid)
+	imei := strings.TrimSpace(req.Imei)
 	resp := &model.OTA4GModuleUpgradeCheckResp{
 		NeedUpgrade:    false,
 		CurrentVersion: version,
-		Iccid:          iccid,
+		Imei:           imei,
 	}
 
 	tenantID = strings.TrimSpace(tenantID)
@@ -352,7 +390,7 @@ func (*OTA) Check4GModuleUpgrade(ctx context.Context, req *model.GetOTA4GModuleU
 	if err := global.DB.WithContext(ctx).
 		Table(model.TableNameDeviceBattery+" db").
 		Joins("JOIN "+model.TableNameDevice+" d ON d.id = db.device_id").
-		Where("d.tenant_id = ? AND db.iccid = ?", tenantID, iccid).
+		Where("d.tenant_id = ? AND (db.comm_chip_id = ? OR db.imei = ?)", tenantID, imei, imei).
 		Count(&deviceCount).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}

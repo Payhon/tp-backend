@@ -57,10 +57,11 @@ type appBatteryDetailRow struct {
 type appBatteryOtaCheckRow struct {
 	DeviceID         string  `gorm:"column:device_id"`
 	CurrentVersion   *string `gorm:"column:current_version"`
-	DeviceConfigID   *string `gorm:"column:device_config_id"`
 	TenantID         *string `gorm:"column:tenant_id"`
 	BatteryModelID   *string `gorm:"column:battery_model_id"`
 	BatteryModelName *string `gorm:"column:battery_model_name"`
+	BatchNumber      *string `gorm:"column:batch_number"`
+	ItemUUID         *string `gorm:"column:item_uuid"`
 }
 
 const (
@@ -263,7 +264,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 			dbat.updated_at AS db_updated_at
 		`).
 		Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
-		Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+		Joins(`LEFT JOIN `+model.TableNameBatteryModel+` AS bm ON bm.id = dbat.battery_model_id`).
 		Where("d.id = ? AND d.tenant_id = ?", deviceID, claims.TenantID).
 		Scan(&row).Error
 	if err != nil {
@@ -359,6 +360,7 @@ func (*AppBattery) GetBatteryCurrentTelemetryForApp(ctx context.Context, deviceI
 			}
 		}
 	}
+	snapshot = mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, current)
 
 	return &model.AppBatteryCurrentTelemetryResp{
 		DeviceID:     deviceID,
@@ -428,21 +430,16 @@ func (*AppBattery) GetBatteryMqttCredentialForApp(ctx context.Context, deviceID 
 	}, nil
 }
 
-// CheckBatteryOtaForApp APP端OTA升级检查（根据设备配置匹配升级包）
+// CheckBatteryOtaForApp APP端OTA升级检查（按租户与升级约束匹配升级包）
 func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatteryOtaCheckReq, claims *utils.UserClaims) (*model.AppBatteryOtaCheckResp, error) {
 	deviceID := strings.TrimSpace(req.DeviceID)
-	if claims == nil || claims.ID == "" || claims.TenantID == "" {
+	if claims == nil || claims.TenantID == "" {
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
 	}
 
 	var row appBatteryOtaCheckRow
 
 	if deviceID != "" {
-		// 复用绑定校验逻辑（管理员允许跨设备查看，仍受 tenant 约束）
-		if _, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims); err != nil {
-			return nil, err
-		}
-
 		err := global.DB.WithContext(ctx).
 			Table("devices AS d").
 			Select(`
@@ -450,10 +447,12 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 				d.current_version AS current_version,
 				d.tenant_id AS tenant_id,
 				dbat.battery_model_id AS battery_model_id,
-				bm.name AS battery_model_name
+				bm.name AS battery_model_name,
+				dbat.batch_number AS batch_number,
+				dbat.item_uuid AS item_uuid
 			`).
 			Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
-			Joins(`LEFT JOIN battery_models AS bm ON bm.id = dbat.battery_model_id`).
+			Joins(`LEFT JOIN `+model.TableNameBatteryModel+` AS bm ON bm.id = dbat.battery_model_id`).
 			Where("d.id = ? AND d.tenant_id = ?", deviceID, claims.TenantID).
 			Scan(&row).Error
 		if err != nil {
@@ -470,48 +469,8 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 		CurrentVersion: row.CurrentVersion,
 	}
 
-	deviceConfigID := row.DeviceConfigID
-	if deviceConfigID == nil || strings.TrimSpace(*deviceConfigID) == "" {
-		if row.BatteryModelID != nil && strings.TrimSpace(*row.BatteryModelID) != "" {
-			bm, err := getBmsBatteryModelByID(ctx, claims.TenantID, strings.TrimSpace(*row.BatteryModelID))
-			if err != nil {
-				if err != gorm.ErrRecordNotFound {
-					return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
-				}
-			} else if bm.DeviceConfigID != nil && strings.TrimSpace(*bm.DeviceConfigID) != "" {
-				deviceConfigID = bm.DeviceConfigID
-			}
-		}
-
-		modelName := ""
-		if req.Model != nil {
-			modelName = strings.TrimSpace(*req.Model)
-		}
-		if modelName == "" && row.BatteryModelName != nil {
-			modelName = strings.TrimSpace(*row.BatteryModelName)
-		}
-		if modelName != "" && (deviceConfigID == nil || strings.TrimSpace(*deviceConfigID) == "") {
-			var bm model.BatteryModel
-			if err := global.DB.WithContext(ctx).
-				Where("name = ? AND tenant_id = ?", modelName, claims.TenantID).
-				Limit(1).
-				First(&bm).Error; err != nil {
-				if err != gorm.ErrRecordNotFound {
-					return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
-				}
-			} else if bm.DeviceConfigID != nil && strings.TrimSpace(*bm.DeviceConfigID) != "" {
-				deviceConfigID = bm.DeviceConfigID
-			}
-		}
-	}
-
-	if deviceConfigID == nil || strings.TrimSpace(*deviceConfigID) == "" {
-		return resp, nil
-	}
-
 	var packages []model.OtaUpgradePackage
 	pkgQuery := global.DB.WithContext(ctx).Table(model.TableNameOtaUpgradePackage).
-		Where("device_config_id = ?", strings.TrimSpace(*deviceConfigID)).
 		Where("device_kind = ?", model.OTADeviceKindBMS)
 	// 允许租户级或公共包（tenant_id 为 NULL）
 	pkgQuery = pkgQuery.Where("tenant_id = ? OR tenant_id IS NULL", claims.TenantID)
@@ -531,52 +490,16 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 	}
 	resp.CurrentVersion = stringPtrOrNil(reportedVer)
 
-	// 优先匹配 target_version == reportedVer 的升级包
-	var selected *model.OtaUpgradePackage
-	for i := range packages {
-		p := &packages[i]
-		if p.TargetVersion == nil {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(*p.TargetVersion), reportedVer) {
-			selected = p
-			break
-		}
+	criteria := appBatteryOtaMatchCriteria{
+		BatteryModelID: firstTrimmed(req.BatteryModelID, row.BatteryModelID),
+		BatchNumber:    firstTrimmed(req.BatchNumber, row.BatchNumber),
+		ItemUUID:       firstTrimmed(req.ItemUUID, row.ItemUUID),
 	}
-
-	// 没有匹配 target_version 时，按版本号大小选择最新包
-	if selected == nil {
-		for i := range packages {
-			p := &packages[i]
-			if p.TargetVersion != nil && strings.TrimSpace(*p.TargetVersion) != "" {
-				// target_version 不匹配当前版本，忽略
-				continue
-			}
-			if selected == nil {
-				selected = p
-				continue
-			}
-			if compareVersion(p.Version, selected.Version) > 0 {
-				selected = p
-			}
-		}
-	}
-
+	selected := selectAppBatteryOtaPackage(packages, reportedVer, criteria)
 	if selected == nil {
 		return resp, nil
 	}
-
-	cmp := compareVersion(selected.Version, reportedVer)
-	resp.NeedUpgrade = cmp > 0
-
-	// 若无需升级，返回版本信息但不携带下载地址
-	if !resp.NeedUpgrade {
-		resp.Version = &selected.Version
-		resp.TargetVersion = selected.TargetVersion
-		resp.PackageID = &selected.ID
-		resp.PackageType = &selected.PackageType
-		return resp, nil
-	}
+	resp.NeedUpgrade = true
 
 	firmwareURL := buildOtaDownloadURL(selected.PackageURL)
 	resp.Version = &selected.Version
@@ -1234,6 +1157,218 @@ func normalizeAppBatterySnapshot(snapshot map[string]interface{}) (string, error
 	return string(raw), nil
 }
 
+func mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot map[string]interface{}, current map[string]model.AppBatteryCurrentTelemetryValue) map[string]interface{} {
+	if snapshot == nil {
+		return nil
+	}
+
+	setNumberPathFromCurrent(snapshot, current, []string{"meta", "seriesCount"}, "meta.seriesCount", "seriesCount")
+	setNumberPathFromCurrent(snapshot, current, []string{"meta", "cellTempCount"}, "meta.cellTempCount")
+	setNumberPathFromCurrent(snapshot, current, []string{"energy", "socPct"}, "soc")
+	setNumberPathFromCurrent(snapshot, current, []string{"energy", "sohPct"}, "soh")
+	setNumberPathFromCurrent(snapshot, current, []string{"energy", "cycleCount"}, "cycleCount")
+	setNumberPathFromCurrent(snapshot, current, []string{"timing", "chargeRemainingMin"}, "chargeRemainingMin")
+	setNumberPathFromCurrent(snapshot, current, []string{"timing", "dischargeRemainingMin"}, "dischargeRemainingMin")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "packCellSumVoltageV"}, "electrical.packCellSumVoltageV", "packCellSumVoltageV")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "vPackV"}, "electrical.vPackV", "vPackV")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "currentA"}, "electrical.currentA", "currentA")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "avgCellVoltageMv"}, "electrical.avgCellVoltageMv", "avgCellVoltageMv")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "highestCellVoltageMv"}, "electrical.highestCellVoltageMv", "highestCellVoltageMv")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "lowestCellVoltageMv"}, "electrical.lowestCellVoltageMv", "lowestCellVoltageMv")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "maxCellVoltageDiffMv"}, "electrical.maxCellVoltageDiffMv", "maxCellVoltageDiffMv")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "cellVoltageIndex", "highest"}, "electrical.cellVoltageIndex.highest", "cellVoltageHighestIndex")
+	setNumberPathFromCurrent(snapshot, current, []string{"electrical", "cellVoltageIndex", "lowest"}, "electrical.cellVoltageIndex.lowest", "cellVoltageLowestIndex")
+	setNumberPathFromCurrent(snapshot, current, []string{"temperature", "chargeMosC"}, "temperature.chargeMosC", "chargeMosC")
+	setNumberPathFromCurrent(snapshot, current, []string{"temperature", "dischargeMosC"}, "temperature.dischargeMosC", "dischargeMosC")
+	setNumberPathFromCurrent(snapshot, current, []string{"temperature", "ambientC"}, "temperature.ambientC", "ambientC")
+	setBoolPathFromCurrent(snapshot, current, []string{"status", "indicatorStatus", "chargeFetOn"}, "chargeFetOn")
+	setBoolPathFromCurrent(snapshot, current, []string{"status", "indicatorStatus", "dischargeFetOn"}, "dischargeFetOn")
+	setBoolPathFromCurrent(snapshot, current, []string{"status", "indicatorStatus", "charging"}, "charging")
+	setBoolPathFromCurrent(snapshot, current, []string{"status", "indicatorStatus", "discharging"}, "discharging")
+
+	if values, ok := currentNumberArray(current, "cell.voltagesMv", "cellVoltagesMv"); ok && hasValidBmsCellVoltageItems(values) {
+		setPath(snapshot, []string{"cell", "voltagesMv"}, values)
+	} else if existing, ok := snapshotNumberArray(snapshot, []string{"cell", "voltagesMv"}); ok && !hasValidBmsCellVoltageMv(existing) {
+		setPath(snapshot, []string{"cell", "voltagesMv"}, []interface{}{})
+	}
+	if values, ok := currentNumberArray(current, "temperature.cellTempsC", "cellTempsC"); ok {
+		setPath(snapshot, []string{"temperature", "cellTempsC"}, values)
+	}
+
+	return snapshot
+}
+
+func setNumberPathFromCurrent(snapshot map[string]interface{}, current map[string]model.AppBatteryCurrentTelemetryValue, path []string, keys ...string) {
+	value, ok := currentValueByKeys(current, keys...)
+	if !ok {
+		return
+	}
+	n, ok := toFloat64(value)
+	if !ok {
+		return
+	}
+	setPath(snapshot, path, n)
+}
+
+func setBoolPathFromCurrent(snapshot map[string]interface{}, current map[string]model.AppBatteryCurrentTelemetryValue, path []string, keys ...string) {
+	value, ok := currentValueByKeys(current, keys...)
+	if !ok {
+		return
+	}
+	b, ok := toBool(value)
+	if !ok {
+		return
+	}
+	setPath(snapshot, path, b)
+}
+
+func currentValueByKeys(current map[string]model.AppBatteryCurrentTelemetryValue, keys ...string) (interface{}, bool) {
+	for _, key := range keys {
+		if item, ok := current[key]; ok {
+			return item.Value, true
+		}
+	}
+	return nil, false
+}
+
+func setPath(root map[string]interface{}, path []string, value interface{}) {
+	if len(path) == 0 {
+		return
+	}
+	m := root
+	for _, segment := range path[:len(path)-1] {
+		next, _ := m[segment].(map[string]interface{})
+		if next == nil {
+			next = make(map[string]interface{})
+			m[segment] = next
+		}
+		m = next
+	}
+	m[path[len(path)-1]] = value
+}
+
+func currentNumberArray(current map[string]model.AppBatteryCurrentTelemetryValue, keys ...string) ([]interface{}, bool) {
+	value, ok := currentValueByKeys(current, keys...)
+	if !ok {
+		return nil, false
+	}
+	values, ok := numberArrayValue(value)
+	if !ok {
+		return nil, false
+	}
+	out := make([]interface{}, 0, len(values))
+	for _, v := range values {
+		out = append(out, v)
+	}
+	return out, true
+}
+
+func snapshotNumberArray(snapshot map[string]interface{}, path []string) ([]float64, bool) {
+	var value interface{} = snapshot
+	for _, segment := range path {
+		m, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		value, ok = m[segment]
+		if !ok {
+			return nil, false
+		}
+	}
+	return numberArrayValue(value)
+}
+
+func numberArrayValue(value interface{}) ([]float64, bool) {
+	if text, ok := value.(string); ok {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil, false
+		}
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+			return nil, false
+		}
+		value = parsed
+	}
+	raw, ok := value.([]interface{})
+	if !ok {
+		return nil, false
+	}
+	out := make([]float64, 0, len(raw))
+	for _, item := range raw {
+		n, ok := toFloat64(item)
+		if !ok {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out, len(out) > 0
+}
+
+func hasValidBmsCellVoltageMv(values []float64) bool {
+	for _, v := range values {
+		if v > 0 && v < 10000 && v != 0xffff {
+			return true
+		}
+	}
+	return false
+}
+
+func hasValidBmsCellVoltageItems(values []interface{}) bool {
+	for _, item := range values {
+		n, ok := toFloat64(item)
+		if ok && n > 0 && n < 10000 && n != 0xffff {
+			return true
+		}
+	}
+	return false
+}
+
+func toBool(v interface{}) (bool, bool) {
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "true", "1", "on":
+			return true, true
+		case "false", "0", "off":
+			return false, true
+		default:
+			return false, false
+		}
+	case int:
+		return t != 0, true
+	case int8:
+		return t != 0, true
+	case int16:
+		return t != 0, true
+	case int32:
+		return t != 0, true
+	case int64:
+		return t != 0, true
+	case uint:
+		return t != 0, true
+	case uint8:
+		return t != 0, true
+	case uint16:
+		return t != 0, true
+	case uint32:
+		return t != 0, true
+	case uint64:
+		return t != 0, true
+	case float32:
+		return t != 0, true
+	case float64:
+		return t != 0, true
+	case json.Number:
+		f, err := t.Float64()
+		return f != 0, err == nil
+	default:
+		return false, false
+	}
+}
+
 func toTelemetryColumns(v interface{}) (*bool, *float64, *string) {
 	switch t := v.(type) {
 	case bool:
@@ -1369,6 +1504,113 @@ func buildOtaDownloadURL(packageURL *string) *string {
 	}
 	url := base + strings.TrimPrefix(raw, ".")
 	return &url
+}
+
+type appBatteryOtaMatchCriteria struct {
+	BatteryModelID string
+	BatchNumber    string
+	ItemUUID       string
+}
+
+func firstTrimmed(values ...*string) string {
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		if s := strings.TrimSpace(*value); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func packageConstraintValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func matchOptionalConstraint(pkgValue, actualValue string) bool {
+	if pkgValue == "" {
+		return true
+	}
+	return actualValue != "" && strings.EqualFold(pkgValue, actualValue)
+}
+
+func appBatteryOtaPackageMatchScore(pkg model.OtaUpgradePackage, criteria appBatteryOtaMatchCriteria) (int, bool) {
+	itemUUID := packageConstraintValue(pkg.ItemUUID)
+	batteryModelID := packageConstraintValue(pkg.BatteryModelID)
+	batchNumber := packageConstraintValue(pkg.BatchNumber)
+	constraintCount := 0
+	if itemUUID != "" {
+		constraintCount++
+	}
+	if batteryModelID != "" {
+		constraintCount++
+	}
+	if batchNumber != "" {
+		constraintCount++
+	}
+
+	if !matchOptionalConstraint(itemUUID, criteria.ItemUUID) ||
+		!matchOptionalConstraint(batteryModelID, criteria.BatteryModelID) ||
+		!matchOptionalConstraint(batchNumber, criteria.BatchNumber) {
+		return 0, false
+	}
+
+	switch constraintCount {
+	case 0:
+		return 0, true
+	case 1:
+		if itemUUID != "" {
+			return 13, true
+		}
+		if batteryModelID != "" {
+			return 12, true
+		}
+		return 11, true
+	case 2:
+		return 20, true
+	case 3:
+		return 30, true
+	default:
+		return 0, false
+	}
+}
+
+func appBatteryOtaPackageTargetVersionMatches(pkg model.OtaUpgradePackage, currentVersion string) bool {
+	targetVersion := packageConstraintValue(pkg.TargetVersion)
+	if targetVersion == "" {
+		return true
+	}
+	return strings.EqualFold(targetVersion, strings.TrimSpace(currentVersion))
+}
+
+func selectAppBatteryOtaPackage(packages []model.OtaUpgradePackage, currentVersion string, criteria appBatteryOtaMatchCriteria) *model.OtaUpgradePackage {
+	var selected *model.OtaUpgradePackage
+	selectedScore := -1
+	for i := range packages {
+		pkg := &packages[i]
+		if !appBatteryOtaPackageTargetVersionMatches(*pkg, currentVersion) {
+			continue
+		}
+		if compareVersion(pkg.Version, currentVersion) <= 0 {
+			continue
+		}
+		score, ok := appBatteryOtaPackageMatchScore(*pkg, criteria)
+		if !ok {
+			continue
+		}
+		if selected == nil ||
+			score > selectedScore ||
+			(score == selectedScore && compareVersion(pkg.Version, selected.Version) > 0) ||
+			(score == selectedScore && compareVersion(pkg.Version, selected.Version) == 0 && pkg.CreatedAt.After(selected.CreatedAt)) {
+			selected = pkg
+			selectedScore = score
+		}
+	}
+	return selected
 }
 
 func compareVersion(a, b string) int {

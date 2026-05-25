@@ -70,9 +70,12 @@ type AppBatteryOtaCheckResp struct {
 
 // AppBatteryOtaCheckReq APP端OTA检查请求
 type AppBatteryOtaCheckReq struct {
-	DeviceID string  `json:"device_id"`
-	Model    *string `json:"model,omitempty"`
-	Version  *string `json:"version,omitempty"`
+	DeviceID       string  `json:"device_id"`
+	Model          *string `json:"model,omitempty"`
+	Version        *string `json:"version,omitempty"`
+	BatteryModelID *string `json:"battery_model_id,omitempty"`
+	BatchNumber    *string `json:"batch_number,omitempty"`
+	ItemUUID       *string `json:"item_uuid,omitempty"`
 }
 
 type AppBatteryMeterOtaPackageResp struct {

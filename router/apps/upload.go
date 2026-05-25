@@ -16,6 +16,8 @@ func (*UpLoad) Init(Router *gin.RouterGroup) {
 
 		// 文件列表（当前租户）
 		uploadapi.GET("list", api.Controllers.FileApi.GetFileListByPage)
+		uploadapi.GET(":id/download", api.Controllers.FileApi.DownloadFile)
+		uploadapi.DELETE(":id", api.Controllers.FileApi.DeleteFile)
 
 		// 云存储直传（获取参数 + 登记）
 		uploadapi.POST("cloud/credential", api.Controllers.FileApi.CreateCloudUploadCredential)

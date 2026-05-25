@@ -36,7 +36,11 @@ func TestValidateOTAUpgradePackageReq(t *testing.T) {
 	}
 
 	if err := validateOTAUpgradePackageReq(model.OTADeviceKindBMS, "bms", "", "", &url); err == nil {
-		t.Fatalf("bms package should still require version and device_config_id")
+		t.Fatalf("bms package should still require version")
+	}
+
+	if err := validateOTAUpgradePackageReq(model.OTADeviceKindBMS, "bms", "1.0.1", "", &url); err != nil {
+		t.Fatalf("bms package should not require device_config_id, got %v", err)
 	}
 
 	if err := validateOTAUpgradePackageReq(model.OTADeviceKind4GModule, "4g", "1.0.1", "", &url); err != nil {

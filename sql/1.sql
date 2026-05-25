@@ -399,6 +399,9 @@ CREATE TABLE public.ota_upgrade_packages (
 	"version" varchar(36) NOT NULL, -- 升级包版本号
 	target_version varchar(36) NULL, -- 待升级版本号
 	device_config_id varchar(36) NOT NULL, -- 设备配置id
+	battery_model_id varchar(36) NULL, -- BMS型号ID约束
+	batch_number varchar(100) NULL, -- 批号约束
+	item_uuid varchar(64) NULL, -- 序列号约束
 	"module" varchar(36) NULL, -- 模块名称
 	package_type int2 NOT NULL, -- 升级包类型1-差分 2-整包
 	signature_type varchar(36) NULL, -- 签名算法MD5 SHA256
@@ -422,6 +425,9 @@ COMMENT ON COLUMN public.ota_upgrade_packages."name" IS '升级包名称';
 COMMENT ON COLUMN public.ota_upgrade_packages."version" IS '升级包版本号';
 COMMENT ON COLUMN public.ota_upgrade_packages.target_version IS '待升级版本号';
 COMMENT ON COLUMN public.ota_upgrade_packages.device_config_id IS '设备配置id';
+COMMENT ON COLUMN public.ota_upgrade_packages.battery_model_id IS 'BMS型号ID约束';
+COMMENT ON COLUMN public.ota_upgrade_packages.batch_number IS '批号约束';
+COMMENT ON COLUMN public.ota_upgrade_packages.item_uuid IS '序列号约束，对应 device_batteries.item_uuid';
 COMMENT ON COLUMN public.ota_upgrade_packages."module" IS '模块名称';
 COMMENT ON COLUMN public.ota_upgrade_packages.package_type IS '升级包类型1-差分 2-整包';
 COMMENT ON COLUMN public.ota_upgrade_packages.signature_type IS '签名算法MD5 SHA256';
@@ -437,6 +443,12 @@ COMMENT ON COLUMN public.ota_upgrade_packages.is_latest IS '是否最新固件';
 
 CREATE INDEX IF NOT EXISTS idx_ota_upgrade_packages_tenant_device_kind
 	ON public.ota_upgrade_packages (tenant_id, device_kind);
+CREATE INDEX IF NOT EXISTS idx_ota_upgrade_packages_tenant_kind_item_uuid
+	ON public.ota_upgrade_packages (tenant_id, device_kind, item_uuid);
+CREATE INDEX IF NOT EXISTS idx_ota_upgrade_packages_tenant_kind_battery_model
+	ON public.ota_upgrade_packages (tenant_id, device_kind, battery_model_id);
+CREATE INDEX IF NOT EXISTS idx_ota_upgrade_packages_tenant_kind_batch_number
+	ON public.ota_upgrade_packages (tenant_id, device_kind, batch_number);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ota_upgrade_packages_4g_latest_per_tenant
 	ON public.ota_upgrade_packages (tenant_id)
 	WHERE device_kind = 3 AND is_latest IS TRUE AND tenant_id IS NOT NULL;
@@ -1781,6 +1793,7 @@ INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, o
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('4e7e0b9e-6ee4-4b4b-9ef7-0b19f7d5f2f2', 'e1ebd134-53df-3105-35f4-489fc674d173', 'management_dict', 3, 45, '/management/dict', 'mdi:book-open-page-variant', 'self', '["SYS_ADMIN","TENANT_ADMIN"]'::json, '字典管理', '2026-01-14 00:00:00.000', '', 'route.management_dict', 'view.management_dict');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('a61b4a30-9d22-4b11-9f11-1a2b3c4d5e61', 'e1ebd134-53df-3105-35f4-489fc674d173', 'bms_system_user', 3, 46, '/management/backoffice-user', 'mdi:account-cog', 'self', '["TENANT_ADMIN","SYS_ADMIN"]'::json, '后台账号管理', '2026-03-13 00:00:00.000', '', 'route.bms_system_user', 'view.bms_system_user');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('b72c5b41-8e33-4c22-8f22-2b3c4d5e6f72', 'e1ebd134-53df-3105-35f4-489fc674d173', 'bms_system_role', 3, 47, '/management/backoffice-role', 'mdi:account-key', 'self', '["TENANT_ADMIN","SYS_ADMIN"]'::json, '后台角色管理', '2026-03-13 00:00:00.000', '', 'route.bms_system_role', 'view.bms_system_role');
+INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('7b4f2a31-4d6e-4a25-9c83-2d0f0a95c154', 'e1ebd134-53df-3105-35f4-489fc674d173', 'management_attachment', 3, 48, '/management/attachment', 'mdi:paperclip', 'self', '["SYS_ADMIN","TENANT_ADMIN"]'::json, '附件管理', '2026-05-19 00:00:00.000', '', 'route.management_attachment', 'view.management_attachment');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('95e2a961-382b-f4a6-87b3-1898123c95bc', '0', 'visualization', 1, 113, '/visualization', 'icon-park-outline:data-server', 'self', '["TENANT_ADMIN","SYS_ADMIN"]'::json, '可视化', '2024-03-07 21:37:16.042', '', 'route.visualization', 'layout.base');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('676e8f33-875a-0473-e9ca-c82fd09fef57', '0', 'automation', 1, 114, '/automation', 'material-symbols:device-hub', 'self', '["TENANT_ADMIN"]'::json, '自动化', '2024-03-07 21:41:17.921', '', 'route.automation', 'layout.base');
 INSERT INTO public.sys_ui_elements (id, parent_id, element_code, element_type, orders, param1, param2, param3, authority, description, created_at, remark, multilingual, route_path) VALUES('e1ebd134-53df-3105-35f4-489fc674d173', '0', 'management', 1, 120, '/management', 'carbon:cloud-service-management', 'self', '["SYS_ADMIN","TENANT_ADMIN"]'::json, '系统管理', '2024-02-18 17:48:45.265', '', 'route.management', 'layout.base');

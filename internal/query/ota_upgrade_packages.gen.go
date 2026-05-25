@@ -32,6 +32,9 @@ func newOtaUpgradePackage(db *gorm.DB, opts ...gen.DOOption) otaUpgradePackage {
 	_otaUpgradePackage.Version = field.NewString(tableName, "version")
 	_otaUpgradePackage.TargetVersion = field.NewString(tableName, "target_version")
 	_otaUpgradePackage.DeviceConfigID = field.NewString(tableName, "device_config_id")
+	_otaUpgradePackage.BatteryModelID = field.NewString(tableName, "battery_model_id")
+	_otaUpgradePackage.BatchNumber = field.NewString(tableName, "batch_number")
+	_otaUpgradePackage.ItemUUID = field.NewString(tableName, "item_uuid")
 	_otaUpgradePackage.Module = field.NewString(tableName, "module")
 	_otaUpgradePackage.PackageType = field.NewInt16(tableName, "package_type")
 	_otaUpgradePackage.SignatureType = field.NewString(tableName, "signature_type")
@@ -60,6 +63,9 @@ type otaUpgradePackage struct {
 	Version        field.String // 升级包版本号
 	TargetVersion  field.String // 待升级版本号
 	DeviceConfigID field.String // 设备配置id
+	BatteryModelID field.String // BMS型号ID
+	BatchNumber    field.String // 批号约束
+	ItemUUID       field.String // 序列号约束
 	Module         field.String // 模块名称
 	PackageType    field.Int16  // 升级包类型1-差分 2-整包
 	SignatureType  field.String // 签名算法MD5 SHA256
@@ -94,6 +100,9 @@ func (o *otaUpgradePackage) updateTableName(table string) *otaUpgradePackage {
 	o.Version = field.NewString(table, "version")
 	o.TargetVersion = field.NewString(table, "target_version")
 	o.DeviceConfigID = field.NewString(table, "device_config_id")
+	o.BatteryModelID = field.NewString(table, "battery_model_id")
+	o.BatchNumber = field.NewString(table, "batch_number")
+	o.ItemUUID = field.NewString(table, "item_uuid")
 	o.Module = field.NewString(table, "module")
 	o.PackageType = field.NewInt16(table, "package_type")
 	o.SignatureType = field.NewString(table, "signature_type")
@@ -123,12 +132,15 @@ func (o *otaUpgradePackage) GetFieldByName(fieldName string) (field.OrderExpr, b
 }
 
 func (o *otaUpgradePackage) fillFieldMap() {
-	o.fieldMap = make(map[string]field.Expr, 18)
+	o.fieldMap = make(map[string]field.Expr, 21)
 	o.fieldMap["id"] = o.ID
 	o.fieldMap["name"] = o.Name
 	o.fieldMap["version"] = o.Version
 	o.fieldMap["target_version"] = o.TargetVersion
 	o.fieldMap["device_config_id"] = o.DeviceConfigID
+	o.fieldMap["battery_model_id"] = o.BatteryModelID
+	o.fieldMap["batch_number"] = o.BatchNumber
+	o.fieldMap["item_uuid"] = o.ItemUUID
 	o.fieldMap["module"] = o.Module
 	o.fieldMap["package_type"] = o.PackageType
 	o.fieldMap["signature_type"] = o.SignatureType

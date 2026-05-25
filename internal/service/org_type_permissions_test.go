@@ -73,4 +73,10 @@ func TestBuildDeviceParamPermissionTreeUsesCanonicalKeys(t *testing.T) {
 	}
 
 	walk(tree)
+
+	if label, ok := seen["10d"]; !ok {
+		t.Fatalf("missing readonly SOH permission key 10d")
+	} else if label != "只读 SOH" {
+		t.Fatalf("unexpected readonly SOH label: got=%q want=%q", label, "只读 SOH")
+	}
 }

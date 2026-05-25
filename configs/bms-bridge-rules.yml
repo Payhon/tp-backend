@@ -6,12 +6,26 @@ default:
   telemetry:
     soc: energy.socPct
     soh: energy.sohPct
+    seriesCount: meta.seriesCount
+    meta.seriesCount: meta.seriesCount
     packCellSumVoltageV: electrical.packCellSumVoltageV
     vPackV: electrical.vPackV
     currentA: electrical.currentA
+    cycleCount: energy.cycleCount
+    chargeRemainingMin: timing.chargeRemainingMin
+    dischargeRemainingMin: timing.dischargeRemainingMin
     ambientC: temperature.ambientC
     chargeMosC: temperature.chargeMosC
     dischargeMosC: temperature.dischargeMosC
+    chargeFetOn: chargeFetOn
+    dischargeFetOn: dischargeFetOn
+    charging: charging
+    discharging: discharging
+    balancingOn: balancingOn
+    protectOn: protectOn
+    alarmCount: alarmCount
+    protectCount: protectCount
+    faultCount: faultCount
     highestCellVoltageMv: electrical.highestCellVoltageMv
     lowestCellVoltageMv: electrical.lowestCellVoltageMv
     maxCellVoltageDiffMv: electrical.maxCellVoltageDiffMv
@@ -26,6 +40,7 @@ default:
     electrical.cellVoltageIndex.lowest: electrical.cellVoltageIndex.lowest
     electrical.packCellSumVoltageV: electrical.packCellSumVoltageV
     electrical.avgCellVoltageMv: electrical.avgCellVoltageMv
+    bms.snapshot: bms.snapshot
 
   # Attributes: relatively static info (QoS recommended 1).
   attributes:

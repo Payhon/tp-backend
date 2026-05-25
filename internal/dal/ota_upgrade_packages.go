@@ -72,8 +72,10 @@ func GetOtaUpgradePackageListByPage(p *model.GetOTAUpgradePackageLisyByPageReq, 
 	}
 
 	d := query.DeviceConfig
-	err = queryBuilder.Select(q.ALL, d.Name.As("device_config_name")).
+	bm := query.BatteryModel
+	err = queryBuilder.Select(q.ALL, d.Name.As("device_config_name"), bm.Name.As("battery_model_name")).
 		LeftJoin(d, d.ID.EqCol(q.DeviceConfigID)).
+		LeftJoin(bm, bm.ID.EqCol(q.BatteryModelID)).
 		Order(q.CreatedAt.Desc()).
 		Scan(&packageList)
 	if err != nil {

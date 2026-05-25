@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	dal "project/internal/dal"
@@ -102,6 +103,41 @@ func (*FileApi) RegisterCloudFile(c *gin.Context) {
 		return
 	}
 	c.Set("data", data)
+}
+
+// DeleteFile 删除当前租户文件，同时删除本地/云存储对象
+// @Router   /api/v1/file/{id} [delete]
+func (*FileApi) DeleteFile(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	if err := service.GroupApp.File.DeleteFile(c.Request.Context(), userClaims, id); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", nil)
+}
+
+// DownloadFile 下载当前租户文件；云存储文件重定向到访问 URL
+// @Router   /api/v1/file/{id}/download [get]
+func (*FileApi) DownloadFile(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	f, diskPath, err := service.GroupApp.File.GetFileDownload(c.Request.Context(), userClaims, id)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if f.StorageLocation != "local" {
+		c.Redirect(http.StatusFound, f.FullURL)
+		return
+	}
+
+	fileName := f.FileName
+	if f.OriginalFileName != nil && strings.TrimSpace(*f.OriginalFileName) != "" {
+		fileName = *f.OriginalFileName
+	}
+	fileName = filepath.Base(fileName)
+	c.FileAttachment(diskPath, fileName)
 }
 
 // ServeFilesCloudRedirect /files-cloud/:id 302重定向到云存储URL（公开）

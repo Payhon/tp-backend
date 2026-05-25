@@ -17,6 +17,7 @@ import (
 	model "project/internal/model"
 	"project/pkg/common"
 	"project/pkg/errcode"
+	"project/pkg/global"
 	"project/pkg/utils"
 
 	"github.com/go-basic/uuid"
@@ -35,6 +36,35 @@ const (
 	secretMask          = "********"
 	cloudFilePathPrefix = "./files-cloud/"
 )
+
+type uploaderDisplay struct {
+	Name    *string
+	Account *string
+}
+
+func fileStringPtrValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(*v)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func optionalStringPtr(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
 
 func boolOrDefault(v *bool, def bool) bool {
 	if v == nil {
@@ -96,6 +126,77 @@ func resolveStoredFileURL(ctx context.Context, raw string) string {
 		return raw
 	}
 	return strings.TrimSpace(f.FullURL)
+}
+
+func buildUploaderDisplayMap(ctx context.Context, files []model.File) (map[string]uploaderDisplay, error) {
+	idSet := make(map[string]struct{})
+	ids := make([]string, 0)
+	for i := range files {
+		if files[i].UploadedBy == nil {
+			continue
+		}
+		id := strings.TrimSpace(*files[i].UploadedBy)
+		if id == "" {
+			continue
+		}
+		if _, ok := idSet[id]; ok {
+			continue
+		}
+		idSet[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return map[string]uploaderDisplay{}, nil
+	}
+
+	var users []model.User
+	if err := global.DB.WithContext(ctx).
+		Model(&model.User{}).
+		Select("id", "name", "username", "email", "phone_number").
+		Where("id IN ?", ids).
+		Find(&users).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]uploaderDisplay, len(users))
+	for i := range users {
+		u := users[i]
+		name := firstNonEmpty(fileStringPtrValue(u.Name), fileStringPtrValue(u.Username), u.Email, u.PhoneNumber)
+		account := firstNonEmpty(fileStringPtrValue(u.Username), u.Email, u.PhoneNumber, fileStringPtrValue(u.Name))
+		result[u.ID] = uploaderDisplay{
+			Name:    optionalStringPtr(name),
+			Account: optionalStringPtr(account),
+		}
+	}
+	return result, nil
+}
+
+func resolveLocalFileDiskPath(storedPath string) (string, error) {
+	storedPath = strings.TrimSpace(storedPath)
+	if storedPath == "" {
+		return "", fmt.Errorf("file path is empty")
+	}
+	if !strings.HasPrefix(filepath.ToSlash(storedPath), "./files/") {
+		return "", fmt.Errorf("file path outside ./files")
+	}
+
+	cleanPath := filepath.Clean(storedPath)
+	absBase, err := filepath.Abs("./files")
+	if err != nil {
+		return "", err
+	}
+	absTarget, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(absBase, absTarget)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("file path outside ./files")
+	}
+	return absTarget, nil
 }
 
 func generateObjectKey(bizType, filename string) (string, string, error) {
@@ -430,6 +531,11 @@ func (s *File) GetFileListByPage(ctx context.Context, claims *utils.UserClaims, 
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"err": err.Error()})
 	}
 
+	uploaderMap, err := buildUploaderDisplayMap(ctx, res.List)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"err": err.Error()})
+	}
+
 	list := make([]model.FileListItem, 0, len(res.List))
 	for i := range res.List {
 		f := res.List[i]
@@ -447,22 +553,106 @@ func (s *File) GetFileListByPage(ctx context.Context, claims *utils.UserClaims, 
 				path = "./api/v1/ota/download/files/upgradePackage/" + dateDir + "/" + filename
 			}
 		}
+		uploader := uploaderMap[fileStringPtrValue(f.UploadedBy)]
 		list = append(list, model.FileListItem{
-			ID:              f.ID,
-			FileName:        f.FileName,
-			FileSize:        f.FileSize,
-			StorageLocation: f.StorageLocation,
-			BizType:         f.BizType,
-			MimeType:        f.MimeType,
-			FileExt:         f.FileExt,
-			UploadedAt:      f.UploadedAt,
-			UploadedBy:      f.UploadedBy,
-			Path:            path,
-			URL:             f.FullURL,
+			ID:                f.ID,
+			FileName:          f.FileName,
+			FileSize:          f.FileSize,
+			StorageLocation:   f.StorageLocation,
+			BizType:           f.BizType,
+			MimeType:          f.MimeType,
+			FileExt:           f.FileExt,
+			UploadedAt:        f.UploadedAt,
+			UploadedBy:        f.UploadedBy,
+			UploadedByName:    uploader.Name,
+			UploadedByAccount: uploader.Account,
+			Path:              path,
+			URL:               f.FullURL,
 		})
 	}
 
 	return &model.GetFileListByPageRsp{Total: res.Total, List: list}, nil
+}
+
+func (s *File) GetFileByTenant(ctx context.Context, claims *utils.UserClaims, id string) (*model.File, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"id": "missing"})
+	}
+	if claims == nil || claims.TenantID == "" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"tenant_id": "missing"})
+	}
+
+	f, err := dal.GetFileByIDAndTenant(ctx, id, claims.TenantID)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"err": err.Error()})
+	}
+	if f == nil {
+		return nil, errcode.New(errcode.CodeNotFound)
+	}
+	return f, nil
+}
+
+func (s *File) GetFileDownload(ctx context.Context, claims *utils.UserClaims, id string) (*model.File, string, error) {
+	f, err := s.GetFileByTenant(ctx, claims, id)
+	if err != nil {
+		return nil, "", err
+	}
+	if f.StorageLocation != "local" {
+		return f, "", nil
+	}
+
+	diskPath, err := resolveLocalFileDiskPath(f.FilePath)
+	if err != nil {
+		return nil, "", errcode.WithData(errcode.CodeParamError, map[string]interface{}{"file_path": err.Error()})
+	}
+	if _, err := os.Stat(diskPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", errcode.New(errcode.CodeNotFound)
+		}
+		return nil, "", errcode.WithData(errcode.CodeFileSaveError, map[string]interface{}{"error": err.Error()})
+	}
+	return f, diskPath, nil
+}
+
+func (s *File) DeleteFile(ctx context.Context, claims *utils.UserClaims, id string) error {
+	f, err := s.GetFileByTenant(ctx, claims, id)
+	if err != nil {
+		return err
+	}
+
+	switch f.StorageLocation {
+	case "local":
+		if err := s.deleteLocalFile(f.FilePath); err != nil {
+			return err
+		}
+	case "aliyun":
+		if err := s.deleteAliyunOSS(ctx, f.FilePath); err != nil {
+			return err
+		}
+	case "qiniu":
+		if err := s.deleteQiniu(ctx, f.FilePath); err != nil {
+			return err
+		}
+	default:
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"storage_location": "unknown"})
+	}
+
+	if err := dal.DeleteFileByIDAndTenant(ctx, f.ID, claims.TenantID); err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"err": err.Error()})
+	}
+	return nil
+}
+
+func (s *File) deleteLocalFile(storedPath string) error {
+	diskPath, err := resolveLocalFileDiskPath(storedPath)
+	if err != nil {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"file_path": err.Error()})
+	}
+	if err := os.Remove(diskPath); err != nil && !os.IsNotExist(err) {
+		return errcode.WithData(errcode.CodeFileSaveError, map[string]interface{}{"error": err.Error()})
+	}
+	return nil
 }
 
 func qiniuZone(region string) (*qstorage.Zone, error) {
@@ -514,6 +704,35 @@ func (s *File) putQiniu(ctx context.Context, cfg *model.UpsertFileStorageConfigR
 	return key, domain + "/" + key, nil
 }
 
+func (s *File) deleteQiniu(ctx context.Context, objectKey string) error {
+	cfg, _, err := s.getEffectiveStorageConfig(ctx)
+	if err != nil {
+		return err
+	}
+	key := strings.TrimSpace(objectKey)
+	if key == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"qiniu.key": "empty"})
+	}
+	if strings.TrimSpace(cfg.Qiniu.AccessKey) == "" || strings.TrimSpace(cfg.Qiniu.SecretKey) == "" || strings.TrimSpace(cfg.Qiniu.Bucket) == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"qiniu": "qiniu config incomplete"})
+	}
+
+	zone, err := qiniuZone(cfg.Qiniu.Region)
+	if err != nil {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"qiniu.region": err.Error()})
+	}
+	mac := qbox.NewMac(cfg.Qiniu.AccessKey, cfg.Qiniu.SecretKey)
+	manager := qstorage.NewBucketManager(mac, &qstorage.Config{
+		Zone:     zone,
+		UseHTTPS: boolOrDefault(cfg.Qiniu.UseHTTPS, true),
+	})
+	if err := manager.Delete(cfg.Qiniu.Bucket, key); err != nil {
+		logrus.WithError(err).WithField("object_key", key).Error("qiniu delete object failed")
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"qiniu": err.Error()})
+	}
+	return nil
+}
+
 func (s *File) putAliyunOSS(ctx context.Context, cfg *model.UpsertFileStorageConfigReq, objectKey string, src multipart.File, mimeType string) (string, string, error) {
 	useHTTPS := boolOrDefault(cfg.Aliyun.UseHTTPS, true)
 
@@ -556,6 +775,49 @@ func (s *File) putAliyunOSS(ctx context.Context, cfg *model.UpsertFileStorageCon
 		return "", "", errcode.WithData(errcode.CodeParamError, map[string]interface{}{"aliyun.domain": err.Error()})
 	}
 	return key, domain + "/" + key, nil
+}
+
+func (s *File) deleteAliyunOSS(ctx context.Context, objectKey string) error {
+	cfg, _, err := s.getEffectiveStorageConfig(ctx)
+	if err != nil {
+		return err
+	}
+	key := strings.TrimSpace(objectKey)
+	if key == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"aliyun.key": "empty"})
+	}
+	useHTTPS := boolOrDefault(cfg.Aliyun.UseHTTPS, true)
+
+	endpoint := strings.TrimSpace(cfg.Aliyun.Endpoint)
+	if endpoint == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"aliyun.endpoint": "empty"})
+	}
+	if strings.TrimSpace(cfg.Aliyun.AccessKeyID) == "" || strings.TrimSpace(cfg.Aliyun.AccessKeySecret) == "" || strings.TrimSpace(cfg.Aliyun.Bucket) == "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"aliyun": "aliyun config incomplete"})
+	}
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		if useHTTPS {
+			endpoint = "https://" + endpoint
+		} else {
+			endpoint = "http://" + endpoint
+		}
+	}
+
+	client, err := oss.New(endpoint, cfg.Aliyun.AccessKeyID, cfg.Aliyun.AccessKeySecret)
+	if err != nil {
+		logrus.WithError(err).Error("aliyun oss client init failed")
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"aliyun": err.Error()})
+	}
+	bucket, err := client.Bucket(cfg.Aliyun.Bucket)
+	if err != nil {
+		logrus.WithError(err).Error("aliyun oss bucket init failed")
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"aliyun": err.Error()})
+	}
+	if err := bucket.DeleteObject(key); err != nil {
+		logrus.WithError(err).WithField("object_key", key).Error("aliyun oss delete object failed")
+		return errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"aliyun": err.Error()})
+	}
+	return nil
 }
 
 func (s *File) CreateCloudUploadCredential(ctx context.Context, claims *utils.UserClaims, req *model.CreateCloudUploadCredentialReq) (*model.CreateCloudUploadCredentialRsp, error) {

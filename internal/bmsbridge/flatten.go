@@ -1,6 +1,7 @@
 package bmsbridge
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -20,6 +21,7 @@ func FlattenStatus(s status.BmsStatus) map[string]any {
 	out["meta.productionDate.year"] = s.Meta.ProductionDate.Year
 	out["meta.productionDate.month"] = s.Meta.ProductionDate.Month
 	out["meta.productionDate.day"] = s.Meta.ProductionDate.Day
+	out["seriesCount"] = s.Meta.SeriesCount
 
 	out["energy.designCapacityMah"] = s.Energy.DesignCapacityMah
 	out["energy.remainingCapacityMah"] = s.Energy.RemainingCapacityMah
@@ -67,6 +69,7 @@ func FlattenStatus(s status.BmsStatus) map[string]any {
 
 	out["cell.voltagesMv"] = s.Cell.VoltagesMv
 	out["cell.balancing"] = s.Cell.Balancing
+	out["balancingOn"] = anyBoolTrue(s.Cell.Balancing)
 
 	for k, v := range s.Status.ProtectionStatus {
 		out[fmt.Sprintf("status.protectionStatus.%s", k)] = v
@@ -80,7 +83,19 @@ func FlattenStatus(s status.BmsStatus) map[string]any {
 	for k, v := range s.Status.AlarmStatus {
 		out[fmt.Sprintf("status.alarmStatus.%s", k)] = v
 	}
+	out["chargeFetOn"] = s.Status.IndicatorStatus["chargeFetOn"]
+	out["dischargeFetOn"] = s.Status.IndicatorStatus["dischargeFetOn"]
+	out["charging"] = s.Status.IndicatorStatus["charging"]
+	out["discharging"] = s.Status.IndicatorStatus["discharging"]
+	out["protectOn"] = anyMapBoolTrue(s.Status.ProtectionStatus)
+	out["alarmCount"] = countMapBoolTrue(s.Status.AlarmStatus)
+	out["protectCount"] = countMapBoolTrue(s.Status.ProtectionStatus)
+	out["faultCount"] = countMapBoolTrue(s.Status.FailureStatus)
 	out["status.customStatus"] = s.Status.CustomStatus
+
+	if raw, err := json.Marshal(s); err == nil {
+		out["bms.snapshot"] = string(raw)
+	}
 
 	out["identity.hardwareModel"] = s.Identity.HardwareModel
 	out["identity.batteryGroupId"] = s.Identity.BatteryGroupID
@@ -90,6 +105,34 @@ func FlattenStatus(s status.BmsStatus) map[string]any {
 	out["customParams"] = s.CustomParams
 
 	return out
+}
+
+func anyBoolTrue(values []bool) bool {
+	for _, v := range values {
+		if v {
+			return true
+		}
+	}
+	return false
+}
+
+func anyMapBoolTrue(values map[string]bool) bool {
+	for _, v := range values {
+		if v {
+			return true
+		}
+	}
+	return false
+}
+
+func countMapBoolTrue(values map[string]bool) int {
+	count := 0
+	for _, v := range values {
+		if v {
+			count++
+		}
+	}
+	return count
 }
 
 func selectValues(flat map[string]any, mapping map[string]string) map[string]any {

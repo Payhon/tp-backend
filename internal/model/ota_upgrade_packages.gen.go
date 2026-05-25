@@ -17,6 +17,9 @@ type OtaUpgradePackage struct {
 	Version        string     `gorm:"column:version;not null;comment:升级包版本号" json:"version"`                   // 升级包版本号
 	TargetVersion  *string    `gorm:"column:target_version;comment:待升级版本号" json:"target_version"`              // 待升级版本号
 	DeviceConfigID string     `gorm:"column:device_config_id;not null;comment:设备配置id" json:"device_config_id"` // 设备配置id
+	BatteryModelID *string    `gorm:"column:battery_model_id;comment:BMS型号ID" json:"battery_model_id"`         // BMS型号ID
+	BatchNumber    *string    `gorm:"column:batch_number;comment:批号约束" json:"batch_number"`                    // 批号约束
+	ItemUUID       *string    `gorm:"column:item_uuid;comment:序列号约束" json:"item_uuid"`                         // 序列号约束
 	Module         *string    `gorm:"column:module;comment:模块名称" json:"module"`                                // 模块名称
 	PackageType    int16      `gorm:"column:package_type;not null;comment:升级包类型1-差分 2-整包" json:"package_type"` // 升级包类型1-差分 2-整包
 	SignatureType  *string    `gorm:"column:signature_type;comment:签名算法MD5 SHA256" json:"signature_type"`      // 签名算法MD5 SHA256

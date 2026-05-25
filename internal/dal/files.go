@@ -25,6 +25,22 @@ func GetFileByID(ctx context.Context, id string) (*model.File, error) {
 	return &f, nil
 }
 
+func GetFileByIDAndTenant(ctx context.Context, id, tenantID string) (*model.File, error) {
+	var f model.File
+	err := global.DB.WithContext(ctx).First(&f, "id = ? AND tenant_id = ?", id, tenantID).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &f, nil
+}
+
+func DeleteFileByIDAndTenant(ctx context.Context, id, tenantID string) error {
+	return global.DB.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&model.File{}).Error
+}
+
 type ListFilesResult struct {
 	Total int64
 	List  []model.File

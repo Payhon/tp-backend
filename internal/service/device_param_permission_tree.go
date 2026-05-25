@@ -104,6 +104,7 @@ func buildDeviceParamPermissionTree() []model.DeviceParamTreeNode {
 					Label: "高级配置",
 					Value: "group:advanced:other",
 					Children: []model.DeviceParamTreeNode{
+						leafNode("只读 SOH", "10d", "0x010D", "SOH_PCT"),
 						leafNode("均衡开启电压", "454", "0x0454", "BALANCE_START_V"),
 						leafNode("开启压差 / 停止压差", "455", "0x0455", "BALANCE_START_DELTA_V", "BALANCE_STOP_DELTA_V"),
 						leafNode("高温禁止 / 低温禁止", "456", "0x0456", "BALANCE_DISABLE_HIGH_TEMP_C", "BALANCE_DISABLE_LOW_TEMP_C"),
@@ -117,6 +118,7 @@ func buildDeviceParamPermissionTree() []model.DeviceParamTreeNode {
 						leafNode(">=总压", "45e", "0x045E", "FULL_CHARGE_PACK_V"),
 						leafNode("小于电流", "45f", "0x045F", "FULL_CHARGE_CURRENT_A"),
 						leafNode("持续时间", "460", "0x0460(L)", "FULL_CHARGE_DURATION_S"),
+						leafNode("虚拟容量写入", "627", "0x0627", "VIRTUAL_CAPACITY_AH"),
 					},
 				},
 				{

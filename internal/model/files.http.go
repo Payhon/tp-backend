@@ -16,17 +16,19 @@ type GetFileListByPageReq struct {
 }
 
 type FileListItem struct {
-	ID              string    `json:"id"`
-	FileName        string    `json:"file_name"`
-	FileSize        int64     `json:"file_size"`
-	StorageLocation string    `json:"storage_location"`
-	BizType         string    `json:"biz_type"`
-	MimeType        *string   `json:"mime_type,omitempty"`
-	FileExt         *string   `json:"file_ext,omitempty"`
-	UploadedAt      time.Time `json:"uploaded_at"`
-	UploadedBy      *string   `json:"uploaded_by,omitempty"`
-	Path            string    `json:"path"` // 本地为 ./files/...，云为 ./files-cloud/{id}
-	URL             string    `json:"url"`  // full_url
+	ID                string    `json:"id"`
+	FileName          string    `json:"file_name"`
+	FileSize          int64     `json:"file_size"`
+	StorageLocation   string    `json:"storage_location"`
+	BizType           string    `json:"biz_type"`
+	MimeType          *string   `json:"mime_type,omitempty"`
+	FileExt           *string   `json:"file_ext,omitempty"`
+	UploadedAt        time.Time `json:"uploaded_at"`
+	UploadedBy        *string   `json:"uploaded_by,omitempty"`
+	UploadedByName    *string   `json:"uploaded_by_name,omitempty"`
+	UploadedByAccount *string   `json:"uploaded_by_account,omitempty"`
+	Path              string    `json:"path"` // 本地为 ./files/...，云为 ./files-cloud/{id}
+	URL               string    `json:"url"`  // full_url
 }
 
 type GetFileListByPageRsp struct {
