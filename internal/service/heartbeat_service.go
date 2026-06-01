@@ -128,7 +128,7 @@ func (s *HeartbeatService) RefreshHeartbeat(device *model.Device, config *Heartb
 
 // DefaultOnlineTTL 获取业务数据上报兜底在线保活秒数
 func (s *HeartbeatService) DefaultOnlineTTL() int {
-	ttlSec := 120
+	ttlSec := 300
 	if viper.IsSet("heartbeat.default_online_ttl_sec") {
 		ttlSec = viper.GetInt("heartbeat.default_online_ttl_sec")
 	}
