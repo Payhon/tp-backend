@@ -41,6 +41,7 @@ type appBatteryDetailRow struct {
 	ProductSpec        *string    `gorm:"column:product_spec"`
 	OrderNumber        *string    `gorm:"column:order_number"`
 	BleMac             *string    `gorm:"column:ble_mac"`
+	IdentityBleMac     *string    `gorm:"column:identity_ble_mac"`
 	CommChipID         *string    `gorm:"column:comm_chip_id"`
 	ProductionDate     *time.Time `gorm:"column:production_date"`
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
@@ -256,6 +257,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 			dbat.product_spec AS product_spec,
 			dbat.order_number AS order_number,
 			dbat.ble_mac AS ble_mac,
+			dbat.identity_ble_mac AS identity_ble_mac,
 			dbat.comm_chip_id AS comm_chip_id,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
@@ -302,6 +304,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 		ProductSpec:        row.ProductSpec,
 		OrderNumber:        row.OrderNumber,
 		BleMac:             row.BleMac,
+		IdentityBleMac:     row.IdentityBleMac,
 		CommChipID:         row.CommChipID,
 		ProductionDate:     productionDate,
 		WarrantyExpireDate: warrantyExpireDate,
@@ -728,7 +731,7 @@ func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBat
 
 		var soc *float64
 		var soh *float64
-		var bleMac *string
+		var identityBleMac *string
 		if v, ok := coreValues["soc"]; ok {
 			if n, ok := toFloat64(v); ok {
 				soc = &n
@@ -743,29 +746,29 @@ func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBat
 			if identity, ok := req.Snapshot["identity"].(map[string]interface{}); ok {
 				if s, ok := toNonEmptyString(identity["bluetoothMac"]); ok {
 					if normalized, ok := normalizeBleMac12ForStore(s); ok {
-						bleMac = &normalized
+						identityBleMac = &normalized
 					}
 				}
-				if bleMac == nil {
+				if identityBleMac == nil {
 					if s, ok := toNonEmptyString(identity["bluetooth_mac"]); ok {
 						if normalized, ok := normalizeBleMac12ForStore(s); ok {
-							bleMac = &normalized
+							identityBleMac = &normalized
 						}
 					}
 				}
 			}
 		}
 
-		if soc != nil || soh != nil || bleMac != nil {
+		if soc != nil || soh != nil || identityBleMac != nil {
 			if err := tx.Exec(
-				`INSERT INTO device_batteries (device_id, soc, soh, ble_mac, updated_at)
+				`INSERT INTO device_batteries (device_id, soc, soh, identity_ble_mac, updated_at)
 				 VALUES (?, ?, ?, ?, NOW())
 				 ON CONFLICT (device_id) DO UPDATE
 				 SET soc = COALESCE(EXCLUDED.soc, device_batteries.soc),
 				     soh = COALESCE(EXCLUDED.soh, device_batteries.soh),
-				     ble_mac = COALESCE(NULLIF(EXCLUDED.ble_mac, ''), device_batteries.ble_mac),
+				     identity_ble_mac = COALESCE(NULLIF(EXCLUDED.identity_ble_mac, ''), device_batteries.identity_ble_mac),
 				     updated_at = NOW()`,
-				deviceID, soc, soh, bleMac,
+				deviceID, soc, soh, identityBleMac,
 			).Error; err != nil {
 				return err
 			}

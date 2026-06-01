@@ -19,13 +19,14 @@ import (
 type DeviceProvision struct{}
 
 type deviceProvisionRow struct {
-	DeviceID     string  `gorm:"column:device_id"`
-	DeviceNumber string  `gorm:"column:device_number"`
-	DeviceName   *string `gorm:"column:device_name"`
-	BleMac       *string `gorm:"column:ble_mac"`
-	CommChipID   *string `gorm:"column:comm_chip_id"`
-	BmsCommType  *int    `gorm:"column:bms_comm_type"`
-	OwnerOrgID   *string `gorm:"column:owner_org_id"`
+	DeviceID       string  `gorm:"column:device_id"`
+	DeviceNumber   string  `gorm:"column:device_number"`
+	DeviceName     *string `gorm:"column:device_name"`
+	BleMac         *string `gorm:"column:ble_mac"`
+	IdentityBleMac *string `gorm:"column:identity_ble_mac"`
+	CommChipID     *string `gorm:"column:comm_chip_id"`
+	BmsCommType    *int    `gorm:"column:bms_comm_type"`
+	OwnerOrgID     *string `gorm:"column:owner_org_id"`
 }
 
 func normalizeMac12(input string) (string, error) {
@@ -106,6 +107,7 @@ func (*DeviceProvision) findDeviceByItemUUIDWithDB(ctx context.Context, db *gorm
 			d.device_number AS device_number,
 			d.name AS device_name,
 			dbat.ble_mac AS ble_mac,
+			dbat.identity_ble_mac AS identity_ble_mac,
 			dbat.comm_chip_id AS comm_chip_id,
 			dbat.bms_comm_type AS bms_comm_type,
 			dbat.owner_org_id AS owner_org_id
@@ -163,6 +165,14 @@ func (*DeviceProvision) createAutoRegisteredDevice(ctx context.Context, tx *gorm
 		}
 		bleMac = &newMac
 	}
+	var identityBleMac *string
+	if req.IdentityBleMac != nil && strings.TrimSpace(*req.IdentityBleMac) != "" {
+		newMac, err := normalizeMac12(*req.IdentityBleMac)
+		if err != nil {
+			return nil, err
+		}
+		identityBleMac = &newMac
+	}
 
 	additionalInfo := map[string]interface{}{
 		"auto_registered":    true,
@@ -174,6 +184,9 @@ func (*DeviceProvision) createAutoRegisteredDevice(ctx context.Context, tx *gorm
 	}
 	if bleMac != nil {
 		additionalInfo["ble_mac"] = *bleMac
+	}
+	if identityBleMac != nil {
+		additionalInfo["identity_ble_mac"] = *identityBleMac
 	}
 	additionalInfoJSON, _ := json.Marshal(additionalInfo)
 	additionalInfoStr := string(additionalInfoJSON)
@@ -203,9 +216,9 @@ func (*DeviceProvision) createAutoRegisteredDevice(ctx context.Context, tx *gorm
 	}
 
 	if err := tx.WithContext(ctx).Exec(
-		`INSERT INTO device_batteries (device_id, item_uuid, ble_mac, bms_comm_type, activation_status, transfer_status, updated_at)
-		 VALUES (?, ?, ?, ?, 'INACTIVE', 'FACTORY', ?)`,
-		device.ID, itemUUID, bleMac, 1, now,
+		`INSERT INTO device_batteries (device_id, item_uuid, ble_mac, identity_ble_mac, bms_comm_type, activation_status, transfer_status, updated_at)
+		 VALUES (?, ?, ?, ?, ?, 'INACTIVE', 'FACTORY', ?)`,
+		device.ID, itemUUID, bleMac, identityBleMac, 1, now,
 	).Error; err != nil {
 		if isDuplicateKeyErr(err) {
 			return (&DeviceProvision{}).findDeviceByItemUUIDWithDB(ctx, tx, itemUUID, claims)
@@ -251,6 +264,131 @@ func (*DeviceProvision) findOrCreateDeviceByItemUUID(ctx context.Context, req mo
 		return nil, false, err
 	}
 	return row, created, nil
+}
+
+func normalizeOptionalProvisionMac(input *string) (*string, error) {
+	if input == nil || strings.TrimSpace(*input) == "" {
+		return nil, nil
+	}
+	mac, err := normalizeMac12(*input)
+	if err != nil {
+		return nil, err
+	}
+	return &mac, nil
+}
+
+func normalizedStoredProvisionMac(input *string) (string, bool) {
+	if input == nil || strings.TrimSpace(*input) == "" {
+		return "", false
+	}
+	mac, err := normalizeMac12(*input)
+	if err != nil {
+		return "", false
+	}
+	return mac, true
+}
+
+func (*DeviceProvision) ensureConnectionBleMacAvailable(ctx context.Context, db *gorm.DB, tenantID, currentDeviceID, mac string) error {
+	if strings.TrimSpace(mac) == "" {
+		return nil
+	}
+	var existing struct {
+		DeviceID     string `gorm:"column:device_id"`
+		DeviceNumber string `gorm:"column:device_number"`
+	}
+	err := db.WithContext(ctx).
+		Table("device_batteries AS dbat").
+		Select("d.id AS device_id, d.device_number AS device_number").
+		Joins("JOIN devices AS d ON d.id = dbat.device_id").
+		Where("d.tenant_id = ? AND d.id <> ?", tenantID, currentDeviceID).
+		Where("UPPER(REPLACE(REPLACE(REPLACE(COALESCE(dbat.ble_mac, ''), ':', ''), '-', ''), ' ', '')) = ?", mac).
+		Limit(1).
+		Scan(&existing).Error
+	if err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if strings.TrimSpace(existing.DeviceID) != "" {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+			"message":       "蓝牙模块 MAC 已关联其他设备",
+			"device_id":     existing.DeviceID,
+			"device_number": existing.DeviceNumber,
+		})
+	}
+	return nil
+}
+
+func (*DeviceProvision) syncProvisionMacs(ctx context.Context, row *deviceProvisionRow, req model.DeviceProvisionBindReq, claims *utils.UserClaims) error {
+	svc := &DeviceProvision{}
+	connectionMac, err := normalizeOptionalProvisionMac(req.BleMac)
+	if err != nil {
+		return err
+	}
+	identityMac, err := normalizeOptionalProvisionMac(req.IdentityBleMac)
+	if err != nil {
+		return err
+	}
+
+	// 旧客户端只提交 ble_mac，仍按单 MAC 强一致逻辑处理；仅把错误文案改成中文。
+	if identityMac == nil {
+		if connectionMac == nil {
+			return nil
+		}
+		shouldRepairMac := false
+		if existingMac, ok := normalizedStoredProvisionMac(row.BleMac); ok {
+			if existingMac != *connectionMac {
+				return errcode.NewWithMessage(errcode.CodeParamError, "设备档案蓝牙MAC与当前设备不一致")
+			}
+			if strings.TrimSpace(*row.BleMac) != *connectionMac {
+				shouldRepairMac = true
+			}
+		} else {
+			shouldRepairMac = true
+		}
+		if shouldRepairMac {
+			if err := global.DB.WithContext(ctx).
+				Exec("UPDATE device_batteries SET ble_mac = ?, updated_at = ? WHERE device_id = ?", *connectionMac, utils.GetUTCTime(), row.DeviceID).Error; err != nil {
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
+			row.BleMac = connectionMac
+		}
+		return nil
+	}
+
+	now := utils.GetUTCTime()
+	updates := map[string]interface{}{"updated_at": now}
+	if connectionMac != nil {
+		if err := svc.ensureConnectionBleMacAvailable(ctx, global.DB, claims.TenantID, row.DeviceID, *connectionMac); err != nil {
+			return err
+		}
+		if existingMac, ok := normalizedStoredProvisionMac(row.BleMac); !ok || existingMac != *connectionMac || strings.TrimSpace(*row.BleMac) != *connectionMac {
+			updates["ble_mac"] = *connectionMac
+			row.BleMac = connectionMac
+		}
+	}
+
+	if existingIdentityMac, ok := normalizedStoredProvisionMac(row.IdentityBleMac); ok {
+		if existingIdentityMac != *identityMac {
+			return errcode.NewWithMessage(errcode.CodeParamError, "设备身份MAC与档案记录不一致，请核对设备序列号")
+		}
+		if strings.TrimSpace(*row.IdentityBleMac) != *identityMac {
+			updates["identity_ble_mac"] = *identityMac
+			row.IdentityBleMac = identityMac
+		}
+	} else {
+		updates["identity_ble_mac"] = *identityMac
+		row.IdentityBleMac = identityMac
+	}
+
+	if len(updates) == 1 {
+		return nil
+	}
+	if err := global.DB.WithContext(ctx).
+		Table("device_batteries").
+		Where("device_id = ?", row.DeviceID).
+		Updates(updates).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return nil
 }
 
 func (*DeviceProvision) upsertOrgAddedDeviceRecordTx(ctx context.Context, tx *gorm.DB, claims *utils.UserClaims, deviceID, source string) error {
@@ -380,6 +518,7 @@ func (*DeviceProvision) GetProvisionInfo(ctx context.Context, req model.DevicePr
 		DeviceNumber:    row.DeviceNumber,
 		DeviceName:      row.DeviceName,
 		BleMac:          row.BleMac,
+		IdentityBleMac:  row.IdentityBleMac,
 		CommChipID:      row.CommChipID,
 		BmsCommType:     row.BmsCommType,
 		IsBound:         cnt > 0,
@@ -395,37 +534,8 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 		return nil, err
 	}
 
-	// 记录 ble_mac（可选，便于后续 BLE 优先连接与排错）
-	if req.BleMac != nil && strings.TrimSpace(*req.BleMac) != "" {
-		newMac, err := normalizeMac12(*req.BleMac)
-		if err != nil {
-			return nil, err
-		}
-
-		shouldRepairMac := false
-		if row.BleMac != nil && strings.TrimSpace(*row.BleMac) != "" {
-			existingMac, err := normalizeMac12(*row.BleMac)
-			if err == nil {
-				if existingMac != newMac {
-					return nil, errcode.NewWithMessage(errcode.CodeParamError, "ble_mac mismatch with existing record")
-				}
-				if strings.TrimSpace(*row.BleMac) != newMac {
-					// 旧值可能包含分隔符/小写/尾部补零，统一修正为 12 位大写 HEX。
-					shouldRepairMac = true
-				}
-			} else {
-				// 旧值格式异常（例如尾部补零的 10-byte 展示串），用本次提交的合法 MAC 修复。
-				shouldRepairMac = true
-			}
-		} else {
-			shouldRepairMac = true
-		}
-		if shouldRepairMac {
-			if err := global.DB.WithContext(ctx).
-				Exec("UPDATE device_batteries SET ble_mac = ? WHERE device_id = ?", newMac, row.DeviceID).Error; err != nil {
-				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
-			}
-		}
+	if err := svc.syncProvisionMacs(ctx, row, req, claims); err != nil {
+		return nil, err
 	}
 
 	viewCtx, err := resolveAppDeviceViewContext(ctx, claims)

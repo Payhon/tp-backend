@@ -6,7 +6,7 @@ type BatteryListReq struct {
 	PageSize int `form:"page_size" binding:"required,min=1,max=100"`
 
 	// 通用文本搜索字段
-	SearchField *string `form:"search_field" binding:"omitempty,oneof=device_number batch_number battery_model_name product_spec ble_mac comm_chip_id"`
+	SearchField *string `form:"search_field" binding:"omitempty,oneof=device_number batch_number battery_model_name product_spec ble_mac identity_ble_mac comm_chip_id"`
 
 	// 通用文本搜索值
 	SearchValue *string `form:"search_value"`
@@ -60,11 +60,12 @@ type BatteryListItemResp struct {
 	PackModelName    *string `json:"pack_battery_model_name"`
 
 	// 业务字段
-	ItemUUID    *string `json:"item_uuid"`
-	BatchNumber *string `json:"batch_number"`
-	ProductSpec *string `json:"product_spec"`
-	BleMac      *string `json:"ble_mac"`
-	CommChipID  *string `json:"comm_chip_id"`
+	ItemUUID       *string `json:"item_uuid"`
+	BatchNumber    *string `json:"batch_number"`
+	ProductSpec    *string `json:"product_spec"`
+	BleMac         *string `json:"ble_mac"`
+	IdentityBleMac *string `json:"identity_ble_mac"`
+	CommChipID     *string `json:"comm_chip_id"`
 
 	ProductionDate     *string `json:"production_date"`
 	WarrantyExpireDate *string `json:"warranty_expire_date"`
@@ -131,7 +132,7 @@ type BatteryImportResp struct {
 // BatteryExportReq 电池导出请求（复用列表查询条件，但不分页）
 type BatteryExportReq struct {
 	// 通用文本搜索字段
-	SearchField *string `form:"search_field" binding:"omitempty,oneof=device_number batch_number battery_model_name product_spec ble_mac comm_chip_id"`
+	SearchField *string `form:"search_field" binding:"omitempty,oneof=device_number batch_number battery_model_name product_spec ble_mac identity_ble_mac comm_chip_id"`
 
 	// 通用文本搜索值
 	SearchValue *string `form:"search_value"`

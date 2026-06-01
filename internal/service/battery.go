@@ -37,11 +37,12 @@ type batteryListRow struct {
 	PackModelSeqNo   *int16  `gorm:"column:battery_model_seq_no"`
 	PackModelName    *string `gorm:"column:pack_battery_model_name"`
 
-	ItemUUID    *string `gorm:"column:item_uuid"`
-	BatchNumber *string `gorm:"column:batch_number"`
-	ProductSpec *string `gorm:"column:product_spec"`
-	BleMac      *string `gorm:"column:ble_mac"`
-	CommChipID  *string `gorm:"column:comm_chip_id"`
+	ItemUUID       *string `gorm:"column:item_uuid"`
+	BatchNumber    *string `gorm:"column:batch_number"`
+	ProductSpec    *string `gorm:"column:product_spec"`
+	BleMac         *string `gorm:"column:ble_mac"`
+	IdentityBleMac *string `gorm:"column:identity_ble_mac"`
+	CommChipID     *string `gorm:"column:comm_chip_id"`
 
 	ProductionDate     *time.Time `gorm:"column:production_date"`
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
@@ -261,6 +262,7 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			dbat.batch_number AS batch_number,
 			dbat.product_spec AS product_spec,
 			dbat.ble_mac AS ble_mac,
+			dbat.identity_ble_mac AS identity_ble_mac,
 			dbat.comm_chip_id AS comm_chip_id,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
@@ -403,6 +405,7 @@ func (*Battery) GetBatteryList(ctx context.Context, req model.BatteryListReq, cl
 			BatchNumber:      r.BatchNumber,
 			ProductSpec:      r.ProductSpec,
 			BleMac:           r.BleMac,
+			IdentityBleMac:   r.IdentityBleMac,
 			CommChipID:       r.CommChipID,
 			OwnerOrgID:       r.OwnerOrgID,
 			OwnerOrgName:     r.OwnerOrgName,
@@ -603,6 +606,8 @@ func applyBatteryTextSearch(queryBuilder *gorm.DB, fieldPtr, valuePtr *string) *
 		return queryBuilder.Where("dbat.product_spec ILIKE ?", likeValue)
 	case "ble_mac":
 		return queryBuilder.Where("dbat.ble_mac ILIKE ?", likeValue)
+	case "identity_ble_mac":
+		return queryBuilder.Where("dbat.identity_ble_mac ILIKE ?", likeValue)
 	case "comm_chip_id":
 		return queryBuilder.Where("dbat.comm_chip_id ILIKE ?", likeValue)
 	default:

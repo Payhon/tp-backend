@@ -68,7 +68,7 @@ default:
     device_batteries:
       soc: energy.socPct
       soh: energy.sohPct
-      ble_mac: identity.bluetoothMac
+      identity_ble_mac: identity.bluetoothMac
       longitude: socket.longitude
       latitude: socket.latitude
       speed: socket.speedKmh

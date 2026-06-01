@@ -821,6 +821,7 @@ var allowedDeviceBatteryColumns = map[string]struct{}{
 	"soc":               {},
 	"soh":               {},
 	"ble_mac":           {},
+	"identity_ble_mac":  {},
 	"comm_chip_id":      {},
 	"longitude":         {},
 	"latitude":          {},

@@ -19,10 +19,10 @@ func TestCollectDeviceBatterySyncValuesDoesNotSyncItemUUID(t *testing.T) {
 			"energy.socPct":         float64(88),
 		},
 		map[string]string{
-			"item_uuid": "identity.boardCode",
-			"ble_mac":   "identity.bluetoothMac",
-			"imei":      "socket.imei",
-			"soc":       "energy.socPct",
+			"item_uuid":        "identity.boardCode",
+			"identity_ble_mac": "identity.bluetoothMac",
+			"imei":             "socket.imei",
+			"soc":              "energy.socPct",
 		},
 	)
 
@@ -32,8 +32,8 @@ func TestCollectDeviceBatterySyncValuesDoesNotSyncItemUUID(t *testing.T) {
 	if _, ok := values["imei"]; ok {
 		t.Fatalf("empty string should not be synced")
 	}
-	if got := values["ble_mac"]; got != "AA:BB:CC:DD:EE:FF" {
-		t.Fatalf("ble_mac = %v, want AA:BB:CC:DD:EE:FF", got)
+	if got := values["identity_ble_mac"]; got != "AA:BB:CC:DD:EE:FF" {
+		t.Fatalf("identity_ble_mac = %v, want AA:BB:CC:DD:EE:FF", got)
 	}
 	if got := values["soc"]; got != float64(88) {
 		t.Fatalf("soc = %v, want 88", got)
