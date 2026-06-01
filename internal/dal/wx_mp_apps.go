@@ -32,6 +32,18 @@ func GetWxMpAppByTenant(ctx context.Context, tenantID string) (*WxMpApp, error) 
 	return &out, nil
 }
 
+func GetWxMpAppByTenantAndAppID(ctx context.Context, tenantID, appID string) (*WxMpApp, error) {
+	var out WxMpApp
+	err := global.DB.WithContext(ctx).
+		Table("wx_mp_apps").
+		Where("tenant_id = ? AND appid = ?", tenantID, appID).
+		First(&out).Error
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func UpsertWxMpApp(ctx context.Context, app *WxMpApp) error {
 	// postgres upsert
 	return global.DB.WithContext(ctx).Exec(`

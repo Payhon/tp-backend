@@ -51,11 +51,13 @@ type AppEmailResetPasswordReq struct {
 }
 
 type AppWxmpLoginReq struct {
-	Code string `json:"code" validate:"required"`
+	Code  string  `json:"code" validate:"required"`
+	AppID *string `json:"appid" validate:"omitempty,max=100"`
 }
 
 type AppWxmpBindPhoneReq struct {
-	PhoneCode string `json:"phone_code" validate:"required"` // wx.getPhoneNumber 返回的 code
+	PhoneCode string  `json:"phone_code" validate:"required"` // wx.getPhoneNumber 返回的 code
+	AppID     *string `json:"appid" validate:"omitempty,max=100"`
 }
 
 // AppProfileUpdateReq APP/小程序用户资料更新（昵称/头像）
@@ -71,7 +73,8 @@ type AppSetUsernameReq struct {
 
 // AppWxmpBindReq 微信小程序绑定微信身份（openid）
 type AppWxmpBindReq struct {
-	Code string `json:"code" validate:"required"`
+	Code  string  `json:"code" validate:"required"`
+	AppID *string `json:"appid" validate:"omitempty,max=100"`
 }
 
 type AppWxmpProfileReq struct {
@@ -135,4 +138,43 @@ type UpsertWxMpAppReq struct {
 	AppSecret string  `json:"app_secret" validate:"required,max=128"`
 	Status    string  `json:"status" validate:"required,max=16,oneof=OPEN CLOSE"`
 	Remark    *string `json:"remark" validate:"omitempty,max=255"`
+}
+
+type UpsertPackWxMpConfigReq struct {
+	WxAppID       string  `json:"wx_appid" validate:"required,max=100"`
+	AppSecret     *string `json:"app_secret" validate:"omitempty,max=128"`
+	Status        string  `json:"status" validate:"required,max=16,oneof=OPEN CLOSE"`
+	HomeBannerURL *string `json:"home_banner_url" validate:"omitempty,max=500"`
+	LoginLogoURL  *string `json:"login_logo_url" validate:"omitempty,max=500"`
+	Remark        *string `json:"remark" validate:"omitempty,max=255"`
+}
+
+type PackWxMpConfigResp struct {
+	ID            string  `json:"id"`
+	TenantID      string  `json:"tenant_id"`
+	OrgID         string  `json:"org_id"`
+	AppID         string  `json:"app_id"`
+	WxAppID       string  `json:"wx_appid"`
+	Status        string  `json:"status"`
+	HomeBannerURL *string `json:"home_banner_url"`
+	LoginLogoURL  *string `json:"login_logo_url"`
+	Remark        *string `json:"remark"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
+}
+
+type WxMpRuntimeReq struct {
+	AppID string `form:"appid" validate:"required,max=100"`
+}
+
+type WxMpRuntimeResp struct {
+	AppID         string  `json:"app_id"`
+	WxAppID       string  `json:"wx_appid"`
+	Status        string  `json:"status"`
+	SourceType    string  `json:"source_type"`
+	LoginOnly     bool    `json:"login_only"`
+	HomeBannerURL *string `json:"home_banner_url"`
+	LoginLogoURL  *string `json:"login_logo_url"`
+	OrgID         string  `json:"org_id"`
+	OrgName       string  `json:"org_name"`
 }

@@ -7,7 +7,9 @@ import (
 	"time"
 
 	dal "project/internal/dal"
+	"project/internal/model"
 	"project/pkg/errcode"
+	"project/pkg/global"
 
 	"github.com/go-basic/uuid"
 	"gorm.io/gorm"
@@ -73,4 +75,242 @@ func (*AppAuthConfig) GetWxMpApp(ctx context.Context, tenantID string) (*dal.WxM
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
 	}
 	return app, nil
+}
+
+type packWxMpAppCreateRow struct {
+	ID        string    `gorm:"column:id"`
+	TenantID  string    `gorm:"column:tenant_id"`
+	AppID     string    `gorm:"column:appid"`
+	AppType   int16     `gorm:"column:app_type"`
+	Name      string    `gorm:"column:name"`
+	Remark    *string   `gorm:"column:remark"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+func trimStringPtrValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(*v)
+}
+
+func packWxMpResp(row *dal.PackWxMpConfig) *model.PackWxMpConfigResp {
+	if row == nil {
+		return nil
+	}
+	return &model.PackWxMpConfigResp{
+		ID:            row.ID,
+		TenantID:      row.TenantID,
+		OrgID:         row.OrgID,
+		AppID:         row.AppID,
+		WxAppID:       row.WxAppID,
+		Status:        row.Status,
+		HomeBannerURL: row.HomeBannerURL,
+		LoginLogoURL:  row.LoginLogoURL,
+		Remark:        row.Remark,
+		CreatedAt:     row.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:     row.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func ensurePackOrg(ctx context.Context, tenantID, orgID string) error {
+	var org model.Org
+	if err := global.DB.WithContext(ctx).
+		Table("orgs").
+		Select("id, tenant_id, org_type").
+		Where("tenant_id = ? AND id = ?", tenantID, strings.TrimSpace(orgID)).
+		First(&org).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(errcode.CodeNotFound)
+		}
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if org.OrgType != model.OrgTypePACKFactory {
+		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "仅支持配置 PACK 厂小程序"})
+	}
+	return nil
+}
+
+func getOrgName(ctx context.Context, tenantID, orgID string) string {
+	var org struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := global.DB.WithContext(ctx).
+		Table("orgs").
+		Select("name").
+		Where("tenant_id = ? AND id = ?", tenantID, strings.TrimSpace(orgID)).
+		Limit(1).
+		Scan(&org).Error; err != nil {
+		return ""
+	}
+	return strings.TrimSpace(org.Name)
+}
+
+func ensureAppForPackWxMp(ctx context.Context, tx *gorm.DB, tenantID, wxAppID, orgID string) (string, error) {
+	var app struct {
+		ID string `gorm:"column:id"`
+	}
+	if err := tx.WithContext(ctx).
+		Table("apps").
+		Select("id").
+		Where("tenant_id = ? AND appid = ?", tenantID, wxAppID).
+		Limit(1).
+		Scan(&app).Error; err != nil {
+		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if strings.TrimSpace(app.ID) != "" {
+		return app.ID, nil
+	}
+	now := time.Now().UTC()
+	row := packWxMpAppCreateRow{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		AppID:     wxAppID,
+		AppType:   0,
+		Name:      "PACK小程序-" + orgID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := tx.WithContext(ctx).Table("apps").Create(&row).Error; err != nil {
+		return "", errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return row.ID, nil
+}
+
+func (*AppAuthConfig) GetPackWxMpConfig(ctx context.Context, tenantID, orgID string) (*model.PackWxMpConfigResp, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	orgID = strings.TrimSpace(orgID)
+	if tenantID == "" || orgID == "" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/org_id is empty"})
+	}
+	if err := ensurePackOrg(ctx, tenantID, orgID); err != nil {
+		return nil, err
+	}
+	row, err := dal.GetPackWxMpConfigByOrg(ctx, tenantID, orgID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &model.PackWxMpConfigResp{
+				TenantID: tenantID,
+				OrgID:    orgID,
+				Status:   "OPEN",
+			}, nil
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	return packWxMpResp(row), nil
+}
+
+func (*AppAuthConfig) UpsertPackWxMpConfig(ctx context.Context, tenantID, orgID string, req *model.UpsertPackWxMpConfigReq) (*model.PackWxMpConfigResp, error) {
+	if req == nil {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "request is empty"})
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	orgID = strings.TrimSpace(orgID)
+	wxAppID := strings.TrimSpace(req.WxAppID)
+	if tenantID == "" || orgID == "" || wxAppID == "" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/org_id/wx_appid is empty"})
+	}
+	if err := ensurePackOrg(ctx, tenantID, orgID); err != nil {
+		return nil, err
+	}
+	status := strings.ToUpper(strings.TrimSpace(req.Status))
+	if status == "" {
+		status = "OPEN"
+	}
+	if status != "OPEN" && status != "CLOSE" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"status": "must be OPEN or CLOSE"})
+	}
+	secret := trimStringPtrValue(req.AppSecret)
+	if existing, err := dal.GetPackWxMpConfigByOrg(ctx, tenantID, orgID); err == nil {
+		if secret == "" {
+			secret = existing.AppSecret
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if secret == "" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"app_secret": "required"})
+	}
+
+	var saved *dal.PackWxMpConfig
+	err := global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		appID, err := ensureAppForPackWxMp(ctx, tx, tenantID, wxAppID, orgID)
+		if err != nil {
+			return err
+		}
+		row := &dal.PackWxMpConfig{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			OrgID:         orgID,
+			AppID:         appID,
+			WxAppID:       wxAppID,
+			AppSecret:     secret,
+			Status:        status,
+			HomeBannerURL: req.HomeBannerURL,
+			LoginLogoURL:  req.LoginLogoURL,
+			Remark:        req.Remark,
+		}
+		if err := dal.UpsertPackWxMpConfig(ctx, tx, row); err != nil {
+			return err
+		}
+		var out dal.PackWxMpConfig
+		if err := tx.WithContext(ctx).
+			Table("pack_wxmp_configs").
+			Where("tenant_id = ? AND org_id = ?", tenantID, orgID).
+			First(&out).Error; err != nil {
+			return err
+		}
+		saved = &out
+		return nil
+	})
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	return packWxMpResp(saved), nil
+}
+
+func (*AppAuthConfig) GetWxMpRuntime(ctx context.Context, tenantID, wxAppID string) (*model.WxMpRuntimeResp, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	wxAppID = strings.TrimSpace(wxAppID)
+	if tenantID == "" || wxAppID == "" {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/appid is empty"})
+	}
+	row, err := dal.GetPackWxMpConfigByWxAppID(ctx, tenantID, wxAppID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			app, appErr := dal.GetWxMpAppByTenantAndAppID(ctx, tenantID, wxAppID)
+			if appErr != nil {
+				if errors.Is(appErr, gorm.ErrRecordNotFound) {
+					return nil, errcode.New(errcode.CodeNotFound)
+				}
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": appErr.Error()})
+			}
+			if strings.ToUpper(app.Status) != "OPEN" {
+				return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})
+			}
+			return &model.WxMpRuntimeResp{
+				AppID:      app.ID,
+				WxAppID:    app.AppID,
+				Status:     app.Status,
+				SourceType: "TENANT",
+				LoginOnly:  false,
+			}, nil
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if strings.ToUpper(row.Status) != "OPEN" {
+		return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})
+	}
+	return &model.WxMpRuntimeResp{
+		AppID:         row.AppID,
+		WxAppID:       row.WxAppID,
+		Status:        row.Status,
+		SourceType:    "PACK",
+		LoginOnly:     true,
+		HomeBannerURL: row.HomeBannerURL,
+		LoginLogoURL:  row.LoginLogoURL,
+		OrgID:         row.OrgID,
+		OrgName:       getOrgName(ctx, tenantID, row.OrgID),
+	}, nil
 }

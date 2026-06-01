@@ -206,7 +206,11 @@ func (*AppAuthApi) WxmpLogin(c *gin.Context) {
 		return
 	}
 	tenantID := middleware.GetTenantIDFromHeader(c)
-	rsp, err := service.GroupApp.AppAuth.WxmpLogin(c.Request.Context(), tenantID, req.Code)
+	appid := ""
+	if req.AppID != nil {
+		appid = *req.AppID
+	}
+	rsp, err := service.GroupApp.AppAuth.WxmpLogin(c.Request.Context(), tenantID, req.Code, appid)
 	if err != nil {
 		c.Error(err)
 		return
@@ -230,7 +234,11 @@ func (*AppAuthApi) WxmpBindPhone(c *gin.Context) {
 	}
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
 	tenantID := middleware.GetTenantIDFromHeader(c)
-	if err := service.GroupApp.AppAuth.WxmpBindPhone(c.Request.Context(), tenantID, userClaims.ID, req.PhoneCode); err != nil {
+	appid := ""
+	if req.AppID != nil {
+		appid = *req.AppID
+	}
+	if err := service.GroupApp.AppAuth.WxmpBindPhone(c.Request.Context(), tenantID, userClaims.ID, req.PhoneCode, appid); err != nil {
 		c.Error(err)
 		return
 	}
@@ -276,7 +284,11 @@ func (*AppAuthApi) WxmpBind(c *gin.Context) {
 	}
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
 	tenantID := middleware.GetTenantIDFromHeader(c)
-	if err := service.GroupApp.AppAuth.WxmpBindOpenID(c.Request.Context(), tenantID, userClaims.ID, req.Code); err != nil {
+	appid := ""
+	if req.AppID != nil {
+		appid = *req.AppID
+	}
+	if err := service.GroupApp.AppAuth.WxmpBindOpenID(c.Request.Context(), tenantID, userClaims.ID, req.Code, appid); err != nil {
 		c.Error(err)
 		return
 	}

@@ -129,6 +129,12 @@ func RouterInit() *gin.Engine {
 				appPublic.GET("info", controllers.AppManageApi.GetPublicAppInfo)
 			}
 
+			appWxmpPublic := v1.Group("app/wxmp")
+			appWxmpPublic.Use(middleware.RequireTenantHeader())
+			{
+				appWxmpPublic.GET("runtime", controllers.AppAuthConfigApi.GetWxMpRuntime)
+			}
+
 			// APP升级（无需登录）：APP端检查更新（替代 uniCloud）
 			appUpgrade := v1.Group("app/upgrade")
 			appUpgrade.Use(middleware.RequireTenantHeader())
@@ -226,6 +232,7 @@ func RouterInit() *gin.Engine {
 
 			// APP管理：应用管理/升级中心
 			apps.Model.AppManage.InitAppManage(v1)
+			apps.Model.AppUsers.Init(v1)
 
 			// APP内容管理（管理端 + APP登录后反馈）
 			apps.Model.AppContent.Init(v1)

@@ -10,6 +10,7 @@ import (
 type ServiceGroup struct {
 	User
 	AppManage
+	AppUsers
 	AppContent
 	AppAuth
 	AppAuthConfig

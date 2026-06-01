@@ -26,6 +26,9 @@ messages:
   100005:
     zh_CN: "${field}不能为空"
     en_US: "${field} cannot be empty"
+  100404:
+    zh_CN: "资源不存在"
+    en_US: "Resource Not Found"
 
   # 数据库相关错误 (101xxx)
   101001:

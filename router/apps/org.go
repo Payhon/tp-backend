@@ -21,6 +21,10 @@ func (*Org) InitOrg(Router *gin.RouterGroup) {
 		// 改
 		orgApi.PUT(":id", api.Controllers.OrgApi.UpdateOrg)
 
+		// PACK 厂微信小程序配置
+		orgApi.GET(":id/wxmp-config", api.Controllers.OrgApi.GetPackWxMpConfig)
+		orgApi.PUT(":id/wxmp-config", api.Controllers.OrgApi.UpsertPackWxMpConfig)
+
 		// 详情查询
 		orgApi.GET(":id", api.Controllers.OrgApi.GetOrgByID)
 

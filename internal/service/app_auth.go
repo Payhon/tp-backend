@@ -30,6 +30,44 @@ const (
 	AuthCodeTTL = 5 * time.Minute
 )
 
+type wxMiniAppCredential struct {
+	AppID     string
+	AppSecret string
+	Status    string
+	Scoped    bool
+}
+
+func wxmpIdentityIdentifier(appid, openid string) string {
+	appid = strings.TrimSpace(appid)
+	openid = strings.TrimSpace(openid)
+	if appid == "" {
+		return openid
+	}
+	return appid + ":" + openid
+}
+
+func (a *AppAuth) resolveWxMiniAppCredential(ctx context.Context, tenantID, appid string) (*wxMiniAppCredential, error) {
+	appid = strings.TrimSpace(appid)
+	if appid != "" {
+		if cfg, err := dal.GetPackWxMpConfigByWxAppID(ctx, tenantID, appid); err == nil {
+			return &wxMiniAppCredential{AppID: cfg.WxAppID, AppSecret: cfg.AppSecret, Status: cfg.Status, Scoped: true}, nil
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+		}
+	}
+	wxConf, err := dal.GetWxMpAppByTenant(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "wx miniapp not configured"})
+		}
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if appid != "" && strings.TrimSpace(wxConf.AppID) != appid {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "wx miniapp not configured"})
+	}
+	return &wxMiniAppCredential{AppID: wxConf.AppID, AppSecret: wxConf.AppSecret, Status: wxConf.Status}, nil
+}
+
 func normalizePhone(prefix, number string) string {
 	prefix = strings.TrimSpace(prefix)
 	number = strings.TrimSpace(number)
@@ -918,18 +956,15 @@ func (a *AppAuth) SetUsername(ctx context.Context, tenantID, userID, username st
 }
 
 // WxmpLogin 微信小程序一键登录：通过 code2session 获取 openid，然后按租户查/建身份并登录
-func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code string) (*model.LoginRsp, error) {
+func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code, appid string) (*model.LoginRsp, error) {
 	code = strings.TrimSpace(code)
 	if tenantID == "" || code == "" {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/code is empty"})
 	}
 
-	wxConf, err := dal.GetWxMpAppByTenant(ctx, tenantID)
+	wxConf, err := a.resolveWxMiniAppCredential(ctx, tenantID, appid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "wx miniapp not configured"})
-		}
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+		return nil, err
 	}
 	if strings.ToUpper(wxConf.Status) != "OPEN" {
 		return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})
@@ -939,8 +974,14 @@ func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code string) (*model.
 	if err != nil {
 		return nil, err
 	}
+	identityIdentifier := wxmpIdentityIdentifier(func() string {
+		if wxConf.Scoped {
+			return wxConf.AppID
+		}
+		return ""
+	}(), openid)
 
-	identity, err := dal.GetUserIdentity(ctx, tenantID, dal.IdentityTypeWxmpOpenID, openid)
+	identity, err := dal.GetUserIdentity(ctx, tenantID, dal.IdentityTypeWxmpOpenID, identityIdentifier)
 	if err == nil {
 		user, err := dal.GetUsersById(identity.UserID)
 		if err != nil {
@@ -983,7 +1024,7 @@ func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code string) (*model.
 		UserID:         userID,
 		TenantID:       tenantID,
 		IdentityType:   dal.IdentityTypeWxmpOpenID,
-		Identifier:     openid,
+		Identifier:     identityIdentifier,
 		CredentialType: dal.CredentialTypeCode,
 		PasswordHash:   nil,
 		VerifiedAt:     &now,
@@ -1010,7 +1051,7 @@ func (a *AppAuth) WxmpLogin(ctx context.Context, tenantID, code string) (*model.
 }
 
 // WxmpBindOpenID 微信小程序绑定微信身份（openid），用于“账号绑定：微信绑定”
-func (a *AppAuth) WxmpBindOpenID(ctx context.Context, tenantID, userID, code string) error {
+func (a *AppAuth) WxmpBindOpenID(ctx context.Context, tenantID, userID, code, appid string) error {
 	code = strings.TrimSpace(code)
 	if tenantID == "" || userID == "" || code == "" {
 		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/user_id/code is empty"})
@@ -1034,12 +1075,9 @@ func (a *AppAuth) WxmpBindOpenID(ctx context.Context, tenantID, userID, code str
 		})
 	}
 
-	wxConf, err := dal.GetWxMpAppByTenant(ctx, tenantID)
+	wxConf, err := a.resolveWxMiniAppCredential(ctx, tenantID, appid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "wx miniapp not configured"})
-		}
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+		return err
 	}
 	if strings.ToUpper(wxConf.Status) != "OPEN" {
 		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})
@@ -1049,9 +1087,15 @@ func (a *AppAuth) WxmpBindOpenID(ctx context.Context, tenantID, userID, code str
 	if err != nil {
 		return err
 	}
+	identityIdentifier := wxmpIdentityIdentifier(func() string {
+		if wxConf.Scoped {
+			return wxConf.AppID
+		}
+		return ""
+	}(), openid)
 
 	// openid 不允许跨账号复用
-	if idt, err := dal.GetUserIdentity(ctx, tenantID, dal.IdentityTypeWxmpOpenID, openid); err == nil {
+	if idt, err := dal.GetUserIdentity(ctx, tenantID, dal.IdentityTypeWxmpOpenID, identityIdentifier); err == nil {
 		if idt.UserID == userID {
 			return nil
 		}
@@ -1079,7 +1123,7 @@ func (a *AppAuth) WxmpBindOpenID(ctx context.Context, tenantID, userID, code str
 			UserID:         userID,
 			TenantID:       tenantID,
 			IdentityType:   dal.IdentityTypeWxmpOpenID,
-			Identifier:     openid,
+			Identifier:     identityIdentifier,
 			CredentialType: dal.CredentialTypeCode,
 			PasswordHash:   nil,
 			VerifiedAt:     &now,
@@ -1348,17 +1392,14 @@ func (a *AppAuth) upsertPhoneBinding(ctx context.Context, tenantID, userID, phon
 }
 
 // WxmpBindPhone 微信小程序一键绑定手机号（使用 wx.getPhoneNumber code）
-func (a *AppAuth) WxmpBindPhone(ctx context.Context, tenantID, userID, phoneCode string) error {
+func (a *AppAuth) WxmpBindPhone(ctx context.Context, tenantID, userID, phoneCode, appid string) error {
 	phoneCode = strings.TrimSpace(phoneCode)
 	if tenantID == "" || userID == "" || phoneCode == "" {
 		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "tenant_id/user_id/phone_code is empty"})
 	}
-	wxConf, err := dal.GetWxMpAppByTenant(ctx, tenantID)
+	wxConf, err := a.resolveWxMiniAppCredential(ctx, tenantID, appid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "wx miniapp not configured"})
-		}
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+		return err
 	}
 	if strings.ToUpper(wxConf.Status) != "OPEN" {
 		return errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})

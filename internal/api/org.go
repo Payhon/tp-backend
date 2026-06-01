@@ -187,3 +187,45 @@ func (*OrgApi) ResetOrgAccountPassword(c *gin.Context) {
 	}
 	c.Set("data", nil)
 }
+
+// GetPackWxMpConfig 获取 PACK 厂微信小程序配置
+// @Summary 获取 PACK 厂微信小程序配置
+// @Tags 组织管理
+// @Produce json
+// @Param id path string true "PACK 厂组织ID"
+// @Success 200 {object} model.PackWxMpConfigResp
+// @Router /api/v1/org/{id}/wxmp-config [get]
+func (*OrgApi) GetPackWxMpConfig(c *gin.Context) {
+	id := c.Param("id")
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.AppAuthConfig.GetPackWxMpConfig(c.Request.Context(), userClaims.TenantID, id)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
+// UpsertPackWxMpConfig 保存 PACK 厂微信小程序配置
+// @Summary 保存 PACK 厂微信小程序配置
+// @Tags 组织管理
+// @Accept json
+// @Produce json
+// @Param id path string true "PACK 厂组织ID"
+// @Param body body model.UpsertPackWxMpConfigReq true "请求"
+// @Success 200 {object} model.PackWxMpConfigResp
+// @Router /api/v1/org/{id}/wxmp-config [put]
+func (*OrgApi) UpsertPackWxMpConfig(c *gin.Context) {
+	id := c.Param("id")
+	var req model.UpsertPackWxMpConfigReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	data, err := service.GroupApp.AppAuthConfig.UpsertPackWxMpConfig(c.Request.Context(), userClaims.TenantID, id, &req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}

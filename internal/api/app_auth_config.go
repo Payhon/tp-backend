@@ -152,3 +152,24 @@ func (*AppAuthConfigApi) UpsertWxMpConfig(c *gin.Context) {
 	}
 	c.Set("data", nil)
 }
+
+// GetWxMpRuntime 获取微信小程序运行时配置（公开）
+// @Tags APP-Auth-Config
+// @Produce json
+// @Param X-TenantID header string true "租户ID"
+// @Param appid query string true "微信小程序 AppID"
+// @Success 200 {object} model.WxMpRuntimeResp
+// @Router /api/v1/app/wxmp/runtime [get]
+func (*AppAuthConfigApi) GetWxMpRuntime(c *gin.Context) {
+	var req model.WxMpRuntimeReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	tenantID := strings.TrimSpace(c.GetHeader("X-TenantID"))
+	data, err := service.GroupApp.AppAuthConfig.GetWxMpRuntime(c.Request.Context(), tenantID, req.AppID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}

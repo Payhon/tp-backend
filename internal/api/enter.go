@@ -14,6 +14,7 @@ import (
 type Controller struct {
 	UserApi                       // 用户管理
 	AppManageApi                  // APP管理：应用管理/升级中心
+	AppUsersApi                   // APP管理：用户管理
 	AppUpgradeApi                 // APP升级：APP端检查更新（无需 uniCloud）
 	AppContentApi                 // APP内容管理（单页/FAQ/用户反馈）
 	AppAuthApi                    // APP/小程序认证
