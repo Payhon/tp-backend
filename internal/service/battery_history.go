@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +50,12 @@ type bmsHistoryWideColumnRow struct {
 	DataType       string `gorm:"column:data_type"`
 	DataIdentifier string `gorm:"column:data_identifier"`
 	DataName       string `gorm:"column:data_name"`
+}
+
+type bmsHistoryWideValueRow struct {
+	DataType       string `gorm:"column:data_type"`
+	DataIdentifier string `gorm:"column:data_identifier"`
+	Value          string `gorm:"column:value"`
 }
 
 type bmsHistoryDeviceOptionRow struct {
@@ -200,6 +207,66 @@ func buildBMSHistoryMergedArgs(templateID, deviceID, tenantID string, startTime,
 
 func buildBMSHistoryWideColumnKey(dataType, identifier string) string {
 	return dataType + "__" + identifier
+}
+
+var bmsHistoryWideExcludedIdentifiers = map[string]struct{}{
+	"balancingOn":  {},
+	"bms.snapshot": {},
+	"protectCount": {},
+	"protectOn":    {},
+	"vPackV":       {},
+}
+
+var bmsHistoryWideKnownJSONIdentifiers = map[string]struct{}{
+	"bms.snapshot":           {},
+	"cell.balancing":         {},
+	"cell.voltagesMv":        {},
+	"customParams":           {},
+	"temperature.cellTempsC": {},
+}
+
+func isBMSHistoryWideJSONValue(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) < 2 {
+		return false
+	}
+	if !((strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}")) ||
+		(strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]"))) {
+		return false
+	}
+	return json.Valid([]byte(value))
+}
+
+func shouldExcludeBMSHistoryWideIdentifier(identifier string) bool {
+	identifier = strings.TrimSpace(identifier)
+	if _, ok := bmsHistoryWideExcludedIdentifiers[identifier]; ok {
+		return true
+	}
+	if _, ok := bmsHistoryWideKnownJSONIdentifiers[identifier]; ok {
+		return true
+	}
+	return false
+}
+
+func filterBMSHistoryWideColumnRows(columnRows []bmsHistoryWideColumnRow, valueRows []bmsHistoryWideValueRow) []bmsHistoryWideColumnRow {
+	jsonColumnKeys := make(map[string]struct{})
+	for _, row := range valueRows {
+		if shouldExcludeBMSHistoryWideIdentifier(row.DataIdentifier) || isBMSHistoryWideJSONValue(row.Value) {
+			jsonColumnKeys[buildBMSHistoryWideColumnKey(row.DataType, row.DataIdentifier)] = struct{}{}
+		}
+	}
+
+	filtered := make([]bmsHistoryWideColumnRow, 0, len(columnRows))
+	for _, row := range columnRows {
+		if shouldExcludeBMSHistoryWideIdentifier(row.DataIdentifier) {
+			continue
+		}
+		if _, ok := jsonColumnKeys[buildBMSHistoryWideColumnKey(row.DataType, row.DataIdentifier)]; ok {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
 }
 
 func formatBMSHistoryTime(tsMs int64) string {
@@ -358,6 +425,17 @@ func queryBMSWideHistory(ctx context.Context, req model.BMSHistoryQueryReq, clai
 	if err := global.DB.WithContext(ctx).Raw(columnsSQL, mergedArgs...).Scan(&columnRows).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
+
+	valuesSQL := `
+		SELECT DISTINCT data_type, data_identifier, value
+		  FROM (` + mergedSQL + `) merged
+		 WHERE btrim(value) LIKE '{%' OR btrim(value) LIKE '[%'
+	`
+	valueRows := make([]bmsHistoryWideValueRow, 0)
+	if err := global.DB.WithContext(ctx).Raw(valuesSQL, mergedArgs...).Scan(&valueRows).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	columnRows = filterBMSHistoryWideColumnRows(columnRows, valueRows)
 
 	columns := make([]model.BMSHistoryWideColumn, 0, len(columnRows))
 	for _, row := range columnRows {
@@ -668,6 +746,16 @@ func exportBMSHistoryWideExcel(ctx context.Context, filePath, templateID string,
 		return err
 	}
 
+	valueRows := make([]bmsHistoryWideValueRow, 0, len(cells))
+	for _, cell := range cells {
+		valueRows = append(valueRows, bmsHistoryWideValueRow{
+			DataType:       cell.DataType,
+			DataIdentifier: cell.DataIdentifier,
+			Value:          cell.Value,
+		})
+	}
+	columnRows = filterBMSHistoryWideColumnRows(columnRows, valueRows)
+
 	timeMap := make(map[int64]map[string]string)
 	timeOrder := make([]int64, 0)
 	seen := make(map[int64]struct{})
@@ -676,6 +764,9 @@ func exportBMSHistoryWideExcel(ctx context.Context, filePath, templateID string,
 			seen[cell.TSMs] = struct{}{}
 			timeOrder = append(timeOrder, cell.TSMs)
 			timeMap[cell.TSMs] = make(map[string]string)
+		}
+		if shouldExcludeBMSHistoryWideIdentifier(cell.DataIdentifier) || isBMSHistoryWideJSONValue(cell.Value) {
+			continue
 		}
 		colKey := buildBMSHistoryWideColumnKey(cell.DataType, cell.DataIdentifier)
 		timeMap[cell.TSMs][colKey] = cell.Value
