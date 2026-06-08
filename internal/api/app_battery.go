@@ -23,6 +23,49 @@ import (
 // AppBatteryApi APP端：电池设备详情/透传
 type AppBatteryApi struct{}
 
+func websocketInitString(msg map[string]interface{}, key string) string {
+	val, ok := msg[key]
+	if !ok || val == nil {
+		return ""
+	}
+	if s, ok := val.(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return strings.TrimSpace(fmt.Sprint(val))
+}
+
+func websocketInitHasFeature(msg map[string]interface{}, feature string) bool {
+	feature = strings.TrimSpace(feature)
+	if feature == "" {
+		return false
+	}
+	val, ok := msg["features"]
+	if !ok || val == nil {
+		return false
+	}
+	switch items := val.(type) {
+	case []interface{}:
+		for _, item := range items {
+			if strings.TrimSpace(fmt.Sprint(item)) == feature {
+				return true
+			}
+		}
+	case []string:
+		for _, item := range items {
+			if strings.TrimSpace(item) == feature {
+				return true
+			}
+		}
+	case string:
+		for _, item := range strings.Split(items, ",") {
+			if strings.TrimSpace(item) == feature {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GetBatteryDetail 获取APP端电池设备详情
 // @Summary 获取电池设备详情(APP)
 // @Description APP端设备详情页使用：从 devices + device_batteries 查询基础信息（含 ble_mac/item_uuid/comm_chip_id）
@@ -184,7 +227,7 @@ func (*AppBatteryApi) ReportBatteryConnectionStatus(c *gin.Context) {
 }
 
 // ServeBatterySocketByWS APP端：MQTT透传(WebSocket桥接)
-// 客户端首次消息需发送 JSON：{"device_id":"...","token":"..."}
+// 客户端首次消息需发送 JSON：{"device_id":"...","token":"...","features":["mqtt_socket_owner_v1"]}
 // 随后发送：
 // - "ping" -> "pong"
 // - {"hex":"00AABB"} 或 纯十六进制字符串 -> 发布到 device/socket/rx/{device_id}
@@ -197,6 +240,7 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
+	var writeMu sync.Mutex
 
 	msgType, msg, err := conn.ReadMessage()
 	if err != nil {
@@ -226,6 +270,20 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		conn.WriteMessage(msgType, []byte(err.Error()))
 		return
 	}
+	ownerFeatureEnabled := websocketInitHasFeature(initMsg, service.AppBatteryMqttSocketOwnerFeatureV1)
+	platform := strings.TrimSpace(websocketInitString(initMsg, "platform"))
+
+	writeControl := func(payload map[string]interface{}, fallbackText string) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		if ownerFeatureEnabled {
+			b, _ := json.Marshal(payload)
+			_ = conn.WriteMessage(websocket.TextMessage, b)
+			return
+		}
+		_ = conn.WriteMessage(msgType, []byte(fallbackText))
+	}
+
 	// 校验：设备必须绑定到当前用户（避免任意设备透传）
 	detail, err := service.GroupApp.AppBattery.GetBatteryDetailForApp(context.Background(), deviceID, claims)
 	if err != nil {
@@ -237,6 +295,24 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		conn.WriteMessage(msgType, []byte("device_number is required for mqtt socket topic"))
 		return
 	}
+
+	owner, acquired, err := service.GroupApp.AppBattery.OpenMqttSocketOwnerForApp(context.Background(), deviceID, socketTopicID, platform, claims)
+	if err != nil {
+		writeControl(map[string]interface{}{
+			"type":    "socket_error",
+			"message": "实时连接暂不可用，请稍后重试",
+		}, "mqtt socket unavailable")
+		return
+	}
+	if !acquired {
+		writeControl(map[string]interface{}{
+			"type":           "socket_occupied",
+			"message":        "设备正在被其他账号实时连接",
+			"retry_after_ms": 30000,
+		}, "device socket occupied")
+		return
+	}
+	defer service.GroupApp.AppBattery.CloseMqttSocketOwnerForApp(context.Background(), owner.DeviceID, owner.SessionID)
 
 	// 使用后台MQTT配置作为透传桥接（APP无需直连broker）
 	broker := viper.GetString("mqtt.broker")
@@ -269,7 +345,10 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 
 	mc := mqtt.NewClient(opts)
 	if token := mc.Connect(); token.Wait() && token.Error() != nil {
-		conn.WriteMessage(msgType, []byte("mqtt connect failed"))
+		writeControl(map[string]interface{}{
+			"type":    "socket_error",
+			"message": "MQTT连接失败",
+		}, "mqtt connect failed")
 		return
 	}
 	defer func() {
@@ -279,8 +358,25 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 	txTopic := fmt.Sprintf("device/socket/tx/%s", socketTopicID)
 	rxTopic := fmt.Sprintf("device/socket/rx/%s", socketTopicID)
 
-	// websocket 写锁（paho 回调可能并发）
-	var writeMu sync.Mutex
+	refreshOwner := func() bool {
+		ok, err := service.GroupApp.AppBattery.RefreshMqttSocketOwnerForApp(context.Background(), owner.DeviceID, owner.SessionID)
+		if err != nil {
+			writeControl(map[string]interface{}{
+				"type":    "socket_error",
+				"message": "实时连接状态刷新失败",
+			}, "mqtt socket owner refresh failed")
+			return false
+		}
+		if !ok {
+			writeControl(map[string]interface{}{
+				"type":           "socket_occupied",
+				"message":        "设备实时连接已被释放，请重新进入详情页",
+				"retry_after_ms": 30000,
+			}, "device socket owner lost")
+			return false
+		}
+		return true
+	}
 
 	subToken := mc.Subscribe(txTopic, 1, func(_ mqtt.Client, m mqtt.Message) {
 		writeMu.Lock()
@@ -288,10 +384,22 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		_ = conn.WriteMessage(websocket.TextMessage, m.Payload())
 	})
 	if subToken.Wait() && subToken.Error() != nil {
-		conn.WriteMessage(msgType, []byte("mqtt subscribe failed"))
+		writeControl(map[string]interface{}{
+			"type":    "socket_error",
+			"message": "MQTT订阅失败",
+		}, "mqtt subscribe failed")
 		return
 	}
 	defer mc.Unsubscribe(txTopic)
+
+	if ownerFeatureEnabled {
+		writeControl(map[string]interface{}{
+			"type":          "socket_ready",
+			"session_id":    owner.SessionID,
+			"device_id":     owner.DeviceID,
+			"device_number": owner.DeviceNumber,
+		}, "")
+	}
 
 	// 主循环：读取客户端消息 -> 发布到 MQTT
 	for {
@@ -307,6 +415,9 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 
 		txt := string(in)
 		if txt == "ping" {
+			if !refreshOwner() {
+				return
+			}
 			writeMu.Lock()
 			_ = conn.WriteMessage(websocket.TextMessage, []byte("pong"))
 			writeMu.Unlock()
@@ -330,6 +441,9 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 			payload = b
 		}
 
+		if !refreshOwner() {
+			return
+		}
 		// 发布
 		pub := mc.Publish(rxTopic, 1, false, payload)
 		if pub.Wait() && pub.Error() != nil {

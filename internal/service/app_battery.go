@@ -1738,12 +1738,15 @@ const (
 	appBatteryRelayOwnerTTL   = 45 * time.Second
 	appBatteryRelaySessionTTL = 60 * time.Second
 	appBatteryRelayCommandTTL = 10 * time.Minute
+	appBatteryMqttOwnerTTL    = 45 * time.Second
 
 	appBatteryRelayStatusPending = "PENDING"
 	appBatteryRelayStatusSent    = "SENT"
 	appBatteryRelayStatusSuccess = "SUCCESS"
 	appBatteryRelayStatusFailed  = "FAILED"
 	appBatteryRelayStatusTimeout = "TIMEOUT"
+
+	AppBatteryMqttSocketOwnerFeatureV1 = "mqtt_socket_owner_v1"
 )
 
 type appBatteryRelayOwnerState struct {
@@ -1755,6 +1758,17 @@ type appBatteryRelayOwnerState struct {
 	ConnType    string `json:"conn_type"`
 	LastSeenTs  int64  `json:"last_seen_ts"`
 	ExpiresAtTs int64  `json:"expires_at_ts"`
+}
+
+type AppBatteryMqttSocketOwnerState struct {
+	DeviceID     string `json:"device_id"`
+	DeviceNumber string `json:"device_number"`
+	SessionID    string `json:"session_id"`
+	UserID       string `json:"user_id"`
+	TenantID     string `json:"tenant_id"`
+	Platform     string `json:"platform"`
+	LastSeenTs   int64  `json:"last_seen_ts"`
+	ExpiresAtTs  int64  `json:"expires_at_ts"`
 }
 
 type appBatteryRelaySessionState struct {
@@ -1802,6 +1816,10 @@ type appBatteryRelayCommandEnvelope struct {
 
 func appBatteryRelayOwnerKey(deviceID string) string {
 	return "bms:relay:owner:" + strings.TrimSpace(deviceID)
+}
+
+func appBatteryMqttSocketOwnerKey(deviceID string) string {
+	return "bms:mqtt_socket:owner:" + strings.TrimSpace(deviceID)
 }
 
 func appBatteryRelaySessionKey(sessionID string) string {
@@ -1954,6 +1972,88 @@ func (*AppBattery) CloseRelaySessionForApp(ctx context.Context, sessionID string
 	}
 	if err := syncDeviceStatusOfflineIfNoRelayOwner(ctx, session.DeviceID, session.TenantID, "relay_session_closed"); err != nil {
 		logrus.WithError(err).WithField("session_id", sessionID).Warn("sync offline status on relay close failed")
+	}
+}
+
+func (*AppBattery) OpenMqttSocketOwnerForApp(ctx context.Context, deviceID, deviceNumber, platform string, claims *utils.UserClaims) (*AppBatteryMqttSocketOwnerState, bool, error) {
+	if global.REDIS == nil {
+		return nil, false, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+	if claims == nil || strings.TrimSpace(claims.ID) == "" || strings.TrimSpace(claims.TenantID) == "" {
+		return nil, false, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	deviceNumber = strings.TrimSpace(deviceNumber)
+	if deviceID == "" {
+		return nil, false, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+	if deviceNumber == "" {
+		return nil, false, errcode.NewWithMessage(errcode.CodeParamError, "device_number is required")
+	}
+	platform = strings.TrimSpace(strings.ToLower(platform))
+	if platform == "" {
+		platform = "unknown"
+	}
+
+	nowMs := time.Now().UnixMilli()
+	owner := &AppBatteryMqttSocketOwnerState{
+		DeviceID:     deviceID,
+		DeviceNumber: deviceNumber,
+		SessionID:    uuid.New(),
+		UserID:       strings.TrimSpace(claims.ID),
+		TenantID:     strings.TrimSpace(claims.TenantID),
+		Platform:     platform,
+		LastSeenTs:   nowMs,
+		ExpiresAtTs:  nowMs + appBatteryMqttOwnerTTL.Milliseconds(),
+	}
+	raw, err := json.Marshal(owner)
+	if err != nil {
+		return nil, false, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	ok, err := global.REDIS.SetNX(ctx, appBatteryMqttSocketOwnerKey(deviceID), raw, appBatteryMqttOwnerTTL).Result()
+	if err != nil {
+		return nil, false, errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	if !ok {
+		return nil, false, nil
+	}
+	return owner, true, nil
+}
+
+func (*AppBattery) RefreshMqttSocketOwnerForApp(ctx context.Context, deviceID, sessionID string) (bool, error) {
+	if global.REDIS == nil {
+		return false, errcode.NewWithMessage(errcode.CodeSystemError, "redis unavailable")
+	}
+	owner, found, err := loadMqttSocketOwnerState(ctx, deviceID)
+	if err != nil {
+		return false, err
+	}
+	if !found || owner.SessionID != strings.TrimSpace(sessionID) {
+		return false, nil
+	}
+	nowMs := time.Now().UnixMilli()
+	owner.LastSeenTs = nowMs
+	owner.ExpiresAtTs = nowMs + appBatteryMqttOwnerTTL.Milliseconds()
+	raw, err := json.Marshal(owner)
+	if err != nil {
+		return false, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	ok, err := setMqttSocketOwnerIfMatched(ctx, owner.DeviceID, owner.SessionID, raw, appBatteryMqttOwnerTTL)
+	if err != nil {
+		return false, err
+	}
+	return ok, nil
+}
+
+func (*AppBattery) CloseMqttSocketOwnerForApp(ctx context.Context, deviceID, sessionID string) {
+	if global.REDIS == nil {
+		return
+	}
+	if err := clearMqttSocketOwnerIfMatched(ctx, deviceID, sessionID); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"device_id":  strings.TrimSpace(deviceID),
+			"session_id": strings.TrimSpace(sessionID),
+		}).Warn("close mqtt socket owner failed")
 	}
 }
 
@@ -2320,6 +2420,62 @@ func loadRelayOwnerState(ctx context.Context, deviceID string) (*appBatteryRelay
 		return nil, false, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
 	}
 	return &owner, true, nil
+}
+
+func loadMqttSocketOwnerState(ctx context.Context, deviceID string) (*AppBatteryMqttSocketOwnerState, bool, error) {
+	raw, err := global.REDIS.Get(ctx, appBatteryMqttSocketOwnerKey(deviceID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, false, nil
+		}
+		return nil, false, errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	var owner AppBatteryMqttSocketOwnerState
+	if err := json.Unmarshal([]byte(raw), &owner); err != nil {
+		return nil, false, errcode.WithData(errcode.CodeSystemError, map[string]interface{}{"error": err.Error()})
+	}
+	return &owner, true, nil
+}
+
+func setMqttSocketOwnerIfMatched(ctx context.Context, deviceID, sessionID string, raw []byte, ttl time.Duration) (bool, error) {
+	script := `
+local current = redis.call("GET", KEYS[1])
+if not current then
+	return 0
+end
+local ok, decoded = pcall(cjson.decode, current)
+if not ok or not decoded or decoded["session_id"] ~= ARGV[1] then
+	return 0
+end
+redis.call("SET", KEYS[1], ARGV[2], "PX", ARGV[3])
+return 1
+`
+	res, err := global.REDIS.Eval(ctx, script, []string{appBatteryMqttSocketOwnerKey(deviceID)}, strings.TrimSpace(sessionID), string(raw), ttl.Milliseconds()).Result()
+	if err != nil {
+		return false, errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	n, _ := res.(int64)
+	return n == 1, nil
+}
+
+func clearMqttSocketOwnerIfMatched(ctx context.Context, deviceID, sessionID string) error {
+	script := `
+local current = redis.call("GET", KEYS[1])
+if not current then
+	return 0
+end
+local ok, decoded = pcall(cjson.decode, current)
+if not ok or not decoded or decoded["session_id"] ~= ARGV[1] then
+	return 0
+end
+redis.call("DEL", KEYS[1])
+return 1
+`
+	_, err := global.REDIS.Eval(ctx, script, []string{appBatteryMqttSocketOwnerKey(deviceID)}, strings.TrimSpace(sessionID)).Result()
+	if err != nil {
+		return errcode.WithData(errcode.CodeCacheError, map[string]interface{}{"error": err.Error()})
+	}
+	return nil
 }
 
 func saveRelayCommandState(ctx context.Context, state *appBatteryRelayCommandState) error {
