@@ -12,6 +12,7 @@ import (
 	"project/pkg/utils"
 
 	"github.com/go-basic/uuid"
+	"gorm.io/gorm"
 )
 
 type appDeviceListRow struct {
@@ -490,15 +491,17 @@ func (*DeviceBinding) RemoveOrgAddedDevice(req model.AppDeviceRemoveReq, claims 
 		return errcode.New(errcode.CodeNoPermission)
 	}
 
-	res := global.DB.WithContext(ctx).Exec(
-		"DELETE FROM app_device_added_records WHERE tenant_id = ? AND user_id = ? AND device_id = ?",
-		claims.TenantID, claims.ID, req.DeviceID,
-	)
-	if res.Error != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": res.Error.Error()})
-	}
-	if res.RowsAffected == 0 {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "record not found"})
-	}
-	return nil
+	return global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(
+			"DELETE FROM app_device_added_records WHERE tenant_id = ? AND user_id = ? AND device_id = ?",
+			claims.TenantID, claims.ID, req.DeviceID,
+		)
+		if res.Error != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": res.Error.Error()})
+		}
+		if res.RowsAffected == 0 {
+			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "record not found"})
+		}
+		return releaseBleMacIfNoAppAssociationsTx(ctx, tx, req.DeviceID, time.Now().UTC())
+	})
 }

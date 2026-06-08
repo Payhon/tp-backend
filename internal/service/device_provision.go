@@ -288,31 +288,54 @@ func normalizedStoredProvisionMac(input *string) (string, bool) {
 	return mac, true
 }
 
-func (*DeviceProvision) ensureConnectionBleMacAvailable(ctx context.Context, db *gorm.DB, tenantID, currentDeviceID, mac string) error {
+func (*DeviceProvision) claimConnectionBleMac(ctx context.Context, db *gorm.DB, tenantID, currentDeviceID, mac string) error {
 	if strings.TrimSpace(mac) == "" {
 		return nil
 	}
-	var existing struct {
-		DeviceID     string `gorm:"column:device_id"`
-		DeviceNumber string `gorm:"column:device_number"`
+	var conflicts []struct {
+		DeviceID       string  `gorm:"column:device_id"`
+		DeviceNumber   string  `gorm:"column:device_number"`
+		IdentityBleMac *string `gorm:"column:identity_ble_mac"`
 	}
 	err := db.WithContext(ctx).
 		Table("device_batteries AS dbat").
-		Select("d.id AS device_id, d.device_number AS device_number").
+		Select("d.id AS device_id, d.device_number AS device_number, dbat.identity_ble_mac AS identity_ble_mac").
 		Joins("JOIN devices AS d ON d.id = dbat.device_id").
 		Where("d.tenant_id = ? AND d.id <> ?", tenantID, currentDeviceID).
 		Where("UPPER(REPLACE(REPLACE(REPLACE(COALESCE(dbat.ble_mac, ''), ':', ''), '-', ''), ' ', '')) = ?", mac).
-		Limit(1).
-		Scan(&existing).Error
+		Scan(&conflicts).Error
 	if err != nil {
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
-	if strings.TrimSpace(existing.DeviceID) != "" {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
-			"message":       "蓝牙模块 MAC 已关联其他设备",
-			"device_id":     existing.DeviceID,
-			"device_number": existing.DeviceNumber,
-		})
+	if len(conflicts) == 0 {
+		return nil
+	}
+
+	staleDeviceIDs := make([]string, 0, len(conflicts))
+	for _, conflict := range conflicts {
+		if identityMac, ok := normalizedStoredProvisionMac(conflict.IdentityBleMac); ok && identityMac == mac {
+			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{
+				"message":       "蓝牙模块 MAC 已关联其他设备",
+				"device_id":     conflict.DeviceID,
+				"device_number": conflict.DeviceNumber,
+			})
+		}
+		if strings.TrimSpace(conflict.DeviceID) != "" {
+			staleDeviceIDs = append(staleDeviceIDs, conflict.DeviceID)
+		}
+	}
+	if len(staleDeviceIDs) == 0 {
+		return nil
+	}
+
+	if err := db.WithContext(ctx).
+		Table("device_batteries").
+		Where("device_id IN ?", staleDeviceIDs).
+		Updates(map[string]interface{}{
+			"ble_mac":    nil,
+			"updated_at": utils.GetUTCTime(),
+		}).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	return nil
 }
@@ -328,7 +351,6 @@ func (*DeviceProvision) syncProvisionMacs(ctx context.Context, row *deviceProvis
 		return err
 	}
 
-	// 旧客户端只提交 ble_mac，仍按单 MAC 强一致逻辑处理；仅把错误文案改成中文。
 	if identityMac == nil {
 		if connectionMac == nil {
 			return nil
@@ -336,12 +358,17 @@ func (*DeviceProvision) syncProvisionMacs(ctx context.Context, row *deviceProvis
 		shouldRepairMac := false
 		if existingMac, ok := normalizedStoredProvisionMac(row.BleMac); ok {
 			if existingMac != *connectionMac {
-				return errcode.NewWithMessage(errcode.CodeParamError, "设备档案蓝牙MAC与当前设备不一致")
-			}
-			if strings.TrimSpace(*row.BleMac) != *connectionMac {
+				if err := svc.claimConnectionBleMac(ctx, global.DB, claims.TenantID, row.DeviceID, *connectionMac); err != nil {
+					return err
+				}
+				shouldRepairMac = true
+			} else if strings.TrimSpace(*row.BleMac) != *connectionMac {
 				shouldRepairMac = true
 			}
 		} else {
+			if err := svc.claimConnectionBleMac(ctx, global.DB, claims.TenantID, row.DeviceID, *connectionMac); err != nil {
+				return err
+			}
 			shouldRepairMac = true
 		}
 		if shouldRepairMac {
@@ -357,7 +384,7 @@ func (*DeviceProvision) syncProvisionMacs(ctx context.Context, row *deviceProvis
 	now := utils.GetUTCTime()
 	updates := map[string]interface{}{"updated_at": now}
 	if connectionMac != nil {
-		if err := svc.ensureConnectionBleMacAvailable(ctx, global.DB, claims.TenantID, row.DeviceID, *connectionMac); err != nil {
+		if err := svc.claimConnectionBleMac(ctx, global.DB, claims.TenantID, row.DeviceID, *connectionMac); err != nil {
 			return err
 		}
 		if existingMac, ok := normalizedStoredProvisionMac(row.BleMac); !ok || existingMac != *connectionMac || strings.TrimSpace(*row.BleMac) != *connectionMac {
@@ -419,7 +446,7 @@ func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, ro
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	if cnt > 0 {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "device already bound to current user"})
+		return nil
 	}
 
 	if err := tx.WithContext(ctx).

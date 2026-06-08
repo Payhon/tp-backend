@@ -19,6 +19,46 @@ import (
 // DeviceBinding 设备绑定服务
 type DeviceBinding struct{}
 
+func releaseBleMacIfNoAppAssociationsTx(ctx context.Context, db *gorm.DB, deviceID string, now time.Time) error {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return nil
+	}
+
+	var bindingCount int64
+	if err := db.WithContext(ctx).
+		Table("device_user_bindings").
+		Where("device_id = ?", deviceID).
+		Count(&bindingCount).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if bindingCount > 0 {
+		return nil
+	}
+
+	var addedCount int64
+	if err := db.WithContext(ctx).
+		Table("app_device_added_records").
+		Where("device_id = ?", deviceID).
+		Count(&addedCount).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if addedCount > 0 {
+		return nil
+	}
+
+	if err := db.WithContext(ctx).
+		Table("device_batteries").
+		Where("device_id = ?", deviceID).
+		Updates(map[string]interface{}{
+			"ble_mac":    nil,
+			"updated_at": now,
+		}).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	return nil
+}
+
 // getUserOrgID 根据当前登录用户获取归属组织ID（可能为空）
 func getUserOrgID(userID string) (string, error) {
 	if userID == "" {
@@ -324,6 +364,11 @@ func (*DeviceBinding) UnbindDevice(req model.DeviceUnbindReq, claims *utils.User
 				})
 			}
 		}
+	}
+
+	if err := releaseBleMacIfNoAppAssociationsTx(ctx, tx.DeviceBattery.UnderlyingDB(), req.DeviceID, t); err != nil {
+		tx.Rollback()
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {

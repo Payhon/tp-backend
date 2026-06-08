@@ -287,6 +287,11 @@ func (*EndUser) ForceUnbind(ctx context.Context, req model.EndUserForceUnbindReq
 		}
 	}
 
+	if err := releaseBleMacIfNoAppAssociationsTx(ctx, tx.DeviceBattery.UnderlyingDB(), binding.DeviceID, time.Now().UTC()); err != nil {
+		tx.Rollback()
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
