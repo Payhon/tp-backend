@@ -31,7 +31,6 @@ type Bridge struct {
 
 	boolState  *BoolStateStore
 	traceMeta  sync.Map
-	idMap      sync.Map
 	statusMeta sync.Map
 }
 
@@ -180,12 +179,6 @@ func (b *Bridge) resolvePlatformDeviceID(ctx context.Context, identifier string)
 	if identifier == "" || b.db == nil {
 		return identifier
 	}
-	if cached, ok := b.idMap.Load(identifier); ok {
-		if resolved, ok := cached.(string); ok && strings.TrimSpace(resolved) != "" {
-			return resolved
-		}
-		return identifier
-	}
 
 	var row struct {
 		DeviceID string `gorm:"column:device_id"`
@@ -201,11 +194,9 @@ func (b *Bridge) resolvePlatformDeviceID(ctx context.Context, identifier string)
 		Limit(1).
 		Scan(&row).Error
 	if err == nil && strings.TrimSpace(row.DeviceID) != "" {
-		b.idMap.Store(identifier, row.DeviceID)
 		return row.DeviceID
 	}
 
-	b.idMap.Store(identifier, "")
 	return identifier
 }
 
