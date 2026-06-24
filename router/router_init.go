@@ -154,6 +154,7 @@ func RouterInit() *gin.Engine {
 			v1.GET("app/battery/relay/ws", controllers.AppBatteryApi.ServeBatteryRelayByWS)
 			v1.GET("ota/download/files/upgradePackage/:path/:file", controllers.OTAApi.DownloadOTAUpgradePackage)
 			v1.GET("ota/4g-module/check", controllers.OTAApi.Check4GModuleUpgrade)
+			v1.GET("ota/4g-bms/check", controllers.OTAApi.Check4GBMSUpgrade)
 			// 获取系统时间
 			v1.GET("systime", controllers.SystemApi.HandleSystime)
 			// 查询系统功能设置

@@ -447,6 +447,86 @@ func (*OTA) Check4GModuleUpgrade(ctx context.Context, req *model.GetOTA4GModuleU
 	return resp, nil
 }
 
+type ota4GBMSDeviceRow struct {
+	DeviceID       string  `gorm:"column:device_id"`
+	ItemUUID       string  `gorm:"column:item_uuid"`
+	BatteryModelID *string `gorm:"column:battery_model_id"`
+	BatchNumber    *string `gorm:"column:batch_number"`
+}
+
+func (*OTA) Check4GBMSUpgrade(ctx context.Context, req *model.GetOTA4GBMSUpgradeCheckReq, tenantID string) (*model.OTA4GBMSUpgradeCheckResp, error) {
+	version := strings.TrimSpace(req.Version)
+	itemUUID := strings.TrimSpace(req.ItemUUID)
+	resp := &model.OTA4GBMSUpgradeCheckResp{
+		NeedUpgrade:    false,
+		ItemUUID:       itemUUID,
+		CurrentVersion: version,
+	}
+
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "tenant_id or X-Tenant-ID is required")
+	}
+
+	var row ota4GBMSDeviceRow
+	if err := global.DB.WithContext(ctx).
+		Table(model.TableNameDeviceBattery+" db").
+		Select(`
+			db.device_id AS device_id,
+			db.item_uuid AS item_uuid,
+			db.battery_model_id AS battery_model_id,
+			db.batch_number AS batch_number
+		`).
+		Joins("JOIN "+model.TableNameDevice+" d ON d.id = db.device_id").
+		Where("d.tenant_id = ? AND db.item_uuid = ?", tenantID, itemUUID).
+		Scan(&row).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if row.DeviceID == "" {
+		return resp, nil
+	}
+	if strings.TrimSpace(row.ItemUUID) != "" {
+		resp.ItemUUID = strings.TrimSpace(row.ItemUUID)
+	}
+
+	var packages []model.OtaUpgradePackage
+	if err := global.DB.WithContext(ctx).
+		Table(model.TableNameOtaUpgradePackage).
+		Where("(tenant_id = ? OR tenant_id IS NULL)", tenantID).
+		Where("device_kind = ?", model.OTADeviceKindBMS).
+		Order("created_at DESC").
+		Find(&packages).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if len(packages) == 0 {
+		return resp, nil
+	}
+
+	selected := selectAppBatteryOtaPackage(packages, version, appBatteryOtaMatchCriteria{
+		BatteryModelID: firstTrimmed(row.BatteryModelID),
+		BatchNumber:    firstTrimmed(row.BatchNumber),
+		ItemUUID:       strings.TrimSpace(row.ItemUUID),
+	})
+	if selected == nil {
+		return resp, nil
+	}
+
+	resp.NeedUpgrade = true
+	resp.Version = &selected.Version
+	resp.TargetVersion = selected.TargetVersion
+	resp.FirmwareURL = buildOtaDownloadURL(selected.PackageURL)
+	resp.PackageID = &selected.ID
+	packageType := selected.PackageType
+	resp.PackageType = &packageType
+	resp.SignatureType = selected.SignatureType
+	resp.Signature = selected.Signature
+	resp.Module = selected.Module
+	resp.Description = selected.Description
+	resp.AdditionalInfo = selected.AdditionalInfo
+	resp.Remark = selected.Remark
+	return resp, nil
+}
+
 func (o *OTA) CreateOTAUpgradeTask(req *model.CreateOTAUpgradeTaskReq) error {
 	tasks, err := dal.CreateOTAUpgradeTaskWithDetail(req)
 	if err == nil {

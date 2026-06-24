@@ -75,3 +75,28 @@ type OTA4GModuleUpgradeCheckResp struct {
 	IsLatest       bool    `json:"is_latest"`
 	Imei           string  `json:"imei"`
 }
+
+type GetOTA4GBMSUpgradeCheckReq struct {
+	Version    string  `json:"version" form:"version" validate:"required,max=36"`            // BMS板MCU当前版本号
+	ItemUUID   string  `json:"item_uuid" form:"item_uuid" validate:"required,max=64"`        // BMS电池序列号，对应device_batteries.item_uuid
+	TenantID   string  `json:"tenant_id" form:"tenant_id" validate:"omitempty,max=36"`       // 租户ID
+	Imei       *string `json:"imei" form:"imei" validate:"omitempty,max=64"`                 // 4G模块IMEI，仅用于现场排查
+	CommChipID *string `json:"comm_chip_id" form:"comm_chip_id" validate:"omitempty,max=64"` // 4G通讯卡ID，仅用于现场排查
+}
+
+type OTA4GBMSUpgradeCheckResp struct {
+	NeedUpgrade    bool    `json:"need_upgrade"`
+	ItemUUID       string  `json:"item_uuid"`
+	CurrentVersion string  `json:"current_version"`
+	Version        *string `json:"version,omitempty"`
+	TargetVersion  *string `json:"target_version,omitempty"`
+	FirmwareURL    *string `json:"firmware_url,omitempty"`
+	PackageID      *string `json:"package_id,omitempty"`
+	PackageType    *int16  `json:"package_type,omitempty"`
+	SignatureType  *string `json:"signature_type,omitempty"`
+	Signature      *string `json:"signature,omitempty"`
+	Module         *string `json:"module,omitempty"`
+	Description    *string `json:"description,omitempty"`
+	AdditionalInfo *string `json:"additional_info,omitempty"`
+	Remark         *string `json:"remark,omitempty"`
+}

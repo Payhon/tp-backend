@@ -103,6 +103,26 @@ func (*OTAApi) Check4GModuleUpgrade(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// Check4GBMSUpgrade
+// @Router   /api/v1/ota/4g-bms/check [get]
+func (*OTAApi) Check4GBMSUpgrade(c *gin.Context) {
+	var req model.GetOTA4GBMSUpgradeCheckReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+	tenantID := resolve4GModuleTenantID(c)
+	if tenantID == "" {
+		c.Error(errcode.NewWithMessage(errcode.CodeParamError, "tenant_id or X-Tenant-ID is required"))
+		return
+	}
+	data, err := service.GroupApp.OTA.Check4GBMSUpgrade(c.Request.Context(), &req, tenantID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 func resolve4GModuleTenantID(c *gin.Context) string {
 	if c == nil {
 		return ""
