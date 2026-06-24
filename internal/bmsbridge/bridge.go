@@ -39,6 +39,8 @@ type incoming struct {
 	rawDeviceID string
 	deviceID    string
 	payload     []byte
+	qos         byte
+	messageID   string
 	receivedAt  time.Time
 }
 
@@ -132,6 +134,8 @@ func (b *Bridge) subscribe(client mqtt.Client) error {
 			rawDeviceID: rawDeviceID,
 			deviceID:    deviceID,
 			payload:     append([]byte(nil), m.Payload()...),
+			qos:         m.Qos(),
+			messageID:   fmt.Sprintf("%d", m.MessageID()),
 			receivedAt:  time.Now(),
 		}
 		payloadRaw := string(msg.payload)
@@ -141,7 +145,8 @@ func (b *Bridge) subscribe(client mqtt.Client) error {
 			EventType:     commDebugEventUplinkRaw,
 			Direction:     commDebugDirectionInbound,
 			MQTTTopic:     stringPtr(m.Topic()),
-			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			QoS:           intPtr(int(msg.qos)),
+			MessageID:     &msg.messageID,
 			PayloadRaw:    &payloadRaw,
 			PayloadFormat: &payloadFormat,
 			Status:        commDebugStatusSuccess,
@@ -423,7 +428,8 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			EventType:     commDebugEventUplinkError,
 			Direction:     commDebugDirectionInbound,
 			MQTTTopic:     stringPtr(msg.topic),
-			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			QoS:           intPtr(int(msg.qos)),
+			MessageID:     &msg.messageID,
 			PayloadRaw:    &payloadRaw,
 			PayloadFormat: &payloadFormat,
 			Status:        commDebugStatusError,
@@ -438,14 +444,20 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 	}).Debug("bms bridge decoded hex payload")
 	hexRaw := strings.ToUpper(strings.TrimSpace(hexStr))
 	hexFormat := "hex"
+	var bootSummary any
+	if summary, ok := bootDebugSummaryFromHex(hexRaw); ok {
+		bootSummary = summary
+	}
 	b.traceCommDebug(ctx, commDebugTraceEntry{
 		DeviceID:      msg.deviceID,
 		EventType:     commDebugEventUplinkDecoded,
 		Direction:     commDebugDirectionInbound,
 		MQTTTopic:     stringPtr(msg.topic),
-		QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+		QoS:           intPtr(int(msg.qos)),
+		MessageID:     &msg.messageID,
 		PayloadRaw:    &hexRaw,
 		PayloadFormat: &hexFormat,
+		ParsedSummary: bootSummary,
 		Status:        commDebugStatusSuccess,
 		OccurredAt:    msg.receivedAt,
 	})
@@ -464,9 +476,11 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			EventType:     commDebugEventUplinkError,
 			Direction:     commDebugDirectionInbound,
 			MQTTTopic:     stringPtr(msg.topic),
-			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			QoS:           intPtr(int(msg.qos)),
+			MessageID:     &msg.messageID,
 			PayloadRaw:    &hexRaw,
 			PayloadFormat: &hexFormat,
+			ParsedSummary: bootSummary,
 			Status:        commDebugStatusError,
 			ErrorMessage:  &errMsg,
 			OccurredAt:    msg.receivedAt,
@@ -486,9 +500,11 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 			EventType:     commDebugEventUplinkError,
 			Direction:     commDebugDirectionInbound,
 			MQTTTopic:     stringPtr(msg.topic),
-			QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+			QoS:           intPtr(int(msg.qos)),
+			MessageID:     &msg.messageID,
 			PayloadRaw:    &hexRaw,
 			PayloadFormat: &hexFormat,
+			ParsedSummary: bootSummary,
 			Status:        commDebugStatusError,
 			ErrorMessage:  &errMsg,
 			OccurredAt:    msg.receivedAt,
@@ -501,7 +517,8 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 		EventType:     commDebugEventUplinkParsed,
 		Direction:     commDebugDirectionInbound,
 		MQTTTopic:     stringPtr(msg.topic),
-		QoS:           intPtr(int(b.cfg.MQTT.SubscribeQoS)),
+		QoS:           intPtr(int(msg.qos)),
+		MessageID:     &msg.messageID,
 		PayloadRaw:    &hexRaw,
 		PayloadFormat: &hexFormat,
 		ParsedSummary: frameSummary,
