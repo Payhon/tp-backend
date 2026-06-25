@@ -104,7 +104,8 @@ type AppUnbindReq struct {
 }
 
 type AppDeleteAccountReq struct {
-	Password string `json:"password" validate:"required,min=1,max=255"`
+	Password *string `json:"password" validate:"omitempty,max=255"`
+	AppID    *string `json:"appid" validate:"omitempty,max=100"`
 }
 
 type AppAuthBindingsResp struct {

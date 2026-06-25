@@ -830,12 +830,46 @@ func (a *AppAuth) UnbindIdentity(ctx context.Context, tenantID, userID, identity
 	})
 }
 
-func (a *AppAuth) DeleteAccount(ctx context.Context, tenantID, userID, password string) error {
-	password = strings.TrimSpace(password)
-	if password == "" {
-		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "password is required"})
+func (a *AppAuth) canSkipDeleteAccountPasswordForPackWxmp(ctx context.Context, tenantID, userID, appid string) (bool, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	userID = strings.TrimSpace(userID)
+	appid = strings.TrimSpace(appid)
+	if tenantID == "" || userID == "" || appid == "" {
+		return false, nil
 	}
 
+	cfg, err := dal.GetPackWxMpConfigByWxAppID(ctx, tenantID, appid)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if strings.ToUpper(strings.TrimSpace(cfg.Status)) != "OPEN" {
+		return false, nil
+	}
+
+	identities, err := dal.ListUserIdentitiesByUser(ctx, tenantID, userID)
+	if err != nil {
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	prefix := appid + ":"
+	for _, identity := range identities {
+		if identity.IdentityType != dal.IdentityTypeWxmpOpenID {
+			continue
+		}
+		if strings.ToUpper(strings.TrimSpace(identity.Status)) != "ACTIVE" {
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(identity.Identifier), prefix) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (a *AppAuth) DeleteAccount(ctx context.Context, tenantID, userID, password, appid string) error {
+	password = strings.TrimSpace(password)
 	user, err := dal.GetUsersById(userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -851,8 +885,18 @@ func (a *AppAuth) DeleteAccount(ctx context.Context, tenantID, userID, password 
 			"error": "only END_USER can delete account",
 		})
 	}
-	if !utils.BcryptCheck(password, user.Password) {
-		return errcode.New(errcode.CodeInvalidAuth)
+
+	canSkipPassword, err := a.canSkipDeleteAccountPasswordForPackWxmp(ctx, tenantID, userID, appid)
+	if err != nil {
+		return err
+	}
+	if !canSkipPassword {
+		if password == "" {
+			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "password is required"})
+		}
+		if !utils.BcryptCheck(password, user.Password) {
+			return errcode.New(errcode.CodeInvalidAuth)
+		}
 	}
 
 	return global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

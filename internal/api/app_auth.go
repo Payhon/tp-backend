@@ -453,7 +453,15 @@ func (*AppAuthApi) DeleteAccount(c *gin.Context) {
 	}
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
 	tenantID := middleware.GetTenantIDFromHeader(c)
-	if err := service.GroupApp.AppAuth.DeleteAccount(c.Request.Context(), tenantID, userClaims.ID, req.Password); err != nil {
+	password := ""
+	if req.Password != nil {
+		password = *req.Password
+	}
+	appid := ""
+	if req.AppID != nil {
+		appid = *req.AppID
+	}
+	if err := service.GroupApp.AppAuth.DeleteAccount(c.Request.Context(), tenantID, userClaims.ID, password, appid); err != nil {
 		c.Error(err)
 		return
 	}
