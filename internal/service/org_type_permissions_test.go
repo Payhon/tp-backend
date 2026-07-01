@@ -19,6 +19,9 @@ func TestNormalizeDeviceParamPermissionKeys(t *testing.T) {
 		"44b:protect_release",
 		"factory:entertestmode",
 		"factory:erasecurrentparams",
+		"factory:disablecharge",
+		"factory:disabledischarge",
+		"factory:allowchargedischarge",
 		"function:chargeallowed",
 		"function:dischargeallowed",
 	}
@@ -33,6 +36,9 @@ func TestNormalizeDeviceParamPermissionKeys(t *testing.T) {
 		"44b",
 		"factory:enterTestMode",
 		"factory:eraseCurrentParams",
+		"factory:disableCharge",
+		"factory:disableDischarge",
+		"factory:allowChargeDischarge",
 		"function:chargeAllowed",
 		"function:dischargeAllowed",
 	}
@@ -78,5 +84,18 @@ func TestBuildDeviceParamPermissionTreeUsesCanonicalKeys(t *testing.T) {
 		t.Fatalf("missing readonly SOH permission key 10d")
 	} else if label != "只读 SOH" {
 		t.Fatalf("unexpected readonly SOH label: got=%q want=%q", label, "只读 SOH")
+	}
+
+	expectedFactoryLabels := map[string]string{
+		"factory:disableCharge":        "禁止充电",
+		"factory:disableDischarge":     "禁止放电",
+		"factory:allowChargeDischarge": "允许充放电",
+	}
+	for key, wantLabel := range expectedFactoryLabels {
+		if label, ok := seen[key]; !ok {
+			t.Fatalf("missing factory permission key %s", key)
+		} else if label != wantLabel {
+			t.Fatalf("unexpected factory label for %s: got=%q want=%q", key, label, wantLabel)
+		}
 	}
 }
