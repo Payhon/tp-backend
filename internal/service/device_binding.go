@@ -196,6 +196,10 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 					"sql_error": err.Error(),
 				})
 			}
+			if err := applyBatteryWarrantyActivationTx(ctx, tx.DeviceBattery.UnderlyingDB(), device.ID, claims.ID, t); err != nil {
+				tx.Rollback()
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
 		} else {
 			tx.Rollback()
 			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
@@ -237,6 +241,10 @@ func (*DeviceBinding) BindDevice(req model.DeviceBindReq, claims *utils.UserClai
 			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 				"sql_error": err.Error(),
 			})
+		}
+		if err := applyBatteryWarrantyActivationTx(ctx, tx.DeviceBattery.UnderlyingDB(), device.ID, claims.ID, t); err != nil {
+			tx.Rollback()
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 		}
 	}
 

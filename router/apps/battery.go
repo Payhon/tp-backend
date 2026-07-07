@@ -31,6 +31,9 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.GET("/import/jobs/:id/logs", api.Controllers.BatteryApi.GetBatteryImportJobLogs)
 		// 运营日志
 		batteryApi.GET("/operation_logs", api.Controllers.BatteryApi.GetBatteryOperationLogList)
+		// 质保信息
+		batteryApi.GET("/:device_id/warranty", api.Controllers.UserWarrantyInfoApi.GetBatteryWarranty)
+		batteryApi.PUT("/:device_id/warranty", api.Controllers.UserWarrantyInfoApi.UpdateBatteryWarranty)
 		// 生命周期操作
 		batteryApi.POST("/factory_out", api.Controllers.BatteryApi.FactoryOutBattery)
 		batteryApi.POST("/batch-factory-out", api.Controllers.BatteryApi.BatchFactoryOutBattery)

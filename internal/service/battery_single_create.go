@@ -130,12 +130,6 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "质保到期格式错误，应为 YYYY-MM-DD"})
 	}
 
-	// 若未传质保到期，且传了出厂日期 & BMS 板型号带质保月数，则自动推算
-	if warrantyExpireDate == nil && productionDate != nil && warrantyMonths != nil && *warrantyMonths > 0 {
-		t := productionDate.AddDate(0, int(*warrantyMonths), 0)
-		warrantyExpireDate = &t
-	}
-
 	var ownerOrgID *string
 	if orgID != "" {
 		ownerOrgID = &orgID
@@ -160,6 +154,7 @@ func (*Battery) CreateSingleBattery(ctx context.Context, req model.BatteryCreate
 		commChipID,
 		productionDate,
 		warrantyExpireDate,
+		warrantyMonths,
 		ownerOrgID,
 	); err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
@@ -251,11 +246,6 @@ func (*Battery) UpdateSingleBattery(ctx context.Context, deviceID string, req mo
 	if err != nil {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "质保到期格式错误，应为 YYYY-MM-DD"})
 	}
-	if warrantyExpireDate == nil && productionDate != nil && warrantyMonths != nil && *warrantyMonths > 0 {
-		t := productionDate.AddDate(0, int(*warrantyMonths), 0)
-		warrantyExpireDate = &t
-	}
-
 	now := time.Now().UTC()
 	updates := map[string]any{
 		"device_number": itemUUID,
@@ -288,6 +278,7 @@ func (*Battery) UpdateSingleBattery(ctx context.Context, deviceID string, req mo
 		commChipID,
 		productionDate,
 		warrantyExpireDate,
+		warrantyMonths,
 		nil,
 	); err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})

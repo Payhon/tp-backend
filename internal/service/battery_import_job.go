@@ -463,6 +463,7 @@ func runBatteryImportJob(ctx context.Context, jobID string, filePath string, cla
 			productionDate,
 			warrantyExpireDate,
 			nil,
+			nil,
 		); err != nil {
 			failedRows++
 			appendImportJobLog(ctx, jobID, claims.TenantID, &rowNumber, "ERROR", &itemUUID, "写入电池信息失败: "+err.Error())
@@ -566,6 +567,7 @@ func upsertDeviceBattery(
 	commChipID *string,
 	productionDate *time.Time,
 	warrantyExpireDate *time.Time,
+	warrantyMonths *int32,
 	ownerOrgID *string,
 ) error {
 	db := global.DB.WithContext(ctx)
@@ -574,10 +576,10 @@ func upsertDeviceBattery(
 	sql := `
 		INSERT INTO device_batteries (
 			device_id, battery_model_id, batch_number, product_spec, order_number, bms_comm_type, ble_mac, comm_chip_id, item_uuid,
-			production_date, warranty_expire_date, activation_status, transfer_status, owner_org_id, updated_at
+			production_date, warranty_expire_date, warranty_months, activation_status, transfer_status, owner_org_id, updated_at
 		) VALUES (
 			?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, 'INACTIVE', 'FACTORY', ?, ?
+			?, ?, ?, 'INACTIVE', 'FACTORY', ?, ?
 		)
 		ON CONFLICT (device_id) DO UPDATE SET
 			battery_model_id = COALESCE(EXCLUDED.battery_model_id, device_batteries.battery_model_id),
@@ -590,6 +592,7 @@ func upsertDeviceBattery(
 			item_uuid = EXCLUDED.item_uuid,
 			production_date = COALESCE(EXCLUDED.production_date, device_batteries.production_date),
 			warranty_expire_date = COALESCE(EXCLUDED.warranty_expire_date, device_batteries.warranty_expire_date),
+			warranty_months = COALESCE(EXCLUDED.warranty_months, device_batteries.warranty_months),
 			owner_org_id = COALESCE(device_batteries.owner_org_id, EXCLUDED.owner_org_id),
 			updated_at = ?
 	`
@@ -606,6 +609,7 @@ func upsertDeviceBattery(
 		itemUUID,
 		productionDate,
 		warrantyExpireDate,
+		warrantyMonths,
 		ownerOrgID,
 		now,
 		now,

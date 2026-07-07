@@ -10,6 +10,7 @@ import (
 	"project/internal/model"
 	"project/pkg/errcode"
 	"project/pkg/global"
+	"project/pkg/utils"
 
 	"github.com/go-basic/uuid"
 	"gorm.io/gorm"
@@ -100,17 +101,18 @@ func packWxMpResp(row *dal.PackWxMpConfig) *model.PackWxMpConfigResp {
 		return nil
 	}
 	return &model.PackWxMpConfigResp{
-		ID:            row.ID,
-		TenantID:      row.TenantID,
-		OrgID:         row.OrgID,
-		AppID:         row.AppID,
-		WxAppID:       row.WxAppID,
-		Status:        row.Status,
-		HomeBannerURL: row.HomeBannerURL,
-		LoginLogoURL:  row.LoginLogoURL,
-		Remark:        row.Remark,
-		CreatedAt:     row.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:     row.UpdatedAt.Format(time.RFC3339),
+		ID:                   row.ID,
+		TenantID:             row.TenantID,
+		OrgID:                row.OrgID,
+		AppID:                row.AppID,
+		WxAppID:              row.WxAppID,
+		Status:               row.Status,
+		HomeBannerURL:        row.HomeBannerURL,
+		LoginLogoURL:         row.LoginLogoURL,
+		WarrantyCardsEnabled: row.WarrantyCardsEnabled,
+		Remark:               row.Remark,
+		CreatedAt:            row.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            row.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -128,6 +130,39 @@ func ensurePackOrg(ctx context.Context, tenantID, orgID string) error {
 	}
 	if org.OrgType != model.OrgTypePACKFactory {
 		return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "仅支持配置 PACK 厂小程序"})
+	}
+	return nil
+}
+
+func ensurePackWxMpConfigAccess(ctx context.Context, claims *utils.UserClaims, tenantID, orgID string) error {
+	if claims == nil {
+		return errcode.New(errcode.CodeNoPermission)
+	}
+	if claims.Authority == dal.SYS_ADMIN || claims.Authority == dal.TENANT_ADMIN {
+		return nil
+	}
+	if claims.Authority != dal.TENANT_USER {
+		return errcode.New(errcode.CodeNoPermission)
+	}
+	if strings.TrimSpace(claims.TenantID) != strings.TrimSpace(tenantID) {
+		return errcode.New(errcode.CodeNoPermission)
+	}
+	if strings.TrimSpace(claims.OrgID) == "" || strings.TrimSpace(claims.OrgID) != strings.TrimSpace(orgID) {
+		return errcode.New(errcode.CodeNoPermission)
+	}
+	var org struct {
+		OrgType string `gorm:"column:org_type"`
+	}
+	if err := global.DB.WithContext(ctx).
+		Table("orgs").
+		Select("org_type").
+		Where("tenant_id = ? AND id = ?", tenantID, orgID).
+		Limit(1).
+		Scan(&org).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if org.OrgType != model.OrgTypePACKFactory {
+		return errcode.New(errcode.CodeNoPermission)
 	}
 	return nil
 }
@@ -178,7 +213,7 @@ func ensureAppForPackWxMp(ctx context.Context, tx *gorm.DB, tenantID, wxAppID, o
 	return row.ID, nil
 }
 
-func (*AppAuthConfig) GetPackWxMpConfig(ctx context.Context, tenantID, orgID string) (*model.PackWxMpConfigResp, error) {
+func (*AppAuthConfig) GetPackWxMpConfig(ctx context.Context, claims *utils.UserClaims, tenantID, orgID string) (*model.PackWxMpConfigResp, error) {
 	tenantID = strings.TrimSpace(tenantID)
 	orgID = strings.TrimSpace(orgID)
 	if tenantID == "" || orgID == "" {
@@ -187,13 +222,17 @@ func (*AppAuthConfig) GetPackWxMpConfig(ctx context.Context, tenantID, orgID str
 	if err := ensurePackOrg(ctx, tenantID, orgID); err != nil {
 		return nil, err
 	}
+	if err := ensurePackWxMpConfigAccess(ctx, claims, tenantID, orgID); err != nil {
+		return nil, err
+	}
 	row, err := dal.GetPackWxMpConfigByOrg(ctx, tenantID, orgID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return &model.PackWxMpConfigResp{
-				TenantID: tenantID,
-				OrgID:    orgID,
-				Status:   "OPEN",
+				TenantID:             tenantID,
+				OrgID:                orgID,
+				Status:               "OPEN",
+				WarrantyCardsEnabled: true,
 			}, nil
 		}
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
@@ -201,7 +240,7 @@ func (*AppAuthConfig) GetPackWxMpConfig(ctx context.Context, tenantID, orgID str
 	return packWxMpResp(row), nil
 }
 
-func (*AppAuthConfig) UpsertPackWxMpConfig(ctx context.Context, tenantID, orgID string, req *model.UpsertPackWxMpConfigReq) (*model.PackWxMpConfigResp, error) {
+func (*AppAuthConfig) UpsertPackWxMpConfig(ctx context.Context, claims *utils.UserClaims, tenantID, orgID string, req *model.UpsertPackWxMpConfigReq) (*model.PackWxMpConfigResp, error) {
 	if req == nil {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"error": "request is empty"})
 	}
@@ -214,6 +253,9 @@ func (*AppAuthConfig) UpsertPackWxMpConfig(ctx context.Context, tenantID, orgID 
 	if err := ensurePackOrg(ctx, tenantID, orgID); err != nil {
 		return nil, err
 	}
+	if err := ensurePackWxMpConfigAccess(ctx, claims, tenantID, orgID); err != nil {
+		return nil, err
+	}
 	status := strings.ToUpper(strings.TrimSpace(req.Status))
 	if status == "" {
 		status = "OPEN"
@@ -222,12 +264,17 @@ func (*AppAuthConfig) UpsertPackWxMpConfig(ctx context.Context, tenantID, orgID 
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"status": "must be OPEN or CLOSE"})
 	}
 	secret := trimStringPtrValue(req.AppSecret)
+	warrantyCardsEnabled := true
 	if existing, err := dal.GetPackWxMpConfigByOrg(ctx, tenantID, orgID); err == nil {
 		if secret == "" {
 			secret = existing.AppSecret
 		}
+		warrantyCardsEnabled = existing.WarrantyCardsEnabled
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
+	}
+	if req.WarrantyCardsEnabled != nil {
+		warrantyCardsEnabled = *req.WarrantyCardsEnabled
 	}
 	if secret == "" {
 		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"app_secret": "required"})
@@ -240,16 +287,17 @@ func (*AppAuthConfig) UpsertPackWxMpConfig(ctx context.Context, tenantID, orgID 
 			return err
 		}
 		row := &dal.PackWxMpConfig{
-			ID:            uuid.New(),
-			TenantID:      tenantID,
-			OrgID:         orgID,
-			AppID:         appID,
-			WxAppID:       wxAppID,
-			AppSecret:     secret,
-			Status:        status,
-			HomeBannerURL: req.HomeBannerURL,
-			LoginLogoURL:  req.LoginLogoURL,
-			Remark:        req.Remark,
+			ID:                   uuid.New(),
+			TenantID:             tenantID,
+			OrgID:                orgID,
+			AppID:                appID,
+			WxAppID:              wxAppID,
+			AppSecret:            secret,
+			Status:               status,
+			HomeBannerURL:        req.HomeBannerURL,
+			LoginLogoURL:         req.LoginLogoURL,
+			WarrantyCardsEnabled: warrantyCardsEnabled,
+			Remark:               req.Remark,
 		}
 		if err := dal.UpsertPackWxMpConfig(ctx, tx, row); err != nil {
 			return err
@@ -290,11 +338,12 @@ func (*AppAuthConfig) GetWxMpRuntime(ctx context.Context, tenantID, wxAppID stri
 				return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})
 			}
 			return &model.WxMpRuntimeResp{
-				AppID:      app.ID,
-				WxAppID:    app.AppID,
-				Status:     app.Status,
-				SourceType: "TENANT",
-				LoginOnly:  false,
+				AppID:                app.ID,
+				WxAppID:              app.AppID,
+				Status:               app.Status,
+				SourceType:           "TENANT",
+				LoginOnly:            false,
+				WarrantyCardsEnabled: true,
 			}, nil
 		}
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"error": err.Error()})
@@ -303,14 +352,15 @@ func (*AppAuthConfig) GetWxMpRuntime(ctx context.Context, tenantID, wxAppID stri
 		return nil, errcode.WithData(errcode.CodeOpDenied, map[string]interface{}{"error": "wx miniapp disabled"})
 	}
 	return &model.WxMpRuntimeResp{
-		AppID:         row.AppID,
-		WxAppID:       row.WxAppID,
-		Status:        row.Status,
-		SourceType:    "PACK",
-		LoginOnly:     true,
-		HomeBannerURL: row.HomeBannerURL,
-		LoginLogoURL:  row.LoginLogoURL,
-		OrgID:         row.OrgID,
-		OrgName:       getOrgName(ctx, tenantID, row.OrgID),
+		AppID:                row.AppID,
+		WxAppID:              row.WxAppID,
+		Status:               row.Status,
+		SourceType:           "PACK",
+		LoginOnly:            true,
+		HomeBannerURL:        row.HomeBannerURL,
+		LoginLogoURL:         row.LoginLogoURL,
+		WarrantyCardsEnabled: row.WarrantyCardsEnabled,
+		OrgID:                row.OrgID,
+		OrgName:              getOrgName(ctx, tenantID, row.OrgID),
 	}, nil
 }

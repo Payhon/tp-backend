@@ -210,6 +210,13 @@ func RouterInit() *gin.Engine {
 				appAuthAuthed.POST("delete_account", controllers.AppAuthApi.DeleteAccount)
 			}
 
+			appWarranty := v1.Group("app/warranty")
+			appWarranty.Use(middleware.RequireTenantHeaderMatchClaims())
+			{
+				appWarranty.GET("profile", controllers.UserWarrantyInfoApi.GetAppWarrantyProfile)
+				appWarranty.POST("profile", controllers.UserWarrantyInfoApi.SaveAppWarrantyProfile)
+			}
+
 			// APP/小程序认证配置（WEB端可配置：模板/微信配置）
 			appAuthConfig := v1.Group("app/auth/config")
 			{

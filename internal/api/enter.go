@@ -68,6 +68,7 @@ type Controller struct {
 	DeviceBindingApi      // BMS: 设备绑定(APP)
 	DeviceProvisionApi    // BMS: 移动端设备开通（扫码/蓝牙绑定）
 	AppBatteryApi         // BMS: APP电池设备详情/透传
+	UserWarrantyInfoApi   // BMS: 用户质保信息
 	WarrantyApi           // BMS: 维保管理
 	EndUserApi            // BMS: 终端用户
 	ActivationLogApi      // BMS: 激活日志

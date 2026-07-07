@@ -142,26 +142,28 @@ type UpsertWxMpAppReq struct {
 }
 
 type UpsertPackWxMpConfigReq struct {
-	WxAppID       string  `json:"wx_appid" validate:"required,max=100"`
-	AppSecret     *string `json:"app_secret" validate:"omitempty,max=128"`
-	Status        string  `json:"status" validate:"required,max=16,oneof=OPEN CLOSE"`
-	HomeBannerURL *string `json:"home_banner_url" validate:"omitempty,max=500"`
-	LoginLogoURL  *string `json:"login_logo_url" validate:"omitempty,max=500"`
-	Remark        *string `json:"remark" validate:"omitempty,max=255"`
+	WxAppID              string  `json:"wx_appid" validate:"required,max=100"`
+	AppSecret            *string `json:"app_secret" validate:"omitempty,max=128"`
+	Status               string  `json:"status" validate:"required,max=16,oneof=OPEN CLOSE"`
+	HomeBannerURL        *string `json:"home_banner_url" validate:"omitempty,max=500"`
+	LoginLogoURL         *string `json:"login_logo_url" validate:"omitempty,max=500"`
+	WarrantyCardsEnabled *bool   `json:"warranty_cards_enabled" validate:"omitempty"`
+	Remark               *string `json:"remark" validate:"omitempty,max=255"`
 }
 
 type PackWxMpConfigResp struct {
-	ID            string  `json:"id"`
-	TenantID      string  `json:"tenant_id"`
-	OrgID         string  `json:"org_id"`
-	AppID         string  `json:"app_id"`
-	WxAppID       string  `json:"wx_appid"`
-	Status        string  `json:"status"`
-	HomeBannerURL *string `json:"home_banner_url"`
-	LoginLogoURL  *string `json:"login_logo_url"`
-	Remark        *string `json:"remark"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	ID                   string  `json:"id"`
+	TenantID             string  `json:"tenant_id"`
+	OrgID                string  `json:"org_id"`
+	AppID                string  `json:"app_id"`
+	WxAppID              string  `json:"wx_appid"`
+	Status               string  `json:"status"`
+	HomeBannerURL        *string `json:"home_banner_url"`
+	LoginLogoURL         *string `json:"login_logo_url"`
+	WarrantyCardsEnabled bool    `json:"warranty_cards_enabled"`
+	Remark               *string `json:"remark"`
+	CreatedAt            string  `json:"created_at"`
+	UpdatedAt            string  `json:"updated_at"`
 }
 
 type WxMpRuntimeReq struct {
@@ -169,13 +171,14 @@ type WxMpRuntimeReq struct {
 }
 
 type WxMpRuntimeResp struct {
-	AppID         string  `json:"app_id"`
-	WxAppID       string  `json:"wx_appid"`
-	Status        string  `json:"status"`
-	SourceType    string  `json:"source_type"`
-	LoginOnly     bool    `json:"login_only"`
-	HomeBannerURL *string `json:"home_banner_url"`
-	LoginLogoURL  *string `json:"login_logo_url"`
-	OrgID         string  `json:"org_id"`
-	OrgName       string  `json:"org_name"`
+	AppID                string  `json:"app_id"`
+	WxAppID              string  `json:"wx_appid"`
+	Status               string  `json:"status"`
+	SourceType           string  `json:"source_type"`
+	LoginOnly            bool    `json:"login_only"`
+	HomeBannerURL        *string `json:"home_banner_url"`
+	LoginLogoURL         *string `json:"login_logo_url"`
+	WarrantyCardsEnabled bool    `json:"warranty_cards_enabled"`
+	OrgID                string  `json:"org_id"`
+	OrgName              string  `json:"org_name"`
 }

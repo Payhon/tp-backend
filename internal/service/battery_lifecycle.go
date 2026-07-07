@@ -846,6 +846,10 @@ func (*Battery) ActivateBattery(ctx context.Context, req model.BatteryActivateRe
 					"sql_error": err.Error(),
 				})
 			}
+			if err := applyBatteryWarrantyActivationTx(ctx, tx.DeviceBattery.UnderlyingDB(), device.ID, claims.ID, now); err != nil {
+				tx.Rollback()
+				return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
 		} else {
 			tx.Rollback()
 			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
@@ -885,6 +889,10 @@ func (*Battery) ActivateBattery(ctx context.Context, req model.BatteryActivateRe
 			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
 				"sql_error": err.Error(),
 			})
+		}
+		if err := applyBatteryWarrantyActivationTx(ctx, tx.DeviceBattery.UnderlyingDB(), device.ID, claims.ID, now); err != nil {
+			tx.Rollback()
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 		}
 	}
 

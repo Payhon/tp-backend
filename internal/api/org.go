@@ -198,7 +198,7 @@ func (*OrgApi) ResetOrgAccountPassword(c *gin.Context) {
 func (*OrgApi) GetPackWxMpConfig(c *gin.Context) {
 	id := c.Param("id")
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
-	data, err := service.GroupApp.AppAuthConfig.GetPackWxMpConfig(c.Request.Context(), userClaims.TenantID, id)
+	data, err := service.GroupApp.AppAuthConfig.GetPackWxMpConfig(c.Request.Context(), userClaims, userClaims.TenantID, id)
 	if err != nil {
 		c.Error(err)
 		return
@@ -222,7 +222,7 @@ func (*OrgApi) UpsertPackWxMpConfig(c *gin.Context) {
 		return
 	}
 	userClaims := c.MustGet("claims").(*utils.UserClaims)
-	data, err := service.GroupApp.AppAuthConfig.UpsertPackWxMpConfig(c.Request.Context(), userClaims.TenantID, id, &req)
+	data, err := service.GroupApp.AppAuthConfig.UpsertPackWxMpConfig(c.Request.Context(), userClaims, userClaims.TenantID, id, &req)
 	if err != nil {
 		c.Error(err)
 		return

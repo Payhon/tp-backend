@@ -479,6 +479,9 @@ func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, ro
 		Updates(updates).Error; err != nil {
 		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
+	if err := applyBatteryWarrantyActivationTx(ctx, tx, row.DeviceID, claims.ID, now); err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
 
 	isOwner := isFirstBinding
 	binding := &model.DeviceUserBinding{

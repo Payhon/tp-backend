@@ -38,10 +38,24 @@ func setupDeviceProvisionMacTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE device_batteries (
 			device_id text primary key,
+			battery_model_id text,
 			item_uuid text,
 			ble_mac text,
 			identity_ble_mac text,
+			activation_status text,
+			transfer_status text,
+			activation_date datetime,
+			warranty_months integer,
+			warranty_start_date datetime,
+			warranty_expire_date datetime,
+			warranty_manual_override boolean default false,
+			warranty_updated_at datetime,
+			warranty_updated_by text,
 			updated_at datetime
+		)`,
+		`CREATE TABLE battery_bms_models (
+			id text primary key,
+			warranty_months integer
 		)`,
 		`CREATE TABLE device_user_bindings (
 			id text primary key,
