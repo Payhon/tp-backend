@@ -59,6 +59,25 @@ func TestSocketBootFrameForLogParsesPacketAndAck(t *testing.T) {
 	}
 }
 
+func TestSocketFrameLogFieldsParsesNormalJSONFrame(t *testing.T) {
+	fields := socketFrameLogFields([]byte(`{"hex":"7F5501FE030218022791FD"}`))
+	if got := fields["frame_source"]; got != "0x01" {
+		t.Fatalf("expected frame_source=0x01, got %#v", got)
+	}
+	if got := fields["frame_target"]; got != "0xFE" {
+		t.Fatalf("expected frame_target=0xFE, got %#v", got)
+	}
+	if got := fields["frame_function"]; got != "0x03" {
+		t.Fatalf("expected frame_function=0x03, got %#v", got)
+	}
+	if got := fields["frame_byte_count"]; got != 2 {
+		t.Fatalf("expected frame_byte_count=2, got %#v", got)
+	}
+	if got := fields["payload_hex_prefix"]; got != "7F5501FE030218022791FD" {
+		t.Fatalf("expected payload_hex_prefix, got %#v", got)
+	}
+}
+
 func TestSocketBootSessionTraceReportsSlowAck(t *testing.T) {
 	trace := &socketBootSessionTrace{}
 	base := time.Unix(100, 0)

@@ -144,6 +144,39 @@ func socketHexPrefixForLog(hexText string, maxLen int) string {
 	return hexText[:maxLen] + "..."
 }
 
+func socketFrameLogFields(payload []byte) logrus.Fields {
+	rawHex := socketPayloadHexForLog(payload)
+	cleanHex := cleanSocketHexForLog(rawHex)
+	fields := logrus.Fields{
+		"payload_bytes": len(payload),
+	}
+	if cleanHex == "" {
+		return fields
+	}
+	fields["payload_hex_len"] = len(cleanHex)
+	fields["payload_hex_prefix"] = socketHexPrefixForLog(cleanHex, 96)
+	frame, err := hex.DecodeString(cleanHex)
+	if err != nil {
+		return fields
+	}
+	fields["frame_bytes"] = len(frame)
+	if len(frame) < 2 || frame[0] != 0x7F || frame[1] != 0x55 {
+		return fields
+	}
+	if len(frame) >= 5 {
+		fields["frame_source"] = fmt.Sprintf("0x%02X", frame[2]&0xff)
+		fields["frame_target"] = fmt.Sprintf("0x%02X", frame[3]&0xff)
+		fields["frame_function"] = fmt.Sprintf("0x%02X", frame[4]&0xff)
+	}
+	if len(frame) == 12 && len(frame) >= 9 {
+		fields["frame_start_address"] = fmt.Sprintf("0x%04X", (int(frame[5]&0xff)<<8)|int(frame[6]&0xff))
+		fields["frame_quantity"] = (int(frame[7]&0xff) << 8) | int(frame[8]&0xff)
+	} else if len(frame) >= 6 {
+		fields["frame_byte_count"] = int(frame[5] & 0xff)
+	}
+	return fields
+}
+
 func socketBootSeqHex(seq int) string {
 	return fmt.Sprintf("0x%04X", seq&0xffff)
 }
@@ -641,19 +674,21 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 	subToken := mc.Subscribe(txTopic, 1, func(_ mqtt.Client, m mqtt.Message) {
 		callbackAt := time.Now()
 		payload := append([]byte(nil), m.Payload()...)
+		traceFields := socketFrameLogFields(payload)
+		traceFields["direction"] = "mqtt_tx_to_ws"
+		traceFields["device_id"] = deviceID
+		traceFields["device_number"] = socketTopicID
+		traceFields["session_id"] = owner.SessionID
+		traceFields["topic"] = txTopic
+		traceFields["mqtt_qos"] = m.Qos()
+		traceFields["mqtt_message_id"] = m.MessageID()
+		traceFields["mqtt_retained"] = m.Retained()
+		traceFields["mqtt_duplicate"] = m.Duplicate()
 		bootInfo, isBootFrame := socketBootFrameForLog(payload)
-		var traceFields logrus.Fields
 		if isBootFrame {
-			traceFields = bootInfo.logFields()
-			traceFields["direction"] = "mqtt_tx_to_ws"
-			traceFields["device_id"] = deviceID
-			traceFields["device_number"] = socketTopicID
-			traceFields["session_id"] = owner.SessionID
-			traceFields["topic"] = txTopic
-			traceFields["mqtt_qos"] = m.Qos()
-			traceFields["mqtt_message_id"] = m.MessageID()
-			traceFields["mqtt_retained"] = m.Retained()
-			traceFields["mqtt_duplicate"] = m.Duplicate()
+			for k, v := range bootInfo.logFields() {
+				traceFields[k] = v
+			}
 			if bootInfo.isBootOTACommand() && m.Retained() {
 				logrus.WithFields(traceFields).Warn("bms mqtt socket boot uplink retained message ignored")
 				return
@@ -669,20 +704,26 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		writeErr := conn.WriteMessage(websocket.TextMessage, payload)
 		writeMs := time.Since(writeStartedAt).Milliseconds()
 		writeMu.Unlock()
+		traceFields["ws_lock_wait_ms"] = lockWaitMs
+		traceFields["ws_write_ms"] = writeMs
+		traceFields["bridge_elapsed_ms"] = time.Since(callbackAt).Milliseconds()
+		entry := logrus.WithFields(traceFields)
+		if writeErr != nil {
+			entry.WithError(writeErr).Warn("bms mqtt socket uplink websocket write failed")
+			return
+		}
 		if isBootFrame {
-			traceFields["ws_lock_wait_ms"] = lockWaitMs
-			traceFields["ws_write_ms"] = writeMs
-			traceFields["bridge_elapsed_ms"] = time.Since(callbackAt).Milliseconds()
-			entry := logrus.WithFields(traceFields)
-			if writeErr != nil {
-				entry.WithError(writeErr).Warn("bms mqtt socket boot uplink websocket write failed")
-				return
-			}
 			if slowAck {
 				entry.Warn("bms mqtt socket boot uplink slow ack")
 			} else {
 				entry.Info("bms mqtt socket boot uplink websocket write")
 			}
+			return
+		}
+		if lockWaitMs > 200 || writeMs > 200 {
+			entry.Warn("bms mqtt socket uplink websocket write slow")
+		} else {
+			entry.Debug("bms mqtt socket uplink websocket write")
 		}
 	})
 	if subToken.Wait() && subToken.Error() != nil {
@@ -747,31 +788,29 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 			payload = b
 		}
 
+		traceFields := socketFrameLogFields(payload)
+		traceFields["direction"] = "ws_to_mqtt_rx"
+		traceFields["device_id"] = deviceID
+		traceFields["device_number"] = socketTopicID
+		traceFields["session_id"] = owner.SessionID
+		traceFields["topic"] = rxTopic
+		traceFields["ws_payload_bytes"] = len(in)
 		bootInfo, isBootFrame := socketBootFrameForLog(payload)
-		var traceFields logrus.Fields
 		if isBootFrame {
-			traceFields = bootInfo.logFields()
-			traceFields["direction"] = "ws_to_mqtt_rx"
-			traceFields["device_id"] = deviceID
-			traceFields["device_number"] = socketTopicID
-			traceFields["session_id"] = owner.SessionID
-			traceFields["topic"] = rxTopic
-			traceFields["ws_payload_bytes"] = len(in)
+			for k, v := range bootInfo.logFields() {
+				traceFields[k] = v
+			}
 		}
 		refreshStartedAt := time.Now()
 		if !refreshOwnerForData() {
 			return
 		}
-		if isBootFrame {
-			traceFields["owner_refresh_ms"] = time.Since(refreshStartedAt).Milliseconds()
-		}
+		traceFields["owner_refresh_ms"] = time.Since(refreshStartedAt).Milliseconds()
 		// 发布
 		publishStartedAt := time.Now()
 		pub := mc.Publish(rxTopic, 1, false, payload)
-		if isBootFrame {
-			if tokenWithMessageID, ok := pub.(interface{ MessageID() uint16 }); ok {
-				traceFields["mqtt_publish_message_id"] = tokenWithMessageID.MessageID()
-			}
+		if tokenWithMessageID, ok := pub.(interface{ MessageID() uint16 }); ok {
+			traceFields["mqtt_publish_message_id"] = tokenWithMessageID.MessageID()
 		}
 		pub.Wait()
 		publishMs := time.Since(publishStartedAt).Milliseconds()
@@ -780,10 +819,10 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		if isBootFrame && pubErr == nil {
 			slowDownlinkAfterAck = bootTrace.observeDownlink(traceFields, bootInfo, time.Now())
 		}
+		traceFields["mqtt_publish_wait_ms"] = publishMs
+		traceFields["bridge_elapsed_ms"] = time.Since(readAt).Milliseconds()
+		entry := logrus.WithFields(traceFields)
 		if isBootFrame {
-			traceFields["mqtt_publish_wait_ms"] = publishMs
-			traceFields["bridge_elapsed_ms"] = time.Since(readAt).Milliseconds()
-			entry := logrus.WithFields(traceFields)
 			if pubErr != nil {
 				entry.WithError(pubErr).Warn("bms mqtt socket boot downlink publish failed")
 			} else if slowDownlinkAfterAck {
@@ -791,11 +830,18 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 			} else {
 				entry.Info("bms mqtt socket boot downlink publish")
 			}
+		} else if pubErr != nil {
+			entry.WithError(pubErr).Warn("bms mqtt socket downlink publish failed")
+		} else if publishMs > 500 {
+			entry.Warn("bms mqtt socket downlink publish slow")
+		} else {
+			entry.Debug("bms mqtt socket downlink publish")
 		}
 		if pubErr != nil {
-			writeMu.Lock()
-			_ = conn.WriteMessage(websocket.TextMessage, []byte("mqtt publish failed"))
-			writeMu.Unlock()
+			writeControl(map[string]interface{}{
+				"type":    "socket_error",
+				"message": "MQTT发布失败",
+			}, "mqtt publish failed")
 		}
 	}
 }
