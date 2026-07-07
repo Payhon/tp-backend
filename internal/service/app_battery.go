@@ -956,6 +956,74 @@ func shouldSyncDeviceOnlineByApp(detail *model.AppBatteryDetailResp) bool {
 	return false
 }
 
+func isFourGBatteryDetail(detail *model.AppBatteryDetailResp) bool {
+	if detail == nil {
+		return false
+	}
+	if detail.BmsCommType != nil && (*detail.BmsCommType == 2 || *detail.BmsCommType == 3) {
+		return true
+	}
+	return strings.TrimSpace(derefString(detail.CommChipID)) != ""
+}
+
+func fourGInteractionOnlineTTL() time.Duration {
+	ttlSec := 300
+	if viper.IsSet("heartbeat.default_online_ttl_sec") {
+		ttlSec = viper.GetInt("heartbeat.default_online_ttl_sec")
+	}
+	if ttlSec < 5 {
+		ttlSec = 5
+	}
+	return time.Duration(ttlSec) * time.Second
+}
+
+func refreshFourGInteractionOnlineKey(ctx context.Context, deviceID string) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return
+	}
+	client := global.STATUS_REDIS
+	if client == nil {
+		client = global.REDIS
+	}
+	if client == nil {
+		return
+	}
+	key := "device:" + deviceID + ":heartbeat"
+	if err := client.Set(ctx, key, 1, fourGInteractionOnlineTTL()).Err(); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"device_id": deviceID,
+			"key":       key,
+		}).Warn("refresh 4g interaction online key failed")
+	}
+}
+
+func (*AppBattery) MarkFourGBatteryOnlineByInteraction(ctx context.Context, detail *model.AppBatteryDetailResp, source string) (bool, error) {
+	if !isFourGBatteryDetail(detail) {
+		return false, nil
+	}
+	deviceID := strings.TrimSpace(detail.DeviceID)
+	if deviceID == "" {
+		return false, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+
+	changed, err := dal.UpdateDeviceStatus(deviceID, appBatteryStatusOnline)
+	if err != nil {
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	refreshFourGInteractionOnlineKey(ctx, deviceID)
+	if changed {
+		publishAppDeviceStatus(ctx, deviceID, appBatteryStatusOnline)
+	}
+	logrus.WithFields(logrus.Fields{
+		"device_id":      deviceID,
+		"status":         appBatteryStatusOnline,
+		"status_changed": changed,
+		"source":         strings.TrimSpace(source),
+	}).Debug("4g battery marked online by data interaction")
+	return changed, nil
+}
+
 func syncDeviceStatusFromApp(ctx context.Context, deviceID, tenantID string, status int16, source string) (bool, error) {
 	if status == appBatteryStatusOnline && !isAppReportOnlineSyncEnabled() {
 		return false, nil

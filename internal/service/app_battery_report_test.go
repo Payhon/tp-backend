@@ -113,3 +113,30 @@ func TestMergeCurrentTelemetryIntoAppBatterySnapshot_ClearsInvalidSnapshotCellVo
 		t.Fatalf("expected invalid snapshot voltages to be cleared, got %#v", voltages)
 	}
 }
+
+func TestIsFourGBatteryDetail(t *testing.T) {
+	commBLE := 1
+	comm4G := 2
+	commDual := 3
+	chipID := "867123456789012"
+
+	cases := []struct {
+		name   string
+		detail *model.AppBatteryDetailResp
+		want   bool
+	}{
+		{name: "nil", detail: nil, want: false},
+		{name: "ble only", detail: &model.AppBatteryDetailResp{BmsCommType: &commBLE}, want: false},
+		{name: "4g", detail: &model.AppBatteryDetailResp{BmsCommType: &comm4G}, want: true},
+		{name: "ble and 4g", detail: &model.AppBatteryDetailResp{BmsCommType: &commDual}, want: true},
+		{name: "chip id fallback", detail: &model.AppBatteryDetailResp{CommChipID: &chipID}, want: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isFourGBatteryDetail(tc.detail); got != tc.want {
+				t.Fatalf("isFourGBatteryDetail() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

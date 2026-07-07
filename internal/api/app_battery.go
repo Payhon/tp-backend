@@ -28,6 +28,7 @@ type AppBatteryApi struct{}
 const (
 	socketBootSlowAckThreshold        = 2 * time.Second
 	socketOwnerDataRefreshMinInterval = 5 * time.Second
+	socketOnlineRefreshMinInterval    = 30 * time.Second
 )
 
 type socketBootFrameLogInfo struct {
@@ -635,6 +636,8 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 	bootTrace := &socketBootSessionTrace{}
 	var ownerRefreshMu sync.Mutex
 	lastOwnerRefreshAt := time.Now()
+	var onlineRefreshMu sync.Mutex
+	lastOnlineRefreshAt := time.Time{}
 
 	refreshOwner := func() bool {
 		ok, err := service.GroupApp.AppBattery.RefreshMqttSocketOwnerForApp(context.Background(), owner.DeviceID, owner.SessionID)
@@ -670,6 +673,35 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		ownerRefreshMu.Unlock()
 		return true
 	}
+	markOnlineByInteraction := func(source string) {
+		now := time.Now()
+		onlineRefreshMu.Lock()
+		if !lastOnlineRefreshAt.IsZero() && now.Sub(lastOnlineRefreshAt) < socketOnlineRefreshMinInterval {
+			onlineRefreshMu.Unlock()
+			return
+		}
+		lastOnlineRefreshAt = now
+		onlineRefreshMu.Unlock()
+
+		if changed, err := service.GroupApp.AppBattery.MarkFourGBatteryOnlineByInteraction(context.Background(), detail, source); err != nil {
+			onlineRefreshMu.Lock()
+			lastOnlineRefreshAt = time.Time{}
+			onlineRefreshMu.Unlock()
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"device_id":     deviceID,
+				"device_number": socketTopicID,
+				"session_id":    owner.SessionID,
+				"source":        source,
+			}).Warn("mark 4g battery online by mqtt socket interaction failed")
+		} else if changed {
+			logrus.WithFields(logrus.Fields{
+				"device_id":     deviceID,
+				"device_number": socketTopicID,
+				"session_id":    owner.SessionID,
+				"source":        source,
+			}).Info("4g battery online by mqtt socket interaction")
+		}
+	}
 
 	subToken := mc.Subscribe(txTopic, 1, func(_ mqtt.Client, m mqtt.Message) {
 		callbackAt := time.Now()
@@ -697,6 +729,9 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 		slowAck := false
 		if isBootFrame {
 			slowAck = bootTrace.observeAck(traceFields, bootInfo, callbackAt)
+		}
+		if !m.Retained() {
+			go markOnlineByInteraction("mqtt_socket_uplink")
 		}
 		writeMu.Lock()
 		lockWaitMs := time.Since(callbackAt).Milliseconds()
