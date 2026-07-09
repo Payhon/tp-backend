@@ -50,6 +50,7 @@ type apps struct {
 	ActivationLog      // BMS: 激活日志
 	BmsCommDebug       // BMS: 通讯调试日志
 	BatteryMaintenance // BMS: 电池维保记录
+	VersionUpdate      // BMS: 版本更新记录
 	Org                // BMS: 组织管理
 	OrgTypePermission  // WEB: 机构类型权限配置（菜单权限/设备参数权限）
 }

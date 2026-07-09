@@ -71,6 +71,7 @@ type ServiceGroup struct {
 	ActivationLog      // BMS: 激活日志（从操作日志派生）
 	BmsCommDebug       // BMS: 通讯调试日志
 	BatteryMaintenance // BMS: 电池维保记录（手动）
+	VersionUpdate      // BMS: 版本更新记录
 	BatteryTag         // BMS: 电池标签
 	OfflineCommand     // BMS: 离线指令
 	OrgService         // BMS: 组织管理（多层级）

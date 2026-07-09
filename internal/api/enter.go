@@ -74,6 +74,7 @@ type Controller struct {
 	ActivationLogApi      // BMS: 激活日志
 	BmsCommDebugApi       // BMS: 通讯调试日志
 	BatteryMaintenanceApi // BMS: 电池维保记录
+	VersionUpdateApi      // BMS: 版本更新记录
 	BatteryTagApi         // BMS: 电池标签
 	OfflineCommandApi     // BMS: 离线指令
 	OrgApi                // BMS: 组织管理（多层级）

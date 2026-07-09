@@ -318,6 +318,7 @@ func RouterInit() *gin.Engine {
 			apps.Model.ActivationLog.InitActivationLog(bmsRouter)           // 激活日志（从操作日志派生）
 			apps.Model.BmsCommDebug.InitBmsCommDebug(bmsRouter)             // 通讯调试日志
 			apps.Model.BatteryMaintenance.InitBatteryMaintenance(bmsRouter) // 电池维保记录（手动）
+			apps.Model.VersionUpdate.InitVersionUpdate(bmsRouter)           // 版本更新记录
 		}
 	}
 
