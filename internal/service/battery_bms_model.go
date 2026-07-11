@@ -204,14 +204,44 @@ func (*BatteryBmsModel) UpdateBatteryBmsModel(id string, req model.BatteryBmsMod
 	}
 
 	updates["updated_at"] = time.Now().UTC()
-	if err := global.DB.WithContext(ctx).
-		Table(model.TableNameBatteryModel).
-		Where("id = ? AND tenant_id = ?", id, claims.TenantID).
-		Updates(updates).Error; err != nil {
-		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	shouldRecalcWarranty := req.WarrantyMonths != nil &&
+		*req.WarrantyMonths > 0 &&
+		(exists.WarrantyMonth == nil || *exists.WarrantyMonth != *req.WarrantyMonths)
+	var warrantyRecalcJobID string
+	if err := global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Table(model.TableNameBatteryModel).
+			Where("id = ? AND tenant_id = ?", id, claims.TenantID).
+			Updates(updates).Error; err != nil {
+			return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		if shouldRecalcWarranty {
+			jobID, err := createBatteryWarrantyRecalcJobTx(
+				ctx,
+				tx,
+				claims.TenantID,
+				claims.ID,
+				batteryWarrantyRecalcSourceModelChange,
+				&id,
+			)
+			if err != nil {
+				return err
+			}
+			warrantyRecalcJobID = jobID
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	return getBmsModelRespByID(ctx, claims.TenantID, id)
+	resp, err := getBmsModelRespByID(ctx, claims.TenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if warrantyRecalcJobID != "" {
+		resp.WarrantyRecalcJobID = &warrantyRecalcJobID
+		startBatteryWarrantyRecalcJob(warrantyRecalcJobID)
+	}
+	return resp, nil
 }
 
 // DeleteBatteryBmsModel 删除 BMS 型号

@@ -36,4 +36,5 @@ type DeviceProvisionBindReq struct {
 type DeviceProvisionBindResp struct {
 	DeviceID     string `json:"device_id"`
 	DeviceNumber string `json:"device_number"`
+	NewlyBound   bool   `json:"newly_bound"`
 }

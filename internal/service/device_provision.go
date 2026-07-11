@@ -432,10 +432,10 @@ func (*DeviceProvision) upsertOrgAddedDeviceRecordTx(ctx context.Context, tx *go
 	return nil
 }
 
-func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, row *deviceProvisionRow, claims *utils.UserClaims) error {
+func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, row *deviceProvisionRow, claims *utils.UserClaims) (bool, error) {
 	userOrgID, err := getUserOrgID(claims.ID)
 	if err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
 	var cnt int64
@@ -443,24 +443,24 @@ func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, ro
 		Table("device_user_bindings").
 		Where("device_id = ? AND user_id = ?", row.DeviceID, claims.ID).
 		Count(&cnt).Error; err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	if cnt > 0 {
-		return nil
+		return false, nil
 	}
 
 	if err := tx.WithContext(ctx).
 		Table("device_user_bindings").
 		Where("device_id = ?", row.DeviceID).
 		Count(&cnt).Error; err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	isFirstBinding := cnt == 0
 	now := utils.GetUTCTime()
 
 	if userOrgID != "" && row.OwnerOrgID != nil && strings.TrimSpace(*row.OwnerOrgID) != "" {
 		if !canAccessOrg(claims.TenantID, userOrgID, strings.TrimSpace(*row.OwnerOrgID)) {
-			return errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "device does not belong to current organization"})
+			return false, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "device does not belong to current organization"})
 		}
 	}
 
@@ -477,10 +477,10 @@ func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, ro
 		Table("device_batteries").
 		Where("device_id = ?", row.DeviceID).
 		Updates(updates).Error; err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 	if err := applyBatteryWarrantyActivationTx(ctx, tx, row.DeviceID, claims.ID, now); err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
 	isOwner := isFirstBinding
@@ -492,7 +492,7 @@ func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, ro
 		IsOwner:     &isOwner,
 	}
 	if err := tx.WithContext(ctx).Create(binding).Error; err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
 	if err := tx.WithContext(ctx).
@@ -500,9 +500,9 @@ func (*DeviceProvision) bindEndUserDeviceTx(ctx context.Context, tx *gorm.DB, ro
 			`UPDATE devices SET activate_flag = 'active', is_enabled = 'enabled', activate_at = ?, update_at = ? WHERE id = ? AND tenant_id = ?`,
 			now, now, row.DeviceID, claims.TenantID,
 		).Error; err != nil {
-		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
-	return nil
+	return true, nil
 }
 
 // GetProvisionInfo 按 item_uuid 查询设备信息（用于“扫码 UUID”路径）
@@ -605,8 +605,11 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 		}, nil
 	}
 
+	newlyBound := false
 	if err := global.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return svc.bindEndUserDeviceTx(ctx, tx, row, claims)
+		var bindErr error
+		newlyBound, bindErr = svc.bindEndUserDeviceTx(ctx, tx, row, claims)
+		return bindErr
 	}); err != nil {
 		// 针对“数据库错误”做更可读的提示（用于测试环境快速定位迁移/表缺失问题）
 		if e, ok := err.(*errcode.Error); ok && e.Code == errcode.CodeDBError {
@@ -633,5 +636,6 @@ func (*DeviceProvision) BindByItemUUID(ctx context.Context, req model.DeviceProv
 	return &model.DeviceProvisionBindResp{
 		DeviceID:     row.DeviceID,
 		DeviceNumber: row.DeviceNumber,
+		NewlyBound:   newlyBound,
 	}, nil
 }

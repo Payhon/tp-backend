@@ -19,11 +19,10 @@ import (
 type UserWarrantyInfo struct{}
 
 type userWarrantyInfoRow struct {
-	ContactName  *string `gorm:"column:contact_name"`
-	ContactPhone *string `gorm:"column:contact_phone"`
-	UserName     *string `gorm:"column:user_name"`
-	Username     *string `gorm:"column:username"`
-	UserPhone    string  `gorm:"column:user_phone"`
+	ContactName        *string `gorm:"column:contact_name"`
+	ContactPhone       *string `gorm:"column:contact_phone"`
+	WarrantyInfoExists bool    `gorm:"column:warranty_info_exists"`
+	HasBoundDevice     bool    `gorm:"column:has_bound_device"`
 }
 
 type appWarrantyBatteryRow struct {
@@ -97,6 +96,10 @@ func trimmedStringPtr(v *string) *string {
 	return &s
 }
 
+func hasNonEmptyString(v *string) bool {
+	return v != nil && strings.TrimSpace(*v) != ""
+}
+
 func resolveWarrantyCardsEnabled(ctx context.Context, tenantID, appid string) (bool, error) {
 	appid = strings.TrimSpace(appid)
 	if appid == "" {
@@ -137,7 +140,17 @@ func (*UserWarrantyInfo) GetProfile(ctx context.Context, claims *utils.UserClaim
 	var info userWarrantyInfoRow
 	if err := global.DB.WithContext(ctx).
 		Table("users AS u").
-		Select(`uwi.contact_name, uwi.contact_phone, u.name AS user_name, u.username, u.phone_number AS user_phone`).
+		Select(`
+			uwi.contact_name,
+			uwi.contact_phone,
+			(uwi.id IS NOT NULL) AS warranty_info_exists,
+			EXISTS (
+				SELECT 1
+				FROM device_user_bindings AS dub
+				JOIN devices AS bound_device ON bound_device.id = dub.device_id AND bound_device.tenant_id = u.tenant_id
+				WHERE dub.user_id = u.id
+			) AS has_bound_device
+		`).
 		Joins(`LEFT JOIN user_warranty_infos AS uwi ON uwi.tenant_id = u.tenant_id AND uwi.user_id = u.id`).
 		Where("u.tenant_id = ? AND u.id = ?", claims.TenantID, claims.ID).
 		Limit(1).
@@ -145,21 +158,15 @@ func (*UserWarrantyInfo) GetProfile(ctx context.Context, claims *utils.UserClaim
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
 
+	warrantyProfileCompleted := info.WarrantyInfoExists && hasNonEmptyString(info.ContactName) && hasNonEmptyString(info.ContactPhone)
 	resp := &model.AppWarrantyProfileResp{
-		ContactName:          info.ContactName,
-		ContactPhone:         info.ContactPhone,
-		WarrantyCardsEnabled: cardsEnabled,
-		Batteries:            []model.AppWarrantyBatteryCardResp{},
-	}
-	if resp.ContactName == nil {
-		resp.ContactName = info.UserName
-		if resp.ContactName == nil {
-			resp.ContactName = info.Username
-		}
-	}
-	if resp.ContactPhone == nil && strings.TrimSpace(info.UserPhone) != "" {
-		phone := strings.TrimSpace(info.UserPhone)
-		resp.ContactPhone = &phone
+		ContactName:                   info.ContactName,
+		ContactPhone:                  info.ContactPhone,
+		WarrantyCardsEnabled:          cardsEnabled,
+		WarrantyProfileExists:         info.WarrantyInfoExists,
+		WarrantyProfileCompleted:      warrantyProfileCompleted,
+		WarrantyProfileReminderNeeded: info.HasBoundDevice && !warrantyProfileCompleted,
+		Batteries:                     []model.AppWarrantyBatteryCardResp{},
 	}
 	if !cardsEnabled {
 		return resp, nil

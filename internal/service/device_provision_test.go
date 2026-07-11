@@ -34,7 +34,11 @@ func setupDeviceProvisionMacTestDB(t *testing.T) *gorm.DB {
 			id text primary key,
 			device_number text,
 			name text,
-			tenant_id text
+			tenant_id text,
+			activate_flag text,
+			is_enabled text,
+			activate_at datetime,
+			update_at datetime
 		)`,
 		`CREATE TABLE device_batteries (
 			device_id text primary key,
@@ -169,12 +173,41 @@ func TestBindEndUserDeviceTxIsIdempotentWhenAlreadyBoundToCurrentUser(t *testing
 	insertProvisionMacBinding(t, db, "binding-1", "user-1", "dev-1")
 	row := &deviceProvisionRow{DeviceID: "dev-1", DeviceNumber: "item-1", BleMac: strPtr("EF533171C27F")}
 
-	err := (&DeviceProvision{}).bindEndUserDeviceTx(context.Background(), db, row, &utils.UserClaims{
+	newlyBound, err := (&DeviceProvision{}).bindEndUserDeviceTx(context.Background(), db, row, &utils.UserClaims{
 		ID:       "user-1",
 		TenantID: "tenant-a",
 	})
 	if err != nil {
 		t.Fatalf("bindEndUserDeviceTx() error = %v", err)
+	}
+	if newlyBound {
+		t.Fatalf("newlyBound = true, want false for existing binding")
+	}
+
+	var cnt int64
+	if err := db.Table("device_user_bindings").Where("device_id = ? AND user_id = ?", "dev-1", "user-1").Count(&cnt).Error; err != nil {
+		t.Fatalf("count binding failed: %v", err)
+	}
+	if cnt != 1 {
+		t.Fatalf("binding count = %d, want 1", cnt)
+	}
+}
+
+func TestBindEndUserDeviceTxReportsNewBinding(t *testing.T) {
+	db := setupDeviceProvisionMacTestDB(t)
+	insertProvisionMacUser(t, db, "user-1", "tenant-a", model.UserKindEndUser)
+	insertProvisionMacDevice(t, db, "dev-1", "item-1", "tenant-a", "EF533171C27F", "")
+	row := &deviceProvisionRow{DeviceID: "dev-1", DeviceNumber: "item-1", BleMac: strPtr("EF533171C27F")}
+
+	newlyBound, err := (&DeviceProvision{}).bindEndUserDeviceTx(context.Background(), db, row, &utils.UserClaims{
+		ID:       "user-1",
+		TenantID: "tenant-a",
+	})
+	if err != nil {
+		t.Fatalf("bindEndUserDeviceTx() error = %v", err)
+	}
+	if !newlyBound {
+		t.Fatalf("newlyBound = false, want true")
 	}
 
 	var cnt int64

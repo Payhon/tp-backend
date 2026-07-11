@@ -34,18 +34,19 @@ type BatteryBmsModelListReq struct {
 
 // BatteryBmsModelResp BMS 型号响应
 type BatteryBmsModelResp struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name"`
-	DeviceConfigID   *string  `json:"device_config_id"`
-	DeviceConfigName *string  `json:"device_config_name"`
-	VoltageRated     *float64 `json:"voltage_rated"`
-	CapacityRated    *float64 `json:"capacity_rated"`
-	CellCount        *int32   `json:"cell_count"`
-	NominalPower     *float64 `json:"nominal_power"`
-	WarrantyMonths   *int32   `json:"warranty_months"`
-	Description      *string  `json:"description"`
-	CreatedAt        string   `json:"created_at"`
-	UpdatedAt        string   `json:"updated_at"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	DeviceConfigID      *string  `json:"device_config_id"`
+	DeviceConfigName    *string  `json:"device_config_name"`
+	VoltageRated        *float64 `json:"voltage_rated"`
+	CapacityRated       *float64 `json:"capacity_rated"`
+	CellCount           *int32   `json:"cell_count"`
+	NominalPower        *float64 `json:"nominal_power"`
+	WarrantyMonths      *int32   `json:"warranty_months"`
+	Description         *string  `json:"description"`
+	CreatedAt           string   `json:"created_at"`
+	UpdatedAt           string   `json:"updated_at"`
+	WarrantyRecalcJobID *string  `json:"warranty_recalc_job_id,omitempty"`
 }
 
 // BatteryBmsModelListResp BMS 型号列表响应
