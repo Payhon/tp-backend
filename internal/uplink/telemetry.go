@@ -76,6 +76,19 @@ func (m *DeviceMessage) GetMetadata(key string) (interface{}, bool) {
 	return val, ok
 }
 
+const telemetryTimestampSourceMetadata = "telemetry_timestamp_source"
+
+func telemetryStorageTimestamp(message *DeviceMessage, fallback int64) int64 {
+	if message == nil || message.Timestamp <= 0 {
+		return fallback
+	}
+	source, ok := message.GetMetadata(telemetryTimestampSourceMetadata)
+	if ok && source == "bms_bridge" {
+		return message.Timestamp
+	}
+	return fallback
+}
+
 // Start 启动遥测数据流处理
 func (f *TelemetryUplink) Start(messageChan <-chan *DeviceMessage) {
 	f.logger.Info("TelemetryUplink started")
@@ -332,7 +345,7 @@ func (f *TelemetryUplink) processDirectDeviceMessage(device *model.Device, paylo
 		DeviceID:  device.ID,
 		TenantID:  device.TenantID,
 		DataType:  storage.DataTypeTelemetry,
-		Timestamp: time.Now().UnixMilli(),
+		Timestamp: telemetryStorageTimestamp(originalMsg, time.Now().UnixMilli()),
 		Data:      telemetryPoints,
 	}
 

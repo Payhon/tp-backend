@@ -8,6 +8,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func TestShouldIgnoreSocketUplink(t *testing.T) {
+	if !shouldIgnoreSocketUplink(true) {
+		t.Fatal("retained socket uplink must be ignored")
+	}
+	if shouldIgnoreSocketUplink(false) {
+		t.Fatal("live socket uplink must be forwarded")
+	}
+}
+
 func TestSocketBootFrameForLogParsesPacketAndAck(t *testing.T) {
 	packetFrame := []byte{0x55, 0xFE, 0x01, 0x53, 0x00, 0x42, 0x00, 0x44}
 	for i := 0; i < 64; i++ {

@@ -9,6 +9,7 @@ import (
 
 const (
 	commDebugEventUplinkRaw     = "uplink_raw"
+	commDebugEventUplinkIgnored = "uplink_ignored"
 	commDebugEventUplinkDecoded = "uplink_decoded"
 	commDebugEventUplinkParsed  = "uplink_parsed"
 	commDebugEventUplinkError   = "uplink_error"

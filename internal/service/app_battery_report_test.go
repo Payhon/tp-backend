@@ -83,7 +83,7 @@ func TestMergeCurrentTelemetryIntoAppBatterySnapshot_OverridesDynamicCellValues(
 		},
 	}
 
-	got := mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, current)
+	got := mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, current, 0)
 	cell := got["cell"].(map[string]interface{})
 	voltages := cell["voltagesMv"].([]interface{})
 	if voltages[0].(float64) != 3296 || voltages[1].(float64) != 3300 {
@@ -106,11 +106,42 @@ func TestMergeCurrentTelemetryIntoAppBatterySnapshot_ClearsInvalidSnapshotCellVo
 		},
 	}
 
-	got := mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, nil)
+	got := mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, nil, 0)
 	cell := got["cell"].(map[string]interface{})
 	voltages := cell["voltagesMv"].([]interface{})
 	if len(voltages) != 0 {
 		t.Fatalf("expected invalid snapshot voltages to be cleared, got %#v", voltages)
+	}
+}
+
+func TestMergeCurrentTelemetryIntoAppBatterySnapshot_DoesNotApplyOlderCurrentRows(t *testing.T) {
+	snapshot := map[string]interface{}{
+		"energy": map[string]interface{}{
+			"socPct": float64(80),
+		},
+		"electrical": map[string]interface{}{
+			"currentA": float64(5),
+		},
+	}
+	current := map[string]model.AppBatteryCurrentTelemetryValue{
+		"soc": {
+			Value: float64(20),
+			Ts:    1_000,
+		},
+		"currentA": {
+			Value: float64(6),
+			Ts:    3_000,
+		},
+	}
+
+	got := mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, current, 2_000)
+	energy := got["energy"].(map[string]interface{})
+	if energy["socPct"].(float64) != 80 {
+		t.Fatalf("older current SOC must not overwrite newer snapshot: %#v", energy["socPct"])
+	}
+	electrical := got["electrical"].(map[string]interface{})
+	if electrical["currentA"].(float64) != 6 {
+		t.Fatalf("newer current must still overlay snapshot: %#v", electrical["currentA"])
 	}
 }
 

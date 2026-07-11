@@ -14,6 +14,31 @@ type MQTTConfig struct {
 	Password          string
 	ClientID          string                   // 可选，不提供则自动生成
 	OnConnectCallback func(client mqtt.Client) // 连接成功回调（用于重新订阅）
+	DeliveryOptions   *MQTTDeliveryOptions     // 可选；nil 时保持适配器原有会话与派发行为
+}
+
+// MQTTDeliveryOptions 控制 MQTT 会话恢复和回调派发行为。
+// 默认调用者无需设置；请求-响应型桥接可使用干净会话避免离线积压，并开启有序回调。
+type MQTTDeliveryOptions struct {
+	CleanSession bool
+	ResumeSubs   bool
+	OrderMatters bool
+}
+
+func applyDeliveryOptions(opts *mqtt.ClientOptions, delivery *MQTTDeliveryOptions) {
+	// 保持历史默认值，避免改变平台 MQTT Adapter 和模拟器等既有调用者。
+	cleanSession := false
+	resumeSubs := true
+	orderMatters := false
+	if delivery != nil {
+		cleanSession = delivery.CleanSession
+		resumeSubs = delivery.ResumeSubs
+		orderMatters = delivery.OrderMatters
+	}
+
+	opts.SetCleanSession(cleanSession)
+	opts.SetResumeSubs(resumeSubs)
+	opts.SetOrderMatters(orderMatters)
 }
 
 // CreateMQTTClient 创建 MQTT 客户端（Adapter 专用）
@@ -35,17 +60,11 @@ func CreateMQTTClient(config MQTTConfig, logger *logrus.Logger) (mqtt.Client, er
 	}
 	opts.SetClientID(clientID)
 
-	// 干净会话
-	opts.SetCleanSession(false)
-	// 恢复客户端订阅，需要 broker 支持
-	opts.SetResumeSubs(true)
+	applyDeliveryOptions(opts, config.DeliveryOptions)
 	// 自动重连
 	opts.SetAutoReconnect(true)
 	opts.SetConnectRetryInterval(5 * time.Second)
 	opts.SetMaxReconnectInterval(200 * time.Second)
-	// 消息顺序
-	opts.SetOrderMatters(false)
-
 	// 连接成功回调（首次连接 + 重连成功都会触发）
 	opts.SetOnConnectHandler(func(client mqtt.Client) {
 		logger.WithField("client_id", clientID).Info("MQTT Adapter client connected")

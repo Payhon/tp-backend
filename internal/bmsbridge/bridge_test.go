@@ -3,10 +3,83 @@ package bmsbridge
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestShouldIgnoreRetainedUplink(t *testing.T) {
+	if !shouldIgnoreRetainedUplink(true) {
+		t.Fatal("retained bridge uplink must be ignored")
+	}
+	if shouldIgnoreRetainedUplink(false) {
+		t.Fatal("live bridge uplink must be processed")
+	}
+}
+
+func TestIncomingShardKeepsSameDeviceFIFO(t *testing.T) {
+	bridge := &Bridge{queues: newIncomingShards(4, 16)}
+	first := incoming{rawDeviceID: "topic-device-a", deviceID: "device-a", messageID: "1"}
+	second := incoming{rawDeviceID: "topic-device-a", deviceID: "device-a-after-remap", messageID: "2"}
+	if !bridge.enqueueIncoming(first) || !bridge.enqueueIncoming(second) {
+		t.Fatal("expected both messages to be enqueued")
+	}
+
+	index := incomingShardIndex(first.rawDeviceID, len(bridge.queues))
+	if got := (<-bridge.queues[index]).messageID; got != "1" {
+		t.Fatalf("first dequeued message = %q, want 1", got)
+	}
+	if got := (<-bridge.queues[index]).messageID; got != "2" {
+		t.Fatalf("second dequeued message = %q, want 2", got)
+	}
+}
+
+func TestNextReceivedAtIsStrictlyIncreasingPerRawDevice(t *testing.T) {
+	bridge := &Bridge{lastReceivedAtMs: make(map[string]int64)}
+	observed := time.UnixMilli(1_720_000_000_123)
+	first := bridge.nextReceivedAt("raw-device-a", observed)
+	second := bridge.nextReceivedAt("raw-device-a", observed)
+	third := bridge.nextReceivedAt("raw-device-a", observed.Add(-time.Second))
+	other := bridge.nextReceivedAt("raw-device-b", observed)
+
+	if first.UnixMilli() != observed.UnixMilli() || second.UnixMilli() != first.UnixMilli()+1 || third.UnixMilli() != second.UnixMilli()+1 {
+		t.Fatalf("same-device timestamps = %d, %d, %d; want strictly increasing milliseconds", first.UnixMilli(), second.UnixMilli(), third.UnixMilli())
+	}
+	if other.UnixMilli() != observed.UnixMilli() {
+		t.Fatalf("other device timestamp = %d, want independent %d", other.UnixMilli(), observed.UnixMilli())
+	}
+}
+
+func TestIncomingShardMappingAllowsCrossDeviceParallelism(t *testing.T) {
+	const shardCount = 8
+	firstIndex := incomingShardIndex("device-a", shardCount)
+	secondDevice := ""
+	for i := 0; i < 100; i++ {
+		candidate := string(rune('b' + i))
+		if incomingShardIndex(candidate, shardCount) != firstIndex {
+			secondDevice = candidate
+			break
+		}
+	}
+	if secondDevice == "" {
+		t.Fatal("expected hash routing to use more than one shard")
+	}
+	if incomingShardIndex("device-a", shardCount) != firstIndex {
+		t.Fatal("same device must always map to the same shard")
+	}
+}
+
+func TestNewTelemetryPayloadCarriesBridgeReceiveTimestamp(t *testing.T) {
+	receivedAt := time.UnixMilli(1_720_000_000_123)
+	payload := newTelemetryPayload("device-a", map[string]any{"soc": 88}, receivedAt)
+	if got := payload["source"]; got != "bms_bridge" {
+		t.Fatalf("source = %#v, want bms_bridge", got)
+	}
+	if got := payload["timestamp"]; got != receivedAt.UnixMilli() {
+		t.Fatalf("timestamp = %#v, want %d", got, receivedAt.UnixMilli())
+	}
+}
 
 func setupBridgeResolveTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

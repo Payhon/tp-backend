@@ -341,6 +341,7 @@ func (*AppBattery) GetBatteryCurrentTelemetryForApp(ctx context.Context, deviceI
 	current := make(map[string]model.AppBatteryCurrentTelemetryValue, len(rows))
 	var snapshot map[string]interface{}
 	var lastReportTs int64
+	var snapshotTs int64
 	for _, row := range rows {
 		if row == nil {
 			continue
@@ -355,6 +356,7 @@ func (*AppBattery) GetBatteryCurrentTelemetryForApp(ctx context.Context, deviceI
 			Ts:    ts,
 		}
 		if row.Key == appBatterySnapshotKey {
+			snapshotTs = ts
 			if raw, ok := value.(string); ok && strings.TrimSpace(raw) != "" {
 				var parsed map[string]interface{}
 				if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
@@ -363,12 +365,13 @@ func (*AppBattery) GetBatteryCurrentTelemetryForApp(ctx context.Context, deviceI
 			}
 		}
 	}
-	snapshot = mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, current)
+	snapshot = mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, current, snapshotTs)
 
 	return &model.AppBatteryCurrentTelemetryResp{
 		DeviceID:     deviceID,
 		IsOnline:     detail.IsOnline,
 		LastReportTs: lastReportTs,
+		SnapshotTs:   snapshotTs,
 		Current:      current,
 		Snapshot:     snapshot,
 	}, nil
@@ -1228,9 +1231,22 @@ func normalizeAppBatterySnapshot(snapshot map[string]interface{}) (string, error
 	return string(raw), nil
 }
 
-func mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot map[string]interface{}, current map[string]model.AppBatteryCurrentTelemetryValue) map[string]interface{} {
+func mergeCurrentTelemetryIntoAppBatterySnapshot(
+	snapshot map[string]interface{},
+	current map[string]model.AppBatteryCurrentTelemetryValue,
+	snapshotTs int64,
+) map[string]interface{} {
 	if snapshot == nil {
 		return nil
+	}
+	if snapshotTs > 0 {
+		freshCurrent := make(map[string]model.AppBatteryCurrentTelemetryValue, len(current))
+		for key, item := range current {
+			if item.Ts >= snapshotTs {
+				freshCurrent[key] = item
+			}
+		}
+		current = freshCurrent
 	}
 
 	setNumberPathFromCurrent(snapshot, current, []string{"meta", "seriesCount"}, "meta.seriesCount", "seriesCount")

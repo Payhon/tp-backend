@@ -48,6 +48,7 @@ type AppBatteryCurrentTelemetryResp struct {
 	DeviceID     string                                     `json:"device_id"`
 	IsOnline     int16                                      `json:"is_online"`
 	LastReportTs int64                                      `json:"last_report_ts"`
+	SnapshotTs   int64                                      `json:"snapshot_ts,omitempty"`
 	Current      map[string]AppBatteryCurrentTelemetryValue `json:"current"`
 	Snapshot     map[string]interface{}                     `json:"snapshot,omitempty"`
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,8 +37,54 @@ type Adapter struct {
 
 // publicPayload MQTT 消息格式
 type publicPayload struct {
-	DeviceId string          `json:"device_id"`
-	Values   json.RawMessage `json:"values"`
+	DeviceId  string          `json:"device_id"`
+	Values    json.RawMessage `json:"values"`
+	Source    string          `json:"source,omitempty"`
+	Timestamp json.RawMessage `json:"timestamp,omitempty"`
+}
+
+const (
+	telemetryTimestampSourceMetadata = "telemetry_timestamp_source"
+	bmsBridgeTimestampSource         = "bms_bridge"
+	maxBridgeFutureClockSkew         = 5 * time.Minute
+)
+
+func telemetryPayloadTimestamp(payload *publicPayload, fallback int64) int64 {
+	if payload == nil || payload.Source != bmsBridgeTimestampSource {
+		return fallback
+	}
+	resolved := resolveTelemetryTimestamp(payload.Timestamp, fallback)
+	if resolved > fallback+maxBridgeFutureClockSkew.Milliseconds() {
+		return fallback
+	}
+	return resolved
+}
+
+func resolveTelemetryTimestamp(raw json.RawMessage, fallback int64) int64 {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "null" {
+		return fallback
+	}
+	if strings.HasPrefix(text, `"`) {
+		var decoded string
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return fallback
+		}
+		text = strings.TrimSpace(decoded)
+		if parsed, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			return parsed.UnixMilli()
+		}
+	}
+
+	value, err := strconv.ParseInt(text, 10, 64)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	// 兼容秒级时间戳；桥接服务发送的是毫秒时间戳。
+	if value < 100_000_000_000 {
+		return value * 1000
+	}
+	return value
 }
 
 // NewAdapter 创建 MQTT 适配器
@@ -61,6 +108,10 @@ func (a *Adapter) GetMQTTClient() mqtt.Client {
 // HandleTelemetryMessage 处理遥测消息
 // 这个函数替换原来的 mqtt/subscribe/telemetry_message.go:TelemetryMessages()
 func (a *Adapter) HandleTelemetryMessage(payload []byte, topic string) error {
+	return a.handleTelemetryMessageAt(payload, topic, time.Now())
+}
+
+func (a *Adapter) handleTelemetryMessageAt(payload []byte, topic string, receivedAt time.Time) error {
 	// 1. 验证 payload 格式
 	telemetryPayload, err := a.verifyPayload(payload)
 	if err != nil {
@@ -98,12 +149,13 @@ func (a *Adapter) HandleTelemetryMessage(payload []byte, topic string) error {
 		Type:      msgType,
 		DeviceID:  device.ID,
 		TenantID:  device.TenantID,
-		Timestamp: time.Now().UnixMilli(),
+		Timestamp: telemetryPayloadTimestamp(telemetryPayload, receivedAt.UnixMilli()),
 		Payload:   telemetryPayload.Values,
 		Metadata: map[string]interface{}{
-			"device_id":       device.ID, // 只存储设备ID，避免对象序列化问题
-			"topic":           topic,
-			"source_protocol": "mqtt",
+			"device_id":                      device.ID, // 只存储设备ID，避免对象序列化问题
+			"topic":                          topic,
+			"source_protocol":                "mqtt",
+			telemetryTimestampSourceMetadata: telemetryPayload.Source,
 		},
 	}
 

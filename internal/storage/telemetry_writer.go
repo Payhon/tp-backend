@@ -252,6 +252,18 @@ func (w *telemetryWriter) deduplicateAndConvert(batch []*telemetryBatchItem) (
 	return historyData, currentData, duplicates
 }
 
+func telemetryCurrentOnConflict() clause.OnConflict {
+	return clause.OnConflict{
+		Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"ts", "bool_v", "number_v", "string_v", "tenant_id",
+		}),
+		Where: clause.Where{
+			Exprs: []clause.Expression{clause.Expr{SQL: "telemetry_current_datas.ts <= EXCLUDED.ts"}},
+		},
+	}
+}
+
 // batchInsert 批量插入数据库
 func (w *telemetryWriter) batchInsert(historyData []TelemetryData, currentData []TelemetryCurrentData) (written, failed int) {
 	// 使用事务同时写入历史表和最新值表
@@ -265,12 +277,7 @@ func (w *telemetryWriter) batchInsert(historyData []TelemetryData, currentData [
 		}
 
 		// 插入最新值表 - 遇到重复键则更新（DO UPDATE）
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"ts", "bool_v", "number_v", "string_v", "tenant_id",
-			}),
-		}).Create(&currentData).Error; err != nil {
+		if err := tx.Clauses(telemetryCurrentOnConflict()).Create(&currentData).Error; err != nil {
 			return fmt.Errorf("insert current data failed: %w", err)
 		}
 
@@ -288,7 +295,18 @@ func (w *telemetryWriter) batchInsert(historyData []TelemetryData, currentData [
 
 // fallbackInsert 逐条插入兜底（批量失败时使用）
 func (w *telemetryWriter) fallbackInsert(historyData []TelemetryData, currentData []TelemetryCurrentData) (written, failed int) {
+	type currentKey struct {
+		deviceID string
+		key      string
+	}
+	currentByKey := make(map[currentKey]*TelemetryCurrentData, len(currentData))
+	for i := range currentData {
+		item := &currentData[i]
+		currentByKey[currentKey{deviceID: item.DeviceID, key: item.Key}] = item
+	}
+
 	for i := range historyData {
+		current := currentByKey[currentKey{deviceID: historyData[i].DeviceID, key: historyData[i].Key}]
 		// 逐条使用事务插入
 		err := w.db.Transaction(func(tx *gorm.DB) error {
 			// 插入历史表
@@ -299,14 +317,11 @@ func (w *telemetryWriter) fallbackInsert(historyData []TelemetryData, currentDat
 				return err
 			}
 
-			// 插入最新值表
-			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
-				DoUpdates: clause.AssignmentColumns([]string{
-					"ts", "bool_v", "number_v", "string_v", "tenant_id",
-				}),
-			}).Create(&currentData[i]).Error; err != nil {
-				return err
+			// 批次内同一 key 可能有多条历史值，但 currentData 仅保留最新一条。
+			if current != nil {
+				if err := tx.Clauses(telemetryCurrentOnConflict()).Create(current).Error; err != nil {
+					return err
+				}
 			}
 
 			return nil

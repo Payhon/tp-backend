@@ -65,6 +65,10 @@ type socketBootSessionTrace struct {
 	lastAckAt        time.Time
 }
 
+func shouldIgnoreSocketUplink(retained bool) bool {
+	return retained
+}
+
 func websocketInitString(msg map[string]interface{}, key string) string {
 	val, ok := msg[key]
 	if !ok || val == nil {
@@ -721,10 +725,10 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 			for k, v := range bootInfo.logFields() {
 				traceFields[k] = v
 			}
-			if bootInfo.isBootOTACommand() && m.Retained() {
-				logrus.WithFields(traceFields).Warn("bms mqtt socket boot uplink retained message ignored")
-				return
-			}
+		}
+		if shouldIgnoreSocketUplink(m.Retained()) {
+			logrus.WithFields(traceFields).Warn("bms mqtt socket retained uplink ignored")
+			return
 		}
 		slowAck := false
 		if isBootFrame {

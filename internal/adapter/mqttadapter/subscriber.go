@@ -253,6 +253,7 @@ func (a *Adapter) SubscribeGatewayTopics(client mqtt.Client) error {
 
 // handleTelemetryMessage 处理遥测消息（MQTT 回调函数）
 func (a *Adapter) handleTelemetryMessage(client mqtt.Client, msg mqtt.Message) {
+	receivedAt := time.Now()
 	topic := msg.Topic()
 	payload := msg.Payload()
 
@@ -262,7 +263,7 @@ func (a *Adapter) handleTelemetryMessage(client mqtt.Client, msg mqtt.Message) {
 	}).Debug("【设备遥测】Received telemetry message")
 
 	// 直接调用 Adapter 的处理方法（会发送到 Bus）
-	if err := a.HandleTelemetryMessage(payload, topic); err != nil {
+	if err := a.handleTelemetryMessageAt(payload, topic, receivedAt); err != nil {
 		a.logger.WithFields(logrus.Fields{
 			"topic": topic,
 			"error": err,

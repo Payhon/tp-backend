@@ -26,12 +26,15 @@ type Bridge struct {
 
 	client mqtt.Client
 
-	queue chan incoming
-	wg    sync.WaitGroup
+	queues []chan incoming
+	wg     sync.WaitGroup
 
 	boolState  *BoolStateStore
 	traceMeta  sync.Map
 	statusMeta sync.Map
+
+	receivedAtMu     sync.Mutex
+	lastReceivedAtMs map[string]int64
 }
 
 type incoming struct {
@@ -53,12 +56,13 @@ func New(cfg Config, db *gorm.DB, log *logrus.Logger) *Bridge {
 		log = logrus.StandardLogger()
 	}
 	return &Bridge{
-		cfg:       cfg,
-		db:        db,
-		log:       log,
-		rules:     NewFileRulesProvider(cfg.Rules.Path, cfg.Rules.ReloadIntervalSec),
-		queue:     make(chan incoming, cfg.Workers.QueueSize),
-		boolState: NewBoolStateStore(time.Duration(cfg.Events.StateTTLMinutes) * time.Minute),
+		cfg:              cfg,
+		db:               db,
+		log:              log,
+		rules:            NewFileRulesProvider(cfg.Rules.Path, cfg.Rules.ReloadIntervalSec),
+		queues:           newIncomingShards(cfg.Workers.Concurrency, cfg.Workers.QueueSize),
+		boolState:        NewBoolStateStore(time.Duration(cfg.Events.StateTTLMinutes) * time.Minute),
+		lastReceivedAtMs: make(map[string]int64),
 	}
 }
 
@@ -73,6 +77,11 @@ func (b *Bridge) Start(ctx context.Context) error {
 		Username: b.cfg.MQTT.User,
 		Password: b.cfg.MQTT.Pass,
 		ClientID: b.cfg.MQTT.ClientID,
+		DeliveryOptions: &mqttadapter.MQTTDeliveryOptions{
+			CleanSession: true,
+			ResumeSubs:   false,
+			OrderMatters: true,
+		},
 		OnConnectCallback: func(client mqtt.Client) {
 			if err := b.subscribe(client); err != nil {
 				b.log.WithError(err).Error("bms bridge re-subscribe failed")
@@ -89,12 +98,15 @@ func (b *Bridge) Start(ctx context.Context) error {
 		return err
 	}
 
-	for i := 0; i < b.cfg.Workers.Concurrency; i++ {
+	if len(b.queues) == 0 {
+		b.queues = newIncomingShards(b.cfg.Workers.Concurrency, b.cfg.Workers.QueueSize)
+	}
+	for i, queue := range b.queues {
 		b.wg.Add(1)
-		go func(workerID int) {
+		go func(workerID int, incomingQueue <-chan incoming) {
 			defer b.wg.Done()
-			b.workerLoop(ctx, workerID)
-		}(i + 1)
+			b.workerLoop(ctx, workerID, incomingQueue)
+		}(i+1, queue)
 	}
 
 	b.wg.Add(1)
@@ -104,9 +116,9 @@ func (b *Bridge) Start(ctx context.Context) error {
 	}()
 
 	b.log.WithFields(logrus.Fields{
-		"subscribe_topic": b.cfg.MQTT.SubscribeTopic,
-		"workers":         b.cfg.Workers.Concurrency,
-		"queue_size":      b.cfg.Workers.QueueSize,
+		"subscribe_topic":      b.cfg.MQTT.SubscribeTopic,
+		"workers":              len(b.queues),
+		"queue_size_per_shard": b.cfg.Workers.QueueSize,
 	}).Info("bms mqtt bridge started")
 	return nil
 }
@@ -120,6 +132,74 @@ func (b *Bridge) Stop() {
 
 func (b *Bridge) Wait() {
 	b.wg.Wait()
+}
+
+func shouldIgnoreRetainedUplink(retained bool) bool {
+	return retained
+}
+
+func newIncomingShards(concurrency, queueSize int) []chan incoming {
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if queueSize < 1 {
+		queueSize = 1
+	}
+	shards := make([]chan incoming, concurrency)
+	for i := range shards {
+		// 每个分片保留原配置的缓冲深度，避免热点设备比改造前更早丢消息。
+		shards[i] = make(chan incoming, queueSize)
+	}
+	return shards
+}
+
+func incomingShardIndex(deviceID string, shardCount int) int {
+	if shardCount <= 1 {
+		return 0
+	}
+	// FNV-1a keeps routing stable without allocating a hash object per uplink.
+	hash := uint32(2166136261)
+	for i := 0; i < len(deviceID); i++ {
+		hash ^= uint32(deviceID[i])
+		hash *= 16777619
+	}
+	return int(hash % uint32(shardCount))
+}
+
+func (b *Bridge) enqueueIncoming(msg incoming) bool {
+	if len(b.queues) == 0 {
+		return false
+	}
+	// raw topic identifier is stable even while DB identifier resolution changes.
+	shardKey := strings.TrimSpace(msg.rawDeviceID)
+	if shardKey == "" {
+		shardKey = strings.TrimSpace(msg.deviceID)
+	}
+	queue := b.queues[incomingShardIndex(shardKey, len(b.queues))]
+	select {
+	case queue <- msg:
+		return true
+	default:
+		return false
+	}
+}
+
+func (b *Bridge) nextReceivedAt(deviceKey string, observed time.Time) time.Time {
+	deviceKey = strings.TrimSpace(deviceKey)
+	if deviceKey == "" {
+		return observed
+	}
+	b.receivedAtMu.Lock()
+	defer b.receivedAtMu.Unlock()
+	if b.lastReceivedAtMs == nil {
+		b.lastReceivedAtMs = make(map[string]int64)
+	}
+	nextMs := observed.UnixMilli()
+	if lastMs := b.lastReceivedAtMs[deviceKey]; nextMs <= lastMs {
+		nextMs = lastMs + 1
+	}
+	b.lastReceivedAtMs[deviceKey] = nextMs
+	return time.UnixMilli(nextMs)
 }
 
 func (b *Bridge) subscribe(client mqtt.Client) error {
@@ -140,6 +220,32 @@ func (b *Bridge) subscribe(client mqtt.Client) error {
 		}
 		payloadRaw := string(msg.payload)
 		payloadFormat := "json"
+		if shouldIgnoreRetainedUplink(m.Retained()) {
+			reason := "retained MQTT uplink ignored"
+			b.traceCommDebug(context.Background(), commDebugTraceEntry{
+				DeviceID:      deviceID,
+				EventType:     commDebugEventUplinkIgnored,
+				Direction:     commDebugDirectionInbound,
+				MQTTTopic:     stringPtr(m.Topic()),
+				QoS:           intPtr(int(msg.qos)),
+				MessageID:     &msg.messageID,
+				PayloadRaw:    &payloadRaw,
+				PayloadFormat: &payloadFormat,
+				ParsedSummary: map[string]any{"reason": "mqtt_retained"},
+				Status:        commDebugStatusSuccess,
+				ErrorMessage:  &reason,
+				OccurredAt:    msg.receivedAt,
+			})
+			b.log.WithFields(logrus.Fields{
+				"device_id":     deviceID,
+				"raw_device":    rawDeviceID,
+				"topic":         m.Topic(),
+				"qos":           m.Qos(),
+				"message_id":    msg.messageID,
+				"mqtt_retained": true,
+			}).Warn("bms bridge retained uplink ignored")
+			return
+		}
 		b.traceCommDebug(context.Background(), commDebugTraceEntry{
 			DeviceID:      deviceID,
 			EventType:     commDebugEventUplinkRaw,
@@ -152,9 +258,8 @@ func (b *Bridge) subscribe(client mqtt.Client) error {
 			Status:        commDebugStatusSuccess,
 			OccurredAt:    msg.receivedAt,
 		})
-		select {
-		case b.queue <- msg:
-		default:
+		msg.receivedAt = b.nextReceivedAt(rawDeviceID, msg.receivedAt)
+		if !b.enqueueIncoming(msg) {
 			b.log.WithFields(logrus.Fields{
 				"device_id":  deviceID,
 				"raw_device": rawDeviceID,
@@ -205,12 +310,12 @@ func (b *Bridge) resolvePlatformDeviceID(ctx context.Context, identifier string)
 	return identifier
 }
 
-func (b *Bridge) workerLoop(ctx context.Context, workerID int) {
+func (b *Bridge) workerLoop(ctx context.Context, workerID int, incomingQueue <-chan incoming) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-b.queue:
+		case msg := <-incomingQueue:
 			if err := b.handleIncoming(ctx, msg); err != nil {
 				b.log.WithFields(logrus.Fields{
 					"worker":     workerID,
@@ -576,7 +681,7 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 		}
 		b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
 
-		return b.applyRules(ctx, msg.deviceID, flat)
+		return b.applyRules(ctx, msg.deviceID, flat, msg.receivedAt)
 
 	case protocol.WriteRequestFrame:
 		b.log.WithFields(logrus.Fields{
@@ -626,7 +731,7 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 		}
 		b.debugLogJSON("bms bridge parsed payload json", msg.deviceID, flat)
 
-		return b.applyRules(ctx, msg.deviceID, flat)
+		return b.applyRules(ctx, msg.deviceID, flat, msg.receivedAt)
 
 	default:
 		// Other frames are not handled yet (passthrough rules are TODO).
@@ -634,7 +739,7 @@ func (b *Bridge) handleIncoming(ctx context.Context, msg incoming) error {
 	}
 }
 
-func (b *Bridge) applyRules(ctx context.Context, deviceID string, flat map[string]any) error {
+func (b *Bridge) applyRules(ctx context.Context, deviceID string, flat map[string]any, receivedAt time.Time) error {
 	ruleSet, err := b.rules.Get(deviceID)
 	if err != nil {
 		return err
@@ -642,7 +747,7 @@ func (b *Bridge) applyRules(ctx context.Context, deviceID string, flat map[strin
 
 	if values := selectValues(flat, ruleSet.Telemetry); values != nil {
 		b.log.WithFields(logrus.Fields{"device_id": deviceID, "keys": len(values)}).Debug("publishing telemetry")
-		if err := b.publishTelemetry(deviceID, values); err != nil {
+		if err := b.publishTelemetry(deviceID, values, receivedAt); err != nil {
 			return err
 		}
 	}
@@ -685,11 +790,17 @@ func merge(dst, src map[string]any) map[string]any {
 	return dst
 }
 
-func (b *Bridge) publishTelemetry(deviceID string, values map[string]any) error {
-	payload := map[string]any{
+func newTelemetryPayload(deviceID string, values map[string]any, receivedAt time.Time) map[string]any {
+	return map[string]any{
 		"device_id": deviceID,
+		"source":    "bms_bridge",
+		"timestamp": receivedAt.UnixMilli(),
 		"values":    values,
 	}
+}
+
+func (b *Bridge) publishTelemetry(deviceID string, values map[string]any, receivedAt time.Time) error {
+	payload := newTelemetryPayload(deviceID, values, receivedAt)
 	return b.publishJSON(deviceID, commDebugEventDownlinkPub, b.cfg.MQTT.TelemetryTopic, b.cfg.MQTT.TelemetryQoS, nil, payload)
 }
 
