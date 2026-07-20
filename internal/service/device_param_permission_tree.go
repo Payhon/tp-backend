@@ -26,6 +26,8 @@ func buildDeviceParamPermissionTree() []model.DeviceParamTreeNode {
 				leafNode("单体过压告警解除延时 / 单体过压保护解除延时", "408", "0x0408", "CELL_OV_ALARM_RELEASE_DELAY_S", "CELL_OV_PROTECT_RELEASE_DELAY_S"),
 				leafNode("常温单体过放告警电压", "409", "0x0409", "NORMAL_CELL_UV_ALARM_V"),
 				leafNode("常温单体过放保护电压", "40a", "0x040A", "NORMAL_CELL_UV_PROTECT_V"),
+				leafNode("低温单体过放告警电压", "40b", "0x040B", "LOW_TEMP_CELL_UV_ALARM_V"),
+				leafNode("低温单体过放保护电压", "40c", "0x040C", "LOW_TEMP_CELL_UV_PROTECT_V"),
 				leafNode("单体过放告警延时 / 单体过放保护延时", "40d", "0x040D", "CELL_UV_ALARM_DELAY_S", "CELL_UV_PROTECT_DELAY_S"),
 				leafNode("单体过放告警解除电压", "40e", "0x040E", "CELL_UV_ALARM_RELEASE_V"),
 				leafNode("单体过放保护解除电压", "40f", "0x040F", "CELL_UV_PROTECT_RELEASE_V"),

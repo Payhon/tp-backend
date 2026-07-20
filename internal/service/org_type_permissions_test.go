@@ -80,6 +80,18 @@ func TestBuildDeviceParamPermissionTreeUsesCanonicalKeys(t *testing.T) {
 
 	walk(tree)
 
+	expectedParamLabels := map[string]string{
+		"40b": "低温单体过放告警电压",
+		"40c": "低温单体过放保护电压",
+	}
+	for key, wantLabel := range expectedParamLabels {
+		if label, ok := seen[key]; !ok {
+			t.Fatalf("missing device param permission key %s", key)
+		} else if label != wantLabel {
+			t.Fatalf("unexpected device param label for %s: got=%q want=%q", key, label, wantLabel)
+		}
+	}
+
 	if label, ok := seen["10d"]; !ok {
 		t.Fatalf("missing readonly SOH permission key 10d")
 	} else if label != "只读 SOH" {
