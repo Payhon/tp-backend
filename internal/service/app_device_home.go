@@ -45,6 +45,17 @@ type appDeviceViewContext struct {
 	isFactory bool
 }
 
+func appDeviceOrderClause(viewMode string) string {
+	switch viewMode {
+	case model.AppDeviceViewModeOrgAdded:
+		return "d.last_connected_at DESC NULLS LAST, CASE WHEN d.last_connected_at IS NULL THEN ar.added_at END DESC, d.id ASC"
+	case model.AppDeviceViewModeEndUserBind:
+		return "d.last_connected_at DESC NULLS LAST, CASE WHEN d.last_connected_at IS NULL THEN lb.binding_time END DESC, d.id ASC"
+	default:
+		return "d.last_connected_at DESC NULLS LAST, CASE WHEN d.last_connected_at IS NULL THEN dub.binding_time END DESC, d.id ASC"
+	}
+}
+
 func isAdminClaims(claims *utils.UserClaims) bool {
 	if claims == nil {
 		return false
@@ -316,7 +327,7 @@ JOIN devices AS d ON d.id = dub.device_id
 LEFT JOIN users AS u ON u.id = dub.user_id
 LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id
 WHERE ` + baseWhere + `
-ORDER BY dub.binding_time DESC
+ORDER BY ` + appDeviceOrderClause(model.AppDeviceViewModeSelfBound) + `
 LIMIT ? OFFSET ?`
 
 	listArgs := append(args, req.PageSize, (req.Page-1)*req.PageSize)
@@ -390,7 +401,7 @@ JOIN devices AS d ON d.id = ar.device_id
 LEFT JOIN users AS u ON u.id = ar.user_id
 LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id
 WHERE ` + baseWhere + `
-ORDER BY ar.added_at DESC
+ORDER BY ` + appDeviceOrderClause(model.AppDeviceViewModeOrgAdded) + `
 LIMIT ? OFFSET ?`
 
 	listArgs := append(args, req.PageSize, (req.Page-1)*req.PageSize)
@@ -460,7 +471,7 @@ JOIN devices AS d ON d.id = lb.device_id
 JOIN users AS u ON u.id = lb.user_id
 LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id
 WHERE ` + baseWhere + `
-ORDER BY lb.binding_time DESC
+ORDER BY ` + appDeviceOrderClause(model.AppDeviceViewModeEndUserBind) + `
 LIMIT ? OFFSET ?`
 
 	listArgs := append(args, req.PageSize, (req.Page-1)*req.PageSize)

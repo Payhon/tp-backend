@@ -46,8 +46,9 @@ type Device struct {
 	BatchNumber     *string    `gorm:"column:batch_number;comment:批次编号\n" json:"batch_number"`
 	ActivateAt      *time.Time `gorm:"column:activate_at;comment:激活日期" json:"activate_at"`                // 激活日期
 	IsOnline        int16      `gorm:"column:is_online;not null;comment:是否在线 1-在线 0-离线" json:"is_online"` // 是否在线 1-在线 0-离线
-	AccessWay       *string    `gorm:"column:access_way;comment:接入方式A-通过协议 B通过服务" json:"access_way"`      // 接入方式A-通过协议 B通过服务
-	Description     *string    `gorm:"column:description;comment:描述" json:"description"`                  // 描述
+	LastConnectedAt *time.Time `gorm:"column:last_connected_at;comment:最近一次成功通讯时间（服务端时间）" json:"last_connected_at"`
+	AccessWay       *string    `gorm:"column:access_way;comment:接入方式A-通过协议 B通过服务" json:"access_way"` // 接入方式A-通过协议 B通过服务
+	Description     *string    `gorm:"column:description;comment:描述" json:"description"`             // 描述
 	ServiceAccessID *string    `gorm:"column:service_access_id" json:"service_access_id"`
 	LastOfflineTime *time.Time `gorm:"column:last_offline_time;comment:上次离线时间" json:"last_offline_time"` // 上次离线时间
 }

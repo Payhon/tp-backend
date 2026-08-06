@@ -18,6 +18,7 @@ func (*AppBattery) InitAppBattery(Router *gin.RouterGroup) {
 		r.POST("ota/check", api.Controllers.AppBatteryApi.CheckBatteryOta)
 		r.GET("ota/meter-packages", api.Controllers.AppBatteryApi.GetMeterOtaPackages)
 		r.POST("report", api.Controllers.AppBatteryApi.ReportBatteryData)
+		r.POST("interactive-snapshot", api.Controllers.AppBatteryApi.ReportBatteryInteractiveSnapshot)
 		r.POST("connection-status", api.Controllers.AppBatteryApi.ReportBatteryConnectionStatus)
 	}
 }

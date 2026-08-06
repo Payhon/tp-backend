@@ -52,6 +52,7 @@ func newDevice(db *gorm.DB, opts ...gen.DOOption) device {
 	_device.BatchNumber = field.NewString(tableName, "batch_number")
 	_device.ActivateAt = field.NewTime(tableName, "activate_at")
 	_device.IsOnline = field.NewInt16(tableName, "is_online")
+	_device.LastConnectedAt = field.NewTime(tableName, "last_connected_at")
 	_device.AccessWay = field.NewString(tableName, "access_way")
 	_device.Description = field.NewString(tableName, "description")
 	_device.ServiceAccessID = field.NewString(tableName, "service_access_id")
@@ -100,6 +101,7 @@ type device struct {
 	BatchNumber     field.String
 	ActivateAt      field.Time   // 激活日期
 	IsOnline        field.Int16  // 是否在线 1-在线 0-离线
+	LastConnectedAt field.Time   // 最近一次成功通讯时间（服务端时间）
 	AccessWay       field.String // 接入方式A-通过协议 B通过服务
 	Description     field.String // 描述
 	ServiceAccessID field.String
@@ -145,6 +147,7 @@ func (d *device) updateTableName(table string) *device {
 	d.BatchNumber = field.NewString(table, "batch_number")
 	d.ActivateAt = field.NewTime(table, "activate_at")
 	d.IsOnline = field.NewInt16(table, "is_online")
+	d.LastConnectedAt = field.NewTime(table, "last_connected_at")
 	d.AccessWay = field.NewString(table, "access_way")
 	d.Description = field.NewString(table, "description")
 	d.ServiceAccessID = field.NewString(table, "service_access_id")
@@ -165,7 +168,7 @@ func (d *device) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (d *device) fillFieldMap() {
-	d.fieldMap = make(map[string]field.Expr, 29)
+	d.fieldMap = make(map[string]field.Expr, 30)
 	d.fieldMap["id"] = d.ID
 	d.fieldMap["name"] = d.Name
 	d.fieldMap["voucher"] = d.Voucher
@@ -191,6 +194,7 @@ func (d *device) fillFieldMap() {
 	d.fieldMap["batch_number"] = d.BatchNumber
 	d.fieldMap["activate_at"] = d.ActivateAt
 	d.fieldMap["is_online"] = d.IsOnline
+	d.fieldMap["last_connected_at"] = d.LastConnectedAt
 	d.fieldMap["access_way"] = d.AccessWay
 	d.fieldMap["description"] = d.Description
 	d.fieldMap["service_access_id"] = d.ServiceAccessID

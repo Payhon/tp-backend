@@ -66,10 +66,11 @@ type appBatteryOtaCheckRow struct {
 }
 
 const (
-	appBatterySnapshotKey      = "bms.snapshot"
-	appBatterySnapshotMaxBytes = 64 * 1024
-	appBatteryStatusOnline     = int16(1)
-	appBatteryStatusOffline    = int16(0)
+	appBatterySnapshotKey                = "bms.snapshot"
+	appBatteryMqttInteractiveSnapshotKey = "bms.mqtt_interactive_snapshot"
+	appBatterySnapshotMaxBytes           = 64 * 1024
+	appBatteryStatusOnline               = int16(1)
+	appBatteryStatusOffline              = int16(0)
 )
 
 var appBatteryCoreKeyWhitelist = map[string]struct{}{
@@ -144,6 +145,7 @@ var appBatteryCurrentTelemetryKeys = []string{
 	"cell.voltagesMv",
 	"cell.balancing",
 	appBatterySnapshotKey,
+	appBatteryMqttInteractiveSnapshotKey,
 }
 
 func canAccessOrgDevice(ctx context.Context, tenantID, userID, deviceID string) (bool, error) {
@@ -338,10 +340,20 @@ func (*AppBattery) GetBatteryCurrentTelemetryForApp(ctx context.Context, deviceI
 		})
 	}
 
+	return buildAppBatteryCurrentTelemetryResp(deviceID, detail.IsOnline, rows), nil
+}
+
+func buildAppBatteryCurrentTelemetryResp(
+	deviceID string,
+	isOnline int16,
+	rows []*model.TelemetryCurrentData,
+) *model.AppBatteryCurrentTelemetryResp {
 	current := make(map[string]model.AppBatteryCurrentTelemetryValue, len(rows))
 	var snapshot map[string]interface{}
+	var interactiveSnapshot map[string]interface{}
 	var lastReportTs int64
 	var snapshotTs int64
+	var interactiveSnapshotTs int64
 	for _, row := range rows {
 		if row == nil {
 			continue
@@ -351,30 +363,44 @@ func (*AppBattery) GetBatteryCurrentTelemetryForApp(ctx context.Context, deviceI
 		if ts > lastReportTs {
 			lastReportTs = ts
 		}
+		if row.Key == appBatteryMqttInteractiveSnapshotKey {
+			interactiveSnapshotTs = ts
+			interactiveSnapshot = parseAppBatterySnapshotValue(value)
+			continue
+		}
 		current[row.Key] = model.AppBatteryCurrentTelemetryValue{
 			Value: value,
 			Ts:    ts,
 		}
 		if row.Key == appBatterySnapshotKey {
 			snapshotTs = ts
-			if raw, ok := value.(string); ok && strings.TrimSpace(raw) != "" {
-				var parsed map[string]interface{}
-				if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
-					snapshot = parsed
-				}
-			}
+			snapshot = parseAppBatterySnapshotValue(value)
 		}
 	}
 	snapshot = mergeCurrentTelemetryIntoAppBatterySnapshot(snapshot, current, snapshotTs)
 
 	return &model.AppBatteryCurrentTelemetryResp{
-		DeviceID:     deviceID,
-		IsOnline:     detail.IsOnline,
-		LastReportTs: lastReportTs,
-		SnapshotTs:   snapshotTs,
-		Current:      current,
-		Snapshot:     snapshot,
-	}, nil
+		DeviceID:              deviceID,
+		IsOnline:              isOnline,
+		LastReportTs:          lastReportTs,
+		SnapshotTs:            snapshotTs,
+		Current:               current,
+		Snapshot:              snapshot,
+		InteractiveSnapshotTs: interactiveSnapshotTs,
+		InteractiveSnapshot:   interactiveSnapshot,
+	}
+}
+
+func parseAppBatterySnapshotValue(value interface{}) map[string]interface{} {
+	raw, ok := value.(string)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil
+	}
+	return parsed
 }
 
 // GetBatteryMqttCredentialForApp 获取APP端直连MQTT所需凭证（要求设备已绑定）
@@ -439,9 +465,10 @@ func (*AppBattery) GetBatteryMqttCredentialForApp(ctx context.Context, deviceID 
 // CheckBatteryOtaForApp APP端OTA升级检查（按租户与升级约束匹配升级包）
 func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatteryOtaCheckReq, claims *utils.UserClaims) (*model.AppBatteryOtaCheckResp, error) {
 	deviceID := strings.TrimSpace(req.DeviceID)
-	if claims == nil || claims.TenantID == "" {
+	if claims == nil || strings.TrimSpace(claims.TenantID) == "" {
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
 	}
+	tenantID := strings.TrimSpace(claims.TenantID)
 
 	var row appBatteryOtaCheckRow
 
@@ -459,13 +486,51 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 			`).
 			Joins(`LEFT JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
 			Joins(`LEFT JOIN `+model.TableNameBatteryModel+` AS bm ON bm.id = dbat.battery_model_id`).
-			Where("d.id = ? AND d.tenant_id = ?", deviceID, claims.TenantID).
+			Where("d.id = ? AND d.tenant_id = ?", deviceID, tenantID).
 			Scan(&row).Error
 		if err != nil {
 			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 		}
 		if row.DeviceID == "" {
 			return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not found")
+		}
+	} else if itemUUID := firstTrimmed(req.ItemUUID); itemUUID != "" {
+		// 仪表透传会话没有 device_id，优先通过现场读取到的 BMS UUID
+		// 在当前租户内补齐型号与批次；未登记的 UUID 仍保留给升级包直接约束匹配。
+		err := global.DB.WithContext(ctx).
+			Table("devices AS d").
+			Select(`
+				d.id AS device_id,
+				d.current_version AS current_version,
+				d.tenant_id AS tenant_id,
+				dbat.battery_model_id AS battery_model_id,
+				bm.name AS battery_model_name,
+				dbat.batch_number AS batch_number,
+				dbat.item_uuid AS item_uuid
+			`).
+			Joins(`JOIN device_batteries AS dbat ON dbat.device_id = d.id`).
+			Joins(`LEFT JOIN `+model.TableNameBatteryModel+` AS bm ON bm.id = dbat.battery_model_id`).
+			Where("d.tenant_id = ? AND UPPER(dbat.item_uuid) = UPPER(?)", tenantID, itemUUID).
+			Order("d.id ASC").
+			Limit(1).
+			Scan(&row).Error
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+	}
+
+	batteryModelID := firstTrimmed(req.BatteryModelID, row.BatteryModelID)
+	batteryModelIDs := make([]string, 0)
+	if batteryModelID == "" {
+		modelName := firstTrimmed(req.Model, row.BatteryModelName)
+		if modelName != "" {
+			if err := global.DB.WithContext(ctx).
+				Table(model.TableNameBatteryModel).
+				Where("tenant_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))", tenantID, modelName).
+				Order("id ASC").
+				Pluck("id", &batteryModelIDs).Error; err != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+			}
 		}
 	}
 
@@ -479,7 +544,7 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 	pkgQuery := global.DB.WithContext(ctx).Table(model.TableNameOtaUpgradePackage).
 		Where("device_kind = ?", model.OTADeviceKindBMS)
 	// 允许租户级或公共包（tenant_id 为 NULL）
-	pkgQuery = pkgQuery.Where("tenant_id = ? OR tenant_id IS NULL", claims.TenantID)
+	pkgQuery = pkgQuery.Where("tenant_id = ? OR tenant_id IS NULL", tenantID)
 	if err := pkgQuery.Order("created_at DESC").Find(&packages).Error; err != nil {
 		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 	}
@@ -497,9 +562,10 @@ func (*AppBattery) CheckBatteryOtaForApp(ctx context.Context, req model.AppBatte
 	resp.CurrentVersion = stringPtrOrNil(reportedVer)
 
 	criteria := appBatteryOtaMatchCriteria{
-		BatteryModelID: firstTrimmed(req.BatteryModelID, row.BatteryModelID),
-		BatchNumber:    firstTrimmed(req.BatchNumber, row.BatchNumber),
-		ItemUUID:       firstTrimmed(req.ItemUUID, row.ItemUUID),
+		BatteryModelID:  batteryModelID,
+		BatteryModelIDs: batteryModelIDs,
+		BatchNumber:     firstTrimmed(req.BatchNumber, row.BatchNumber),
+		ItemUUID:        firstTrimmed(req.ItemUUID, row.ItemUUID),
 	}
 	selected := selectAppBatteryOtaPackage(packages, reportedVer, criteria)
 	if selected == nil {
@@ -810,6 +876,130 @@ func (*AppBattery) ReportBatteryDataForApp(ctx context.Context, req model.AppBat
 	}, nil
 }
 
+// ReportBatteryInteractiveSnapshotForApp 保存 4G MQTT 主动读取成功后的完整原子快照。
+func (*AppBattery) ReportBatteryInteractiveSnapshotForApp(
+	ctx context.Context,
+	req model.AppBatteryInteractiveSnapshotReq,
+	claims *utils.UserClaims,
+) (*model.AppBatteryInteractiveSnapshotResp, error) {
+	if claims == nil || strings.TrimSpace(claims.ID) == "" || strings.TrimSpace(claims.TenantID) == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
+	}
+
+	deviceID := strings.TrimSpace(req.DeviceID)
+	sessionID := strings.TrimSpace(req.SessionID)
+	if deviceID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device_id is required")
+	}
+	if sessionID == "" {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "session_id is required")
+	}
+	if len(req.Snapshot) == 0 {
+		return nil, errcode.NewWithMessage(errcode.CodeParamError, "snapshot is required")
+	}
+
+	detail, err := new(AppBattery).GetBatteryDetailForApp(ctx, deviceID, claims)
+	if err != nil {
+		return nil, err
+	}
+	if !isFourGBatteryDetail(detail) {
+		return nil, errcode.NewWithMessage(errcode.CodeOpDenied, "interactive snapshot requires a 4G battery")
+	}
+
+	owner, found, err := loadMqttSocketOwnerState(ctx, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	if !found || !mqttInteractiveSnapshotOwnerMatches(owner, deviceID, sessionID, claims, now.UnixMilli()) {
+		return nil, errcode.NewWithMessage(errcode.CodeNoPermission, "mqtt socket owner session mismatch")
+	}
+
+	snapshotRaw, err := normalizeAppBatterySnapshot(req.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if err := saveAppBatteryMqttInteractiveSnapshot(ctx, deviceID, claims.TenantID, snapshotRaw, now); err != nil {
+		return nil, err
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"device_id":   deviceID,
+		"tenant_id":   strings.TrimSpace(claims.TenantID),
+		"user_id":     strings.TrimSpace(claims.ID),
+		"session_id":  sessionID,
+		"platform":    strings.TrimSpace(req.Platform),
+		"snapshot_ts": now.UnixMilli(),
+	}).Debug("app battery mqtt interactive snapshot accepted")
+
+	return &model.AppBatteryInteractiveSnapshotResp{
+		DeviceID: deviceID,
+		Ts:       now.UnixMilli(),
+		Accepted: true,
+	}, nil
+}
+
+func mqttInteractiveSnapshotOwnerMatches(
+	owner *AppBatteryMqttSocketOwnerState,
+	deviceID string,
+	sessionID string,
+	claims *utils.UserClaims,
+	nowMs int64,
+) bool {
+	if owner == nil || claims == nil {
+		return false
+	}
+	return strings.TrimSpace(owner.DeviceID) == strings.TrimSpace(deviceID) &&
+		strings.TrimSpace(owner.SessionID) == strings.TrimSpace(sessionID) &&
+		strings.TrimSpace(owner.UserID) == strings.TrimSpace(claims.ID) &&
+		strings.TrimSpace(owner.TenantID) == strings.TrimSpace(claims.TenantID) &&
+		owner.ExpiresAtTs >= nowMs
+}
+
+func saveAppBatteryMqttInteractiveSnapshot(
+	ctx context.Context,
+	deviceID string,
+	tenantID string,
+	snapshotRaw string,
+	receivedAt time.Time,
+) error {
+	if global.DB == nil {
+		return errcode.NewWithMessage(errcode.CodeSystemError, "database unavailable")
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	tenantID = strings.TrimSpace(tenantID)
+	if deviceID == "" || tenantID == "" || strings.TrimSpace(snapshotRaw) == "" {
+		return errcode.NewWithMessage(errcode.CodeParamError, "interactive snapshot data is incomplete")
+	}
+	if receivedAt.IsZero() {
+		receivedAt = time.Now().UTC()
+	}
+
+	row := model.TelemetryCurrentData{
+		DeviceID: deviceID,
+		Key:      appBatteryMqttInteractiveSnapshotKey,
+		T:        receivedAt.UTC(),
+		StringV:  &snapshotRaw,
+		TenantID: &tenantID,
+	}
+	if err := global.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "device_id"}, {Name: "key"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"ts", "bool_v", "number_v", "string_v", "tenant_id",
+		}),
+		Where: clause.Where{
+			Exprs: []clause.Expression{clause.Expr{SQL: "telemetry_current_datas.ts <= EXCLUDED.ts"}},
+		},
+	}).Create(&row).Error; err != nil {
+		return errcode.WithData(errcode.CodeDBError, map[string]interface{}{
+			"operation": "save_app_battery_mqtt_interactive_snapshot",
+			"device_id": deviceID,
+			"error":     err.Error(),
+		})
+	}
+	return nil
+}
+
 // ReportBatteryConnectionStatusForApp APP端蓝牙连接状态同步
 func (*AppBattery) ReportBatteryConnectionStatusForApp(ctx context.Context, req model.AppBatteryConnectionStatusReq, claims *utils.UserClaims) (*model.AppBatteryConnectionStatusResp, error) {
 	if claims == nil || claims.ID == "" || claims.TenantID == "" {
@@ -878,6 +1068,9 @@ func (*AppBattery) ReportBatteryConnectionStatusForApp(ctx context.Context, req 
 		var err error
 		changed, err = syncDeviceStatusFromApp(ctx, deviceID, claims.TenantID, targetStatus, source)
 		if err != nil {
+			return nil, err
+		}
+		if err := touchDeviceLastConnectedAt(ctx, deviceID); err != nil {
 			return nil, err
 		}
 	} else {
@@ -1013,6 +1206,9 @@ func (*AppBattery) MarkFourGBatteryOnlineByInteraction(ctx context.Context, deta
 	changed, err := dal.UpdateDeviceStatus(deviceID, appBatteryStatusOnline)
 	if err != nil {
 		return false, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if err := touchDeviceLastConnectedAt(ctx, deviceID); err != nil {
+		return false, err
 	}
 	refreshFourGInteractionOnlineKey(ctx, deviceID)
 	if changed {
@@ -1594,9 +1790,10 @@ func buildOtaDownloadURL(packageURL *string) *string {
 }
 
 type appBatteryOtaMatchCriteria struct {
-	BatteryModelID string
-	BatchNumber    string
-	ItemUUID       string
+	BatteryModelID  string
+	BatteryModelIDs []string
+	BatchNumber     string
+	ItemUUID        string
 }
 
 func firstTrimmed(values ...*string) string {
@@ -1625,6 +1822,21 @@ func matchOptionalConstraint(pkgValue, actualValue string) bool {
 	return actualValue != "" && strings.EqualFold(pkgValue, actualValue)
 }
 
+func matchOptionalBatteryModelConstraint(pkgValue string, criteria appBatteryOtaMatchCriteria) bool {
+	if pkgValue == "" {
+		return true
+	}
+	if criteria.BatteryModelID != "" && strings.EqualFold(pkgValue, criteria.BatteryModelID) {
+		return true
+	}
+	for _, candidate := range criteria.BatteryModelIDs {
+		if strings.EqualFold(pkgValue, strings.TrimSpace(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
 func appBatteryOtaPackageMatchScore(pkg model.OtaUpgradePackage, criteria appBatteryOtaMatchCriteria) (int, bool) {
 	itemUUID := packageConstraintValue(pkg.ItemUUID)
 	batteryModelID := packageConstraintValue(pkg.BatteryModelID)
@@ -1641,7 +1853,7 @@ func appBatteryOtaPackageMatchScore(pkg model.OtaUpgradePackage, criteria appBat
 	}
 
 	if !matchOptionalConstraint(itemUUID, criteria.ItemUUID) ||
-		!matchOptionalConstraint(batteryModelID, criteria.BatteryModelID) ||
+		!matchOptionalBatteryModelConstraint(batteryModelID, criteria) ||
 		!matchOptionalConstraint(batchNumber, criteria.BatchNumber) {
 		return 0, false
 	}

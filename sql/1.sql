@@ -1524,6 +1524,7 @@ CREATE TABLE public.devices (
 	batch_number varchar(500) NULL, -- 批次编号¶
 	activate_at timestamptz(6) NULL, -- 激活日期
 	is_online int2 NOT NULL DEFAULT 0, -- 是否在线 1-在线 0-离线
+	last_connected_at timestamptz(6) NULL, -- 最近一次成功通讯时间（服务端时间）
 	access_way varchar(10) NULL, -- 接入方式A-通过协议 B通过服务
 	description varchar(500) NULL, -- 描述
 	CONSTRAINT device_pkey PRIMARY KEY (id),
@@ -1560,6 +1561,7 @@ COMMENT ON COLUMN public.devices.batch_number IS '批次编号
 ';
 COMMENT ON COLUMN public.devices.activate_at IS '激活日期';
 COMMENT ON COLUMN public.devices.is_online IS '是否在线 1-在线 0-离线';
+COMMENT ON COLUMN public.devices.last_connected_at IS '最近一次成功通讯时间（服务端时间）';
 COMMENT ON COLUMN public.devices.access_way IS '接入方式A-通过协议 B通过服务';
 COMMENT ON COLUMN public.devices.description IS '描述';
 
@@ -2196,6 +2198,66 @@ WITH target_rows AS (
 					SELECT jsonb_array_elements_text(tr.ui_codes) AS code
 					UNION ALL SELECT 'bms_battery_list_action_edit_bms_info'
 					UNION ALL SELECT 'bms_battery_list_action_delete'
+				) AS raw_codes
+				WHERE btrim(code) <> ''
+			) AS dedup_codes
+		) AS merged_codes
+	FROM target_rows tr
+)
+UPDATE public.org_type_permissions otp
+SET
+	ui_codes = mr.merged_codes,
+	updated_at = NOW()
+FROM merged_rows mr
+WHERE otp.tenant_id = mr.tenant_id
+  AND otp.org_type = mr.org_type;
+
+-- FEAT-0069: 电池列表批量调拨权限
+DO $$
+DECLARE
+	battery_list_id varchar(36);
+BEGIN
+	SELECT id INTO battery_list_id
+	FROM public.sys_ui_elements
+	WHERE element_code = 'bms_battery_list'
+	LIMIT 1;
+
+	IF battery_list_id IS NULL THEN
+		RETURN;
+	END IF;
+
+	IF NOT EXISTS (SELECT 1 FROM public.sys_ui_elements WHERE element_code = 'bms_battery_list_batch_transfer') THEN
+		INSERT INTO public.sys_ui_elements (
+			id, parent_id, element_code, element_type, orders,
+			param1, param2, param3, authority, description, created_at, remark, multilingual, route_path
+		) VALUES (
+			'c63d2399-b4fb-4013-85d2-000cc6bba137', battery_list_id, 'bms_battery_list_batch_transfer', 4, 13029,
+			'bms_battery_list_batch_transfer', '', '1', '["TENANT_ADMIN","SYS_ADMIN"]'::json,
+			'批量调拨', NOW(), '页面元素权限', 'perm.bms_battery_list_batch_transfer', ''
+		);
+	END IF;
+
+	UPDATE public.sys_ui_elements
+	SET description = '批量调拨', multilingual = 'perm.bms_battery_list_batch_transfer'
+	WHERE element_code = 'bms_battery_list_batch_transfer';
+END $$;
+
+WITH target_rows AS (
+	SELECT tenant_id, org_type, COALESCE(ui_codes, '[]'::jsonb) AS ui_codes
+	FROM public.org_type_permissions
+	WHERE org_type IN ('BMS_FACTORY', 'PACK_FACTORY', 'DEALER')
+	  AND COALESCE(ui_codes, '[]'::jsonb) ? 'bms_battery_list'
+), merged_rows AS (
+	SELECT
+		tr.tenant_id,
+		tr.org_type,
+		(
+			SELECT COALESCE(jsonb_agg(code ORDER BY code), '[]'::jsonb)
+			FROM (
+				SELECT DISTINCT code
+				FROM (
+					SELECT jsonb_array_elements_text(tr.ui_codes) AS code
+					UNION ALL SELECT 'bms_battery_list_batch_transfer'
 				) AS raw_codes
 				WHERE btrim(code) <> ''
 			) AS dedup_codes

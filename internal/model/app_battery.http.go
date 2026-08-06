@@ -45,12 +45,29 @@ type AppBatteryCurrentTelemetryValue struct {
 }
 
 type AppBatteryCurrentTelemetryResp struct {
-	DeviceID     string                                     `json:"device_id"`
-	IsOnline     int16                                      `json:"is_online"`
-	LastReportTs int64                                      `json:"last_report_ts"`
-	SnapshotTs   int64                                      `json:"snapshot_ts,omitempty"`
-	Current      map[string]AppBatteryCurrentTelemetryValue `json:"current"`
-	Snapshot     map[string]interface{}                     `json:"snapshot,omitempty"`
+	DeviceID              string                                     `json:"device_id"`
+	IsOnline              int16                                      `json:"is_online"`
+	LastReportTs          int64                                      `json:"last_report_ts"`
+	SnapshotTs            int64                                      `json:"snapshot_ts,omitempty"`
+	Current               map[string]AppBatteryCurrentTelemetryValue `json:"current"`
+	Snapshot              map[string]interface{}                     `json:"snapshot,omitempty"`
+	InteractiveSnapshotTs int64                                      `json:"interactive_snapshot_ts,omitempty"`
+	InteractiveSnapshot   map[string]interface{}                     `json:"interactive_snapshot,omitempty"`
+}
+
+// AppBatteryInteractiveSnapshotReq APP 端 MQTT 主动读取快照上报请求。
+type AppBatteryInteractiveSnapshotReq struct {
+	DeviceID  string                 `json:"device_id" binding:"required"`
+	SessionID string                 `json:"session_id" binding:"required"`
+	Platform  string                 `json:"platform,omitempty"`
+	Snapshot  map[string]interface{} `json:"snapshot" binding:"required"`
+}
+
+// AppBatteryInteractiveSnapshotResp APP 端 MQTT 主动读取快照上报响应。
+type AppBatteryInteractiveSnapshotResp struct {
+	DeviceID string `json:"device_id"`
+	Ts       int64  `json:"ts"`
+	Accepted bool   `json:"accepted"`
 }
 
 // AppBatteryOtaCheckResp APP端OTA检查结果

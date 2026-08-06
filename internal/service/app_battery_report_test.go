@@ -1,10 +1,19 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"project/internal/model"
+	"project/internal/query"
+	global "project/pkg/global"
+	"project/pkg/utils"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestNormalizeAppBatteryCore_OK(t *testing.T) {
@@ -169,5 +178,156 @@ func TestIsFourGBatteryDetail(t *testing.T) {
 				t.Fatalf("isFourGBatteryDetail() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMqttInteractiveSnapshotOwnerMatches(t *testing.T) {
+	nowMs := time.Now().UnixMilli()
+	claims := &utils.UserClaims{ID: "user-1", TenantID: "tenant-1"}
+	valid := &AppBatteryMqttSocketOwnerState{
+		DeviceID:    "device-1",
+		SessionID:   "session-1",
+		UserID:      "user-1",
+		TenantID:    "tenant-1",
+		ExpiresAtTs: nowMs + 1_000,
+	}
+	if !mqttInteractiveSnapshotOwnerMatches(valid, "device-1", "session-1", claims, nowMs) {
+		t.Fatal("matching live owner should be accepted")
+	}
+
+	cases := []struct {
+		name      string
+		owner     *AppBatteryMqttSocketOwnerState
+		deviceID  string
+		sessionID string
+		claims    *utils.UserClaims
+		nowMs     int64
+	}{
+		{name: "missing owner", owner: nil, deviceID: "device-1", sessionID: "session-1", claims: claims, nowMs: nowMs},
+		{name: "wrong device", owner: valid, deviceID: "device-2", sessionID: "session-1", claims: claims, nowMs: nowMs},
+		{name: "wrong session", owner: valid, deviceID: "device-1", sessionID: "session-2", claims: claims, nowMs: nowMs},
+		{name: "wrong user", owner: valid, deviceID: "device-1", sessionID: "session-1", claims: &utils.UserClaims{ID: "user-2", TenantID: "tenant-1"}, nowMs: nowMs},
+		{name: "wrong tenant", owner: valid, deviceID: "device-1", sessionID: "session-1", claims: &utils.UserClaims{ID: "user-1", TenantID: "tenant-2"}, nowMs: nowMs},
+		{name: "expired", owner: valid, deviceID: "device-1", sessionID: "session-1", claims: claims, nowMs: nowMs + 2_000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if mqttInteractiveSnapshotOwnerMatches(tc.owner, tc.deviceID, tc.sessionID, tc.claims, tc.nowMs) {
+				t.Fatal("mismatched or expired owner must be rejected")
+			}
+		})
+	}
+}
+
+func TestBuildAppBatteryCurrentTelemetryRespKeepsInteractiveSnapshotAtomic(t *testing.T) {
+	interactiveRaw := `{"energy":{"socPct":91},"electrical":{"currentA":4.5}}`
+	reportedRaw := `{"energy":{"socPct":42},"electrical":{"currentA":1.5}}`
+	currentSoc := float64(10)
+	rows := []*model.TelemetryCurrentData{
+		{
+			DeviceID: "device-1",
+			Key:      appBatteryMqttInteractiveSnapshotKey,
+			T:        time.UnixMilli(2_000),
+			StringV:  &interactiveRaw,
+		},
+		{
+			DeviceID: "device-1",
+			Key:      appBatterySnapshotKey,
+			T:        time.UnixMilli(3_000),
+			StringV:  &reportedRaw,
+		},
+		{
+			DeviceID: "device-1",
+			Key:      "soc",
+			T:        time.UnixMilli(4_000),
+			NumberV:  &currentSoc,
+		},
+	}
+
+	resp := buildAppBatteryCurrentTelemetryResp("device-1", 0, rows)
+	if resp.LastReportTs != 4_000 {
+		t.Fatalf("last report timestamp = %d, want 4000", resp.LastReportTs)
+	}
+	if resp.InteractiveSnapshotTs != 2_000 {
+		t.Fatalf("interactive snapshot timestamp = %d, want 2000", resp.InteractiveSnapshotTs)
+	}
+	energy := resp.InteractiveSnapshot["energy"].(map[string]interface{})
+	if energy["socPct"].(float64) != 91 {
+		t.Fatalf("interactive snapshot was mixed with ordinary current telemetry: %#v", resp.InteractiveSnapshot)
+	}
+	if _, exists := resp.Current[appBatteryMqttInteractiveSnapshotKey]; exists {
+		t.Fatal("interactive snapshot storage key must not leak into ordinary current telemetry map")
+	}
+	reportedEnergy := resp.Snapshot["energy"].(map[string]interface{})
+	if reportedEnergy["socPct"].(float64) != 10 {
+		t.Fatalf("reported snapshot should preserve existing current merge behavior: %#v", resp.Snapshot)
+	}
+}
+
+func setupAppBatteryInteractiveSnapshotTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := fmt.Sprintf("file:app-battery-interactive-%s?mode=memory&cache=shared", t.Name())
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE telemetry_current_datas (
+			device_id TEXT NOT NULL,
+			key TEXT NOT NULL,
+			ts DATETIME NOT NULL,
+			bool_v BOOLEAN,
+			number_v REAL,
+			string_v TEXT,
+			tenant_id TEXT,
+			UNIQUE(device_id, key)
+		)
+	`).Error; err != nil {
+		t.Fatalf("create telemetry current table failed: %v", err)
+	}
+
+	oldDB := global.DB
+	global.DB = db
+	query.SetDefault(db)
+	t.Cleanup(func() {
+		global.DB = oldDB
+		if oldDB != nil {
+			query.SetDefault(oldDB)
+		}
+	})
+	return db
+}
+
+func TestSaveAppBatteryMqttInteractiveSnapshotUsesMonotonicCurrentUpsert(t *testing.T) {
+	db := setupAppBatteryInteractiveSnapshotTestDB(t)
+	newerAt := time.UnixMilli(2_000).UTC()
+	if err := saveAppBatteryMqttInteractiveSnapshot(
+		context.Background(),
+		"device-1",
+		"tenant-1",
+		`{"energy":{"socPct":88}}`,
+		newerAt,
+	); err != nil {
+		t.Fatalf("save newer interactive snapshot failed: %v", err)
+	}
+	if err := saveAppBatteryMqttInteractiveSnapshot(
+		context.Background(),
+		"device-1",
+		"tenant-1",
+		`{"energy":{"socPct":20}}`,
+		time.UnixMilli(1_000).UTC(),
+	); err != nil {
+		t.Fatalf("save older interactive snapshot failed: %v", err)
+	}
+
+	var got model.TelemetryCurrentData
+	if err := db.Where("device_id = ? AND key = ?", "device-1", appBatteryMqttInteractiveSnapshotKey).First(&got).Error; err != nil {
+		t.Fatalf("query interactive snapshot failed: %v", err)
+	}
+	if got.T.UnixMilli() != newerAt.UnixMilli() {
+		t.Fatalf("interactive snapshot timestamp regressed to %d", got.T.UnixMilli())
+	}
+	if got.StringV == nil || !strings.Contains(*got.StringV, `"socPct":88`) {
+		t.Fatalf("interactive snapshot payload regressed: %#v", got.StringV)
 	}
 }

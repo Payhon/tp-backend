@@ -480,6 +480,32 @@ func (*AppBatteryApi) ReportBatteryData(c *gin.Context) {
 	c.Set("data", data)
 }
 
+// ReportBatteryInteractiveSnapshot APP端 MQTT 主动读取快照上报
+// @Summary APP端 MQTT 主动读取快照上报
+// @Description 4G设备通过当前 MQTT Socket owner/session 完整读取 BMS 状态后，上报原子快照供离线 fallback 使用
+// @Tags APP-Battery
+// @Accept json
+// @Produce json
+// @Param body body model.AppBatteryInteractiveSnapshotReq true "主动读取快照"
+// @Success 200 {object} model.AppBatteryInteractiveSnapshotResp
+// @Router /api/v1/app/battery/interactive-snapshot [post]
+func (*AppBatteryApi) ReportBatteryInteractiveSnapshot(c *gin.Context) {
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+
+	var req model.AppBatteryInteractiveSnapshotReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errcode.NewWithMessage(errcode.CodeParamError, "invalid request body"))
+		return
+	}
+
+	data, err := service.GroupApp.AppBattery.ReportBatteryInteractiveSnapshotForApp(context.Background(), req, userClaims)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // ReportBatteryConnectionStatus APP端蓝牙连接状态同步
 // @Summary APP端蓝牙连接状态同步
 // @Description 手机端蓝牙连接/断开时主动同步设备在线状态

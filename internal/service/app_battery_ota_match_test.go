@@ -138,7 +138,8 @@ func setupAppBatteryOtaCheckTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE battery_bms_models (
 			id varchar(36) PRIMARY KEY,
-			name varchar(200)
+			name varchar(200),
+			tenant_id varchar(36) NOT NULL
 		)`,
 		`CREATE TABLE ota_upgrade_packages (
 			id varchar(36) PRIMARY KEY,
@@ -206,5 +207,113 @@ func TestCheckBatteryOtaForAppSkipsDevicePermissionCheck(t *testing.T) {
 	}
 	if resp.PackageID == nil || *resp.PackageID != "pkg-1" {
 		t.Fatalf("expected pkg-1, got %#v", resp)
+	}
+}
+
+func TestCheckBatteryOtaForAppResolvesInstrumentUUIDConstraints(t *testing.T) {
+	db := setupAppBatteryOtaCheckTestDB(t)
+	if err := db.Exec(`INSERT INTO devices (id, tenant_id, current_version) VALUES ('dev-meter-bms', 'tenant-a', '8')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO battery_bms_models (id, name, tenant_id) VALUES ('model-a', 'FJ-BMS-A', 'tenant-a')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO device_batteries (device_id, battery_model_id, batch_number, item_uuid) VALUES ('dev-meter-bms', 'model-a', 'batch-a', 'AABBCCDDEEFF00112233445566778899')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Exec(
+		`INSERT INTO ota_upgrade_packages
+			(id, name, version, package_type, package_url, created_at, tenant_id, device_kind)
+		 VALUES ('generic', 'generic', '99', 2, 'generic.bin', ?, 'tenant-a', ?)`,
+		now.Add(time.Minute), model.OTADeviceKindBMS,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(
+		`INSERT INTO ota_upgrade_packages
+			(id, name, version, package_type, package_url, created_at, tenant_id, device_kind, battery_model_id, batch_number, item_uuid)
+		 VALUES ('specific', 'specific', '11', 2, 'specific.bin', ?, 'tenant-a', ?, 'model-a', 'batch-a', 'AABBCCDDEEFF00112233445566778899')`,
+		now, model.OTADeviceKindBMS,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	version := "10"
+	itemUUID := "aabbccddeeff00112233445566778899"
+	resp, err := new(AppBattery).CheckBatteryOtaForApp(context.Background(), model.AppBatteryOtaCheckReq{
+		Version:  &version,
+		ItemUUID: &itemUUID,
+	}, &utils.UserClaims{ID: "user-a", TenantID: "tenant-a"})
+	if err != nil {
+		t.Fatalf("check ota failed: %v", err)
+	}
+	if resp == nil || !resp.NeedUpgrade || resp.PackageID == nil || *resp.PackageID != "specific" {
+		t.Fatalf("expected UUID-resolved specific package, got %#v", resp)
+	}
+	if resp.DeviceID != "dev-meter-bms" {
+		t.Fatalf("expected resolved device id, got %#v", resp)
+	}
+}
+
+func TestCheckBatteryOtaForAppMatchesUnregisteredInstrumentUUID(t *testing.T) {
+	db := setupAppBatteryOtaCheckTestDB(t)
+	if err := db.Exec(
+		`INSERT INTO ota_upgrade_packages
+			(id, name, version, package_type, package_url, created_at, tenant_id, device_kind, item_uuid)
+		 VALUES ('uuid-only', 'uuid-only', '11', 2, 'uuid.bin', ?, 'tenant-a', ?, '00112233445566778899AABBCCDDEEFF')`,
+		time.Now(), model.OTADeviceKindBMS,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	version := "10"
+	itemUUID := "00112233445566778899aabbccddeeff"
+	resp, err := new(AppBattery).CheckBatteryOtaForApp(context.Background(), model.AppBatteryOtaCheckReq{
+		Version:  &version,
+		ItemUUID: &itemUUID,
+	}, &utils.UserClaims{ID: "user-a", TenantID: "tenant-a"})
+	if err != nil {
+		t.Fatalf("check ota failed: %v", err)
+	}
+	if resp == nil || !resp.NeedUpgrade || resp.PackageID == nil || *resp.PackageID != "uuid-only" {
+		t.Fatalf("expected UUID-only package, got %#v", resp)
+	}
+}
+
+func TestCheckBatteryOtaForAppFallsBackToTenantModelName(t *testing.T) {
+	db := setupAppBatteryOtaCheckTestDB(t)
+	if err := db.Exec(`INSERT INTO battery_bms_models (id, name, tenant_id) VALUES ('model-a', 'FJ-BMS-A', 'tenant-a'), ('model-b', 'FJ-BMS-A', 'tenant-b')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Exec(
+		`INSERT INTO ota_upgrade_packages
+			(id, name, version, package_type, package_url, created_at, tenant_id, device_kind, battery_model_id)
+		 VALUES ('tenant-model', 'tenant-model', '11', 2, 'model.bin', ?, 'tenant-a', ?, 'model-a')`,
+		now, model.OTADeviceKindBMS,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(
+		`INSERT INTO ota_upgrade_packages
+			(id, name, version, package_type, package_url, created_at, tenant_id, device_kind, battery_model_id)
+		 VALUES ('other-tenant', 'other-tenant', '99', 2, 'other.bin', ?, 'tenant-b', ?, 'model-b')`,
+		now.Add(time.Minute), model.OTADeviceKindBMS,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	version := "10"
+	modelName := "fj-bms-a"
+	resp, err := new(AppBattery).CheckBatteryOtaForApp(context.Background(), model.AppBatteryOtaCheckReq{
+		Version: &version,
+		Model:   &modelName,
+	}, &utils.UserClaims{ID: "user-a", TenantID: "tenant-a"})
+	if err != nil {
+		t.Fatalf("check ota failed: %v", err)
+	}
+	if resp == nil || !resp.NeedUpgrade || resp.PackageID == nil || *resp.PackageID != "tenant-model" {
+		t.Fatalf("expected current-tenant model package, got %#v", resp)
 	}
 }
