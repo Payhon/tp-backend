@@ -9,6 +9,7 @@
 1. 使用 `AppId + SecretKey` 完成第三方身份认证。
 2. 调用接口自动新增（或补全）电池档案。
 3. 按电池序列号（SN）查询电池详情。
+4. 批量将尚未投入使用的 BMS 板重新分配给目标 PACK 厂。
 
 ---
 
@@ -33,8 +34,8 @@
 
 | 环境 | 域名 | AppId | AppSecret |
 |---|---|---|---|
-| 生产环境 | `https://cloud.fjiaenergy.com` | `app_98f35a52466ffdbfa7694080` | `sk_f59a15163615dec34966babdc9ebc003abf42545d160a6c72ff7757a1ebcc891` |
-| 测试环境 | `http://fjbms.yz6688.cn` | `app_c346f4be2623ad9b4e493714` | `sk_8f24eb6acec313fba7e40c4e77ccab897e87e1bd7c0fbaff21b54d9be3e62041` |
+| 生产环境 | `https://cloud.fjiaenergy.com` | `app_xxx` | `sk_xxx` |
+| 测试环境 | `http://fjbms.yz6688.cn` | `app_test_xxx` | `sk_test_xxx` |
 
 ---
 
@@ -43,8 +44,8 @@
 所有 MES 开放接口都需要带以下请求头：
 
 ```http
-x-app-id: app_c346f4be2623ad9b4e493714
-x-secret-key: sk_8f24eb6acec313fba7e40c4e77ccab897e87e1bd7c0fbaff21b54d9be3e62041
+x-app-id: app_xxx
+x-secret-key: sk_xxx
 Content-Type: application/json
 ```
 
@@ -113,8 +114,8 @@ Content-Type: application/json
 ```bash
 curl -X POST "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery" \
   -H "Content-Type: application/json" \
-  -H "x-app-id: app_c346f4be2623ad9b4e493714" \
-  -H "x-secret-key: sk_8f24eb6acec313fba7e40c4e77ccab897e87e1bd7c0fbaff21b54d9be3e62041" \
+  -H "x-app-id: app_xxx" \
+  -H "x-secret-key: sk_xxx" \
   -d '{
     "item_uuid": "SN202603050001",
     "batch_number": "BATCH-20260305-A",
@@ -173,8 +174,8 @@ curl -X POST "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery" \
 
 ```bash
 curl -X GET "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery/SN202603050001" \
-  -H "x-app-id: app_c346f4be2623ad9b4e493714" \
-  -H "x-secret-key: sk_8f24eb6acec313fba7e40c4e77ccab897e87e1bd7c0fbaff21b54d9be3e62041"
+  -H "x-app-id: app_xxx" \
+  -H "x-secret-key: sk_xxx"
 ```
 
 ### 6.2 成功响应示例（节选）
@@ -203,7 +204,78 @@ curl -X GET "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery/SN202603050001" \
 
 ---
 
-## 7. 常见错误码与排查
+## 7. 接口三：批量重新分配 PACK 厂
+
+- Method：`POST`
+- URL：`/api/v1/openapi/mes/battery/reassign-pack-factory`
+- 用途：将尚未投入使用、当前属于 PACK 厂的 BMS 板批量重新分配给目标 PACK 厂。
+- 请求不包含原 PACK 厂名称，来源由平台根据当前归属自动确定。
+
+### 7.1 请求字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| serial_numbers | string[] | 是 | 电池序列号，1～500 条；Trim 后按首次出现去重 |
+| target_pack_factory_name | string | 是 | 目标 PACK 厂名称，租户内精确唯一匹配且机构状态正常 |
+| remark | string | 否 | 操作备注，最大 255 字符 |
+
+### 7.2 请求示例
+
+```bash
+curl -X POST "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery/reassign-pack-factory" \
+  -H "Content-Type: application/json" \
+  -H "x-app-id: app_xxx" \
+  -H "x-secret-key: sk_xxx" \
+  -d '{
+    "serial_numbers": ["SN202603050001", "SN202603050002"],
+    "target_pack_factory_name": "新PACK厂家",
+    "remark": "原PACK厂未启用，重新分配"
+  }'
+```
+
+### 7.3 响应示例
+
+```json
+{
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "request_id": "request-id",
+    "target_pack_factory_name": "新PACK厂家",
+    "total": 2,
+    "success": 1,
+    "unchanged": 0,
+    "failed": 1,
+    "results": [
+      {
+        "serial_number": "SN202603050001",
+        "status": "REASSIGNED",
+        "from_pack_factory_name": "原PACK厂家",
+        "to_pack_factory_name": "新PACK厂家"
+      },
+      {
+        "serial_number": "SN202603050002",
+        "status": "FAILED",
+        "to_pack_factory_name": "新PACK厂家",
+        "message": "设备已激活或激活状态异常，不能重新分配PACK厂"
+      }
+    ]
+  }
+}
+```
+
+### 7.4 行为说明
+
+- 状态为 `REASSIGNED`、`UNCHANGED`、`FAILED`。
+- 每台设备独立事务，单台失败不会回滚已经成功的其他设备。
+- 已完全属于目标 PACK 厂时返回 `UNCHANGED`，不会重复写转移记录，可安全重试。
+- 仅允许当前属于 PACK 厂、未激活、未绑定用户、未进入后续流转且未完成 PACK 信息补全的设备。
+- `owner_org_id` 与 `pack_factory_org_id` 数据不一致时拒绝自动修复。
+- 跨租户设备按不存在处理。
+
+---
+
+## 8. 常见错误码与排查
 
 | 场景 | HTTP | code | 说明 |
 |---|---:|---:|---|
@@ -221,7 +293,7 @@ curl -X GET "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery/SN202603050001" \
 
 ---
 
-## 8. 安全与联调建议
+## 9. 安全与联调建议
 
 - 仅在服务端保存 `SecretKey`，不要写入前端页面或客户端安装包。
 - 建议按系统/产线分配独立密钥，便于审计和失效管理。
@@ -230,10 +302,12 @@ curl -X GET "http://fjbms.yz6688.cn/api/v1/openapi/mes/battery/SN202603050001" \
 
 ---
 
-## 9. 快速联调清单
+## 10. 快速联调清单
 
 - [ ] 已从 `系统管理 -> API 密钥管理` 获取 `AppId/SecretKey`
 - [ ] 已使用正确的 URL 前缀：`/api/v1/openapi/mes`
 - [ ] 新增接口返回 `code=200`
 - [ ] 查询接口可按 SN 查到刚新增的电池数据
+- [ ] 重分配接口可返回逐台 `REASSIGNED/UNCHANGED/FAILED` 结果
+- [ ] 重复提交已成功 SN 返回 `UNCHANGED` 且不重复转移
 - [ ] 已完成异常场景验证（鉴权失败、参数错误、SN不存在）

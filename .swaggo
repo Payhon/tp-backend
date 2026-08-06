@@ -1,0 +1,3 @@
+// json.RawMessage is an arbitrary JSON value in public API payloads.
+replace encoding/json.RawMessage interface{}
+replace json.RawMessage interface{}
