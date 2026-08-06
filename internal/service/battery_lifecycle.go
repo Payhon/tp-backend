@@ -20,6 +20,36 @@ type factoryOutDeviceResult struct {
 	DeviceNumber string
 }
 
+type transferDeviceResult struct {
+	DeviceID     string
+	DeviceNumber string
+}
+
+func batchTransferFailureMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if codeErr, ok := err.(*errcode.Error); ok {
+		if codeErr.UseCustomMsg && codeErr.CustomMsg != "" {
+			return codeErr.CustomMsg
+		}
+		if data, ok := codeErr.Data.(map[string]interface{}); ok {
+			if message, ok := data["message"].(string); ok && message != "" {
+				return message
+			}
+		}
+		switch codeErr.Code {
+		case errcode.CodeDBError:
+			return "调拨失败，请稍后重试"
+		case errcode.CodeOpDenied, errcode.CodeNoPermission:
+			return "无权调拨该电池"
+		case errcode.CodeParamError:
+			return "调拨参数无效"
+		}
+	}
+	return err.Error()
+}
+
 type rollbackResolvedContext struct {
 	device      *model.Device
 	battery     *model.DeviceBattery
@@ -492,11 +522,10 @@ func (*Battery) FactoryRestoreBattery(ctx context.Context, req model.BatteryFact
 	})
 }
 
-// TransferBattery 电池调拨（组织转移）
-func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferReq, claims *utils.UserClaims, operatorOrgID string) error {
+func (*Battery) transferBatteryOnce(ctx context.Context, req model.BatteryTransferReq, claims *utils.UserClaims, operatorOrgID string) (*transferDeviceResult, error) {
 	targetOrg, err := getOrgByID(ctx, claims.TenantID, req.ToOrgID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var operatorOrgType string
@@ -505,14 +534,15 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 	} else {
 		operatorOrg, err := getOrgByID(ctx, claims.TenantID, operatorOrgID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		operatorOrgType = operatorOrg.OrgType
 	}
 
 	now := time.Now().UTC()
+	result := &transferDeviceResult{DeviceID: req.DeviceID}
 
-	return global.DB.Transaction(func(tx *gorm.DB) error {
+	err = global.DB.Transaction(func(tx *gorm.DB) error {
 		var device model.Device
 		if err := tx.Where("id = ? AND tenant_id = ?", req.DeviceID, claims.TenantID).First(&device).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -524,6 +554,7 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 				"sql_error": err.Error(),
 			})
 		}
+		result.DeviceNumber = device.DeviceNumber
 
 		var dbat model.DeviceBattery
 		if err := tx.Where("device_id = ?", device.ID).First(&dbat).Error; err != nil {
@@ -675,6 +706,55 @@ func (*Battery) TransferBattery(ctx context.Context, req model.BatteryTransferRe
 
 		return nil
 	})
+	return result, err
+}
+
+// TransferBattery 电池调拨（组织转移）
+func (b *Battery) TransferBattery(ctx context.Context, req model.BatteryTransferReq, claims *utils.UserClaims, operatorOrgID string) error {
+	_, err := b.transferBatteryOnce(ctx, req, claims, operatorOrgID)
+	return err
+}
+
+// BatchTransferBattery 电池批量调拨（逐台独立事务，允许部分成功）
+func (b *Battery) BatchTransferBattery(ctx context.Context, req model.BatteryBatchTransferReq, claims *utils.UserClaims, operatorOrgID string) (*model.BatteryBatchTransferResp, error) {
+	deviceIDs := make([]string, 0, len(req.DeviceIDs))
+	seen := make(map[string]struct{}, len(req.DeviceIDs))
+	for _, deviceID := range req.DeviceIDs {
+		if _, exists := seen[deviceID]; exists {
+			continue
+		}
+		seen[deviceID] = struct{}{}
+		deviceIDs = append(deviceIDs, deviceID)
+	}
+
+	resp := &model.BatteryBatchTransferResp{
+		Total:    len(deviceIDs),
+		Failures: make([]model.BatteryBatchTransferFailure, 0),
+	}
+
+	for _, deviceID := range deviceIDs {
+		result, err := b.transferBatteryOnce(ctx, model.BatteryTransferReq{
+			DeviceID: deviceID,
+			ToOrgID:  req.ToOrgID,
+			Remark:   req.Remark,
+		}, claims, operatorOrgID)
+		if err != nil {
+			deviceNumber := ""
+			if result != nil {
+				deviceNumber = result.DeviceNumber
+			}
+			resp.Failed++
+			resp.Failures = append(resp.Failures, model.BatteryBatchTransferFailure{
+				DeviceID:     deviceID,
+				DeviceNumber: deviceNumber,
+				Message:      batchTransferFailureMessage(err),
+			})
+			continue
+		}
+		resp.Success++
+	}
+
+	return resp, nil
 }
 
 // RollbackBattery 电池回退（按最近一次入库来源回退）

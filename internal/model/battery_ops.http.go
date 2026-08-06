@@ -136,6 +136,25 @@ type BatteryTransferReq struct {
 	Remark   *string `json:"remark"`
 }
 
+type BatteryBatchTransferReq struct {
+	DeviceIDs []string `json:"device_ids" binding:"required,min=1,dive,required"`
+	ToOrgID   string   `json:"to_org_id" binding:"required"`
+	Remark    *string  `json:"remark"`
+}
+
+type BatteryBatchTransferFailure struct {
+	DeviceID     string `json:"device_id"`
+	DeviceNumber string `json:"device_number"`
+	Message      string `json:"message"`
+}
+
+type BatteryBatchTransferResp struct {
+	Total    int                           `json:"total"`
+	Success  int                           `json:"success"`
+	Failed   int                           `json:"failed"`
+	Failures []BatteryBatchTransferFailure `json:"failures"`
+}
+
 // BatteryFactoryRestoreReq 电池恢复出厂（退回厂家库存）
 type BatteryFactoryRestoreReq struct {
 	DeviceID string  `json:"device_id" binding:"required"`

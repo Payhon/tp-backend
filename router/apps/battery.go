@@ -43,6 +43,7 @@ func (*Battery) InitBattery(Router *gin.RouterGroup) {
 		batteryApi.POST("/batch-factory-out", api.Controllers.BatteryApi.BatchFactoryOutBattery)
 		batteryApi.POST("/factory_restore", api.Controllers.BatteryApi.FactoryRestoreBattery)
 		batteryApi.POST("/transfer", api.Controllers.BatteryApi.TransferBattery)
+		batteryApi.POST("/batch-transfer", api.Controllers.BatteryApi.BatchTransferBattery)
 		batteryApi.GET("/rollback/preview", api.Controllers.BatteryApi.PreviewRollbackBattery)
 		batteryApi.POST("/rollback", api.Controllers.BatteryApi.RollbackBattery)
 		batteryApi.POST("/activate", api.Controllers.BatteryApi.ActivateBattery)

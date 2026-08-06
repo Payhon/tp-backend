@@ -431,6 +431,32 @@ func (*BatteryApi) TransferBattery(c *gin.Context) {
 	c.Set("data", map[string]interface{}{"message": "调拨成功"})
 }
 
+// BatchTransferBattery 批量电池调拨
+// @Summary 批量电池调拨
+// @Description BMS 电池管理-批量调拨（逐台校验，允许部分成功）
+// @Tags 电池管理
+// @Accept json
+// @Produce json
+// @Param body body model.BatteryBatchTransferReq true "请求参数"
+// @Success 200 {object} model.BatteryBatchTransferResp
+// @Router /api/v1/battery/batch-transfer [post]
+func (*BatteryApi) BatchTransferBattery(c *gin.Context) {
+	var req model.BatteryBatchTransferReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	orgID := middleware.GetOrgID(c)
+
+	data, err := service.GroupApp.Battery.BatchTransferBattery(context.Background(), req, userClaims, orgID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}
+
 // PreviewRollbackBattery 电池回退预览
 // @Summary 电池回退预览
 // @Description BMS 电池管理-回退前查询目标机构
