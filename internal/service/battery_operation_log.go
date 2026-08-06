@@ -2,30 +2,33 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"project/pkg/errcode"
 	global "project/pkg/global"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 // BatteryOperationType 运营日志操作类型（可扩展）
 const (
-	BatteryOpTypeCreate            = "CREATE"
-	BatteryOpTypeImport            = "IMPORT"
-	BatteryOpTypeFactoryOut        = "FACTORY_OUT"
-	BatteryOpTypeFactoryRestore    = "FACTORY_RESTORE"
-	BatteryOpTypeTransfer          = "TRANSFER"
-	BatteryOpTypeRollback          = "ROLLBACK"
-	BatteryOpTypeActivate          = "ACTIVATE"
-	BatteryOpTypeInfoComplete      = "INFO_COMPLETE"
-	BatteryOpTypeEditInfo          = "EDIT_INFO"
-	BatteryOpTypeDelete            = "DELETE"
-	BatteryOpTypeWarrantySubmit    = "WARRANTY_SUBMIT"
-	BatteryOpTypeWarrantyHandle    = "WARRANTY_HANDLE"
-	BatteryOpTypeMaintenanceSubmit = "MAINTENANCE_SUBMIT"
-	BatteryOpTypeMaintenanceHandle = "MAINTENANCE_HANDLE"
+	BatteryOpTypeCreate              = "CREATE"
+	BatteryOpTypeImport              = "IMPORT"
+	BatteryOpTypeFactoryOut          = "FACTORY_OUT"
+	BatteryOpTypeFactoryRestore      = "FACTORY_RESTORE"
+	BatteryOpTypePackFactoryReassign = "PACK_FACTORY_REASSIGN"
+	BatteryOpTypeTransfer            = "TRANSFER"
+	BatteryOpTypeRollback            = "ROLLBACK"
+	BatteryOpTypeActivate            = "ACTIVATE"
+	BatteryOpTypeInfoComplete        = "INFO_COMPLETE"
+	BatteryOpTypeEditInfo            = "EDIT_INFO"
+	BatteryOpTypeDelete              = "DELETE"
+	BatteryOpTypeWarrantySubmit      = "WARRANTY_SUBMIT"
+	BatteryOpTypeWarrantyHandle      = "WARRANTY_HANDLE"
+	BatteryOpTypeMaintenanceSubmit   = "MAINTENANCE_SUBMIT"
+	BatteryOpTypeMaintenanceHandle   = "MAINTENANCE_HANDLE"
 )
 
 type batteryOperationLogRow struct {
@@ -40,14 +43,14 @@ type batteryOperationLogRow struct {
 }
 
 type batteryOperationLogCreateRow struct {
-	TenantID      string    `gorm:"column:tenant_id"`
-	DeviceID      string    `gorm:"column:device_id"`
-	DeviceNumber  string    `gorm:"column:device_number"`
-	OperationType string    `gorm:"column:operation_type"`
-	OperatorID    *string   `gorm:"column:operator_id"`
-	Description   *string   `gorm:"column:description"`
-	Extra         any       `gorm:"column:extra"`
-	OccurredAt    time.Time `gorm:"column:occurred_at"`
+	TenantID      string         `gorm:"column:tenant_id"`
+	DeviceID      string         `gorm:"column:device_id"`
+	DeviceNumber  string         `gorm:"column:device_number"`
+	OperationType string         `gorm:"column:operation_type"`
+	OperatorID    *string        `gorm:"column:operator_id"`
+	Description   *string        `gorm:"column:description"`
+	Extra         datatypes.JSON `gorm:"column:extra"`
+	OccurredAt    time.Time      `gorm:"column:occurred_at"`
 }
 
 // CreateBatteryOperationLog 写入电池运营日志
@@ -63,6 +66,10 @@ func CreateBatteryOperationLogTx(tx *gorm.DB, tenantID, deviceID, deviceNumber, 
 }
 
 func createBatteryOperationLogWithDB(db *gorm.DB, tenantID, deviceID, deviceNumber, operationType string, operatorID *string, description *string, extra any) error {
+	extraJSON, err := marshalBatteryOperationLogExtra(extra)
+	if err != nil {
+		return err
+	}
 	row := batteryOperationLogCreateRow{
 		TenantID:      tenantID,
 		DeviceID:      deviceID,
@@ -70,10 +77,40 @@ func createBatteryOperationLogWithDB(db *gorm.DB, tenantID, deviceID, deviceNumb
 		OperationType: operationType,
 		OperatorID:    operatorID,
 		Description:   description,
-		Extra:         extra,
+		Extra:         extraJSON,
 		OccurredAt:    time.Now(),
 	}
 	return db.Table("battery_operation_logs").Create(&row).Error
+}
+
+func marshalBatteryOperationLogExtra(extra any) (datatypes.JSON, error) {
+	if extra == nil {
+		return datatypes.JSON([]byte(`{}`)), nil
+	}
+	switch value := extra.(type) {
+	case datatypes.JSON:
+		if len(value) == 0 {
+			return datatypes.JSON([]byte(`{}`)), nil
+		}
+		if !json.Valid(value) {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "battery operation log extra is not valid JSON")
+		}
+		return value, nil
+	case json.RawMessage:
+		if len(value) == 0 {
+			return datatypes.JSON([]byte(`{}`)), nil
+		}
+		if !json.Valid(value) {
+			return nil, errcode.NewWithMessage(errcode.CodeParamError, "battery operation log extra is not valid JSON")
+		}
+		return datatypes.JSON(value), nil
+	}
+
+	raw, err := json.Marshal(extra)
+	if err != nil {
+		return nil, errcode.WithData(errcode.CodeParamError, map[string]interface{}{"message": "battery operation log extra is not JSON serializable"})
+	}
+	return datatypes.JSON(raw), nil
 }
 
 // GetBatteryOperationLogList 查询运营日志列表（分页）

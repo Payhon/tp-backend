@@ -69,3 +69,37 @@ func (*OpenBatteryApi) GetBatteryBySerial(c *gin.Context) {
 
 	c.Set("data", data)
 }
+
+// ReassignPackFactory 第三方 MES 批量重新分配 PACK 厂
+// @Summary 第三方 MES 批量重新分配 PACK 厂
+// @Description 通过 x-app-id / x-secret-key 鉴权，按电池序列号批量将尚未投入使用的 BMS 板重新分配到目标 PACK 厂
+// @Tags OpenAPI-MES
+// @Accept json
+// @Produce json
+// @Param x-app-id header string true "AppId"
+// @Param x-secret-key header string true "SecretKey"
+// @Param body body model.MESPackFactoryReassignReq true "重新分配请求"
+// @Success 200 {object} model.MESPackFactoryReassignResp
+// @Router /api/v1/openapi/mes/battery/reassign-pack-factory [post]
+func (*OpenBatteryApi) ReassignPackFactory(c *gin.Context) {
+	var req model.MESPackFactoryReassignReq
+	if !BindAndValidate(c, &req) {
+		return
+	}
+
+	userClaims := c.MustGet("claims").(*utils.UserClaims)
+	openAPIKeyID, _ := c.Get("open_api_key_id")
+	openAPIKeyIDValue, _ := openAPIKeyID.(string)
+	data, err := service.GroupApp.Battery.ReassignPackFactoryForMES(
+		c.Request.Context(),
+		req,
+		userClaims,
+		openAPIKeyIDValue,
+		c.GetString("X-Request-ID"),
+	)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.Set("data", data)
+}

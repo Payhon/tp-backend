@@ -173,6 +173,7 @@ func RouterInit() *gin.Engine {
 			{
 				mesOpenAPI.POST("battery", controllers.OpenBatteryApi.CreateBattery)
 				mesOpenAPI.GET("battery/:serial_number", controllers.OpenBatteryApi.GetBatteryBySerial)
+				mesOpenAPI.POST("battery/reassign-pack-factory", controllers.OpenBatteryApi.ReassignPackFactory)
 			}
 			// 获取系统版本
 			v1.GET("sys_version", controllers.SystemApi.HandleSysVersion)
