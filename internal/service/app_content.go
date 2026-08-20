@@ -192,6 +192,44 @@ func getFirstAppByTenant(ctx context.Context, tenantID string) (*appRef, error) 
 	return &a, nil
 }
 
+// resolveRuntimeApp resolves the App entity used by APP content APIs.
+//
+// PACK mini programs already have an apps row whose appid is the WeChat AppID,
+// so the direct lookup remains the first choice. The legacy tenant-level
+// wx_mp_apps table has no apps foreign key, while the mini program sends its
+// real WeChat AppID. When that tenant-level AppID is recognized, reuse the
+// existing tenant default-app fallback so its published APP content remains
+// addressable without requiring a mini-program release.
+func resolveRuntimeApp(ctx context.Context, tenantID, runtimeAppID string) (*appRef, error) {
+	runtimeAppID = strings.TrimSpace(runtimeAppID)
+	if runtimeAppID == "" {
+		return getFirstAppByTenant(ctx, tenantID)
+	}
+
+	app, err := getAppByAppID(ctx, tenantID, runtimeAppID)
+	if err == nil {
+		return app, nil
+	}
+	if appErr, ok := err.(*errcode.Error); !ok || appErr.Code != errcode.CodeNotFound {
+		return nil, err
+	}
+
+	var tenantWxMpID string
+	if err := global.DB.WithContext(ctx).
+		Table("wx_mp_apps").
+		Select("id").
+		Where("tenant_id = ? AND appid = ?", tenantID, runtimeAppID).
+		Limit(1).
+		Scan(&tenantWxMpID).Error; err != nil {
+		return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+	}
+	if strings.TrimSpace(tenantWxMpID) == "" {
+		return nil, errcode.New(errcode.CodeNotFound)
+	}
+
+	return getFirstAppByTenant(ctx, tenantID)
+}
+
 func ensureAppOwned(ctx context.Context, tenantID, appID string) error {
 	var id string
 	if err := global.DB.WithContext(ctx).Table("apps").
@@ -222,19 +260,9 @@ func (*AppContent) GetPageForApp(ctx context.Context, tenantHeader, appid, conte
 	}
 	lang = normalizeLang(lang)
 
-	var (
-		app *appRef
-	)
-	if strings.TrimSpace(appid) != "" {
-		app, err = getAppByAppID(ctx, tenantID, appid)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		app, err = getFirstAppByTenant(ctx, tenantID)
-		if err != nil {
-			return nil, err
-		}
+	app, err := resolveRuntimeApp(ctx, tenantID, appid)
+	if err != nil {
+		return nil, err
 	}
 
 	type pageRow struct {
@@ -333,7 +361,7 @@ func (*AppContent) ListFaqsForApp(ctx context.Context, tenantHeader, appid, lang
 	}
 	lang = normalizeLang(lang)
 
-	app, err := getAppByAppID(ctx, tenantID, appid)
+	app, err := resolveRuntimeApp(ctx, tenantID, appid)
 	if err != nil {
 		return nil, err
 	}
@@ -1171,7 +1199,7 @@ func (*AppContent) CreateFeedbackForApp(ctx context.Context, claims *utils.UserC
 	// header 必须存在且与 token tenant 匹配；此处直接使用 claims.TenantID（router middleware 已校验一致性）
 	_ = tenantHeader
 
-	app, err := getAppByAppID(ctx, claims.TenantID, req.AppID)
+	app, err := resolveRuntimeApp(ctx, claims.TenantID, req.AppID)
 	if err != nil {
 		return "", err
 	}
@@ -1206,7 +1234,7 @@ func (*AppContent) ListMyFeedbackForApp(ctx context.Context, claims *utils.UserC
 		Where("tenant_id = ? AND user_id = ?", claims.TenantID, claims.ID)
 
 	if req.AppID != nil && strings.TrimSpace(*req.AppID) != "" {
-		app, err := getAppByAppID(ctx, claims.TenantID, *req.AppID)
+		app, err := resolveRuntimeApp(ctx, claims.TenantID, *req.AppID)
 		if err != nil {
 			return nil, err
 		}
