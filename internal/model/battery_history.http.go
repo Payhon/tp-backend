@@ -33,10 +33,11 @@ type BMSHistoryQueryReq struct {
 }
 
 type BMSHistoryWideColumn struct {
-	Key        string `json:"key"`
-	DataType   string `json:"data_type"`
-	Identifier string `json:"identifier"`
-	DataName   string `json:"data_name"`
+	Key         string `json:"key"`
+	DataType    string `json:"data_type"`
+	Identifier  string `json:"identifier"`
+	DataName    string `json:"data_name"`
+	DisplayName string `json:"display_name"`
 }
 
 type BMSHistoryQueryResp struct {

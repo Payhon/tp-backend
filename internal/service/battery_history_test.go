@@ -89,3 +89,59 @@ func TestIsBMSHistoryWideJSONValue(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatBMSHistoryWideDisplayName(t *testing.T) {
+	tests := []struct {
+		name       string
+		identifier string
+		dataName   string
+		want       string
+	}{
+		{
+			name:       "known identifier",
+			identifier: "totalVoltageMv",
+			dataName:   "",
+			want:       "总电压(mV) / Total Voltage (mV) (totalVoltageMv)",
+		},
+		{
+			name:       "chinese model name",
+			identifier: "currentA",
+			dataName:   "工作电流",
+			want:       "工作电流 / currentA",
+		},
+		{
+			name:       "english model name",
+			identifier: "currentA",
+			dataName:   "Current",
+			want:       "电流(A) / Current (currentA)",
+		},
+		{
+			name:       "missing model name",
+			identifier: "packCellSumVoltageV",
+			dataName:   "",
+			want:       "Pack单体总电压(V) / packCellSumVoltageV",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatBMSHistoryWideDisplayName(tt.identifier, tt.dataName); got != tt.want {
+				t.Fatalf("formatBMSHistoryWideDisplayName(%q, %q) = %q, want %q", tt.identifier, tt.dataName, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatBMSHistoryDataType(t *testing.T) {
+	tests := map[string]string{
+		"attribute": "属性 / Attribute",
+		"telemetry": "遥测 / Telemetry",
+		"unknown":   "unknown",
+		"":          "-",
+	}
+	for input, want := range tests {
+		if got := formatBMSHistoryDataType(input); got != want {
+			t.Fatalf("formatBMSHistoryDataType(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

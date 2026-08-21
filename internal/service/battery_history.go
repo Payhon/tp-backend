@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"project/internal/model"
 	query "project/internal/query"
@@ -56,6 +58,48 @@ type bmsHistoryWideValueRow struct {
 	DataType       string `gorm:"column:data_type"`
 	DataIdentifier string `gorm:"column:data_identifier"`
 	Value          string `gorm:"column:value"`
+}
+
+type bmsHistoryBilingualLabel struct {
+	Chinese string
+	English string
+}
+
+var bmsHistoryKnownLabels = map[string]bmsHistoryBilingualLabel{
+	"cycleCount":           {Chinese: "循环次数", English: "Cycle Count"},
+	"faultCount":           {Chinese: "故障数量", English: "Fault Count"},
+	"charging":             {Chinese: "充电状态", English: "Charging Status"},
+	"discharging":          {Chinese: "放电状态", English: "Discharging Status"},
+	"chargeFetOn":          {Chinese: "充电MOS状态", English: "Charge MOS Status"},
+	"dischargeFetOn":       {Chinese: "放电MOS状态", English: "Discharge MOS Status"},
+	"chargeMosC":           {Chinese: "充电MOS温度(°C)", English: "Charge MOS Temperature (°C)"},
+	"dischargeMosC":        {Chinese: "放电MOS温度(°C)", English: "Discharge MOS Temperature (°C)"},
+	"highestCellVoltageMv": {Chinese: "最高单体电压(mV)", English: "Max Cell Voltage (mV)"},
+	"lowestCellVoltageMv":  {Chinese: "最低单体电压(mV)", English: "Min Cell Voltage (mV)"},
+	"avgCellVoltageMv":     {Chinese: "平均单体电压(mV)", English: "Average Cell Voltage (mV)"},
+	"totalVoltageMv":       {Chinese: "总电压(mV)", English: "Total Voltage (mV)"},
+	"totalCurrentMa":       {Chinese: "总电流(mA)", English: "Total Current (mA)"},
+	"remainCapacityMah":    {Chinese: "剩余容量(mAh)", English: "Remaining Capacity (mAh)"},
+	"nominalCapacityMah":   {Chinese: "额定容量(mAh)", English: "Rated Capacity (mAh)"},
+	"soc":                  {Chinese: "SOC(%)", English: "State of Charge (%)"},
+	"soh":                  {Chinese: "SOH(%)", English: "State of Health (%)"},
+}
+
+var bmsHistoryChineseTokens = map[string]string{
+	"highest": "最高", "lowest": "最低", "avg": "平均", "average": "平均",
+	"max": "最大", "min": "最小", "cell": "单体", "total": "总",
+	"pack": "Pack", "sum": "总", "bms": "BMS",
+	"remain": "剩余", "remaining": "剩余", "nominal": "额定", "voltage": "电压",
+	"current": "电流", "capacity": "容量", "count": "数量", "status": "状态",
+	"fault": "故障", "charge": "充电", "discharge": "放电", "charging": "充电",
+	"discharging": "放电", "mos": "MOS", "fet": "MOS", "temp": "温度",
+	"temperature": "温度", "cycle": "循环", "balance": "均衡", "protection": "保护",
+	"alarm": "告警", "state": "状态", "power": "功率", "energy": "能量",
+	"percentage": "百分比",
+}
+
+var bmsHistoryUnits = map[string]string{
+	"mv": "mV", "ma": "mA", "mah": "mAh", "ah": "Ah", "v": "V", "a": "A", "c": "°C", "pct": "%", "percent": "%",
 }
 
 type bmsHistoryDeviceOptionRow struct {
@@ -208,6 +252,132 @@ func buildBMSHistoryMergedArgs(templateID, deviceID, tenantID string, startTime,
 func buildBMSHistoryWideColumnKey(dataType, identifier string) string {
 	return dataType + "__" + identifier
 }
+
+func splitBMSHistoryIdentifier(identifier string) []string {
+	parts := strings.Fields(strings.NewReplacer("_", " ", ".", " ", "/", " ", "-", " ").Replace(strings.TrimSpace(identifier)))
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		result = append(result, splitBMSHistoryCamelCase(part)...)
+	}
+	return result
+}
+
+func splitBMSHistoryCamelCase(identifier string) []string {
+	parts := make([]string, 0)
+	current := make([]rune, 0)
+	for _, char := range identifier {
+		if unicode.IsUpper(char) && len(current) > 0 {
+			parts = append(parts, string(current))
+			current = current[:0]
+		}
+		current = append(current, char)
+	}
+	if len(current) > 0 {
+		parts = append(parts, string(current))
+	}
+	return parts
+}
+
+func translateBMSHistoryIdentifier(identifier string) string {
+	raw := strings.TrimSpace(identifier)
+	if raw == "" {
+		return ""
+	}
+	if label, ok := bmsHistoryKnownLabels[raw]; ok {
+		return label.Chinese
+	}
+
+	parts := splitBMSHistoryIdentifier(raw)
+	if len(parts) == 0 {
+		return raw
+	}
+
+	translated := make([]string, 0, len(parts))
+	matched := false
+	for _, part := range parts {
+		key := strings.ToLower(strings.TrimSpace(part))
+		if unit, ok := bmsHistoryUnits[key]; ok {
+			translated = append(translated, "("+unit+")")
+			matched = true
+			continue
+		}
+		if token, ok := bmsHistoryChineseTokens[key]; ok {
+			translated = append(translated, token)
+			matched = true
+			continue
+		}
+		if _, err := strconv.Atoi(key); err == nil {
+			translated = append(translated, part)
+			continue
+		}
+		translated = append(translated, part)
+	}
+	if !matched {
+		return raw
+	}
+	return strings.Join(translated, "")
+}
+
+func hasBMSHistoryChineseText(value string) bool {
+	for _, char := range value {
+		if unicode.Is(unicode.Han, char) {
+			return true
+		}
+	}
+	return false
+}
+
+func formatBMSHistoryWideDisplayName(identifier, dataName string) string {
+	rawIdentifier := strings.TrimSpace(identifier)
+	name := strings.TrimSpace(dataName)
+	if label, ok := bmsHistoryKnownLabels[rawIdentifier]; ok {
+		return fmt.Sprintf("%s / %s (%s)", label.Chinese, label.English, rawIdentifier)
+	}
+
+	zhName := translateBMSHistoryIdentifier(rawIdentifier)
+	enName := rawIdentifier
+	if hasBMSHistoryChineseText(name) {
+		zhName = name
+	} else if name != "" {
+		enName = name
+	}
+	if zhName == "" {
+		zhName = rawIdentifier
+	}
+	if enName == "" {
+		enName = rawIdentifier
+	}
+	if zhName == enName {
+		return zhName
+	}
+	if rawIdentifier == enName || rawIdentifier == zhName {
+		return fmt.Sprintf("%s / %s", zhName, enName)
+	}
+	return fmt.Sprintf("%s / %s (%s)", zhName, enName, rawIdentifier)
+}
+
+func formatBMSHistoryDataType(dataType string) string {
+	switch strings.ToLower(strings.TrimSpace(dataType)) {
+	case "attribute":
+		return "属性 / Attribute"
+	case "telemetry":
+		return "遥测 / Telemetry"
+	default:
+		value := strings.TrimSpace(dataType)
+		if value == "" {
+			return "-"
+		}
+		return value
+	}
+}
+
+const (
+	bmsHistoryHeaderTime       = "时间 / Time"
+	bmsHistoryHeaderDataType   = "数据类型 / Data Type"
+	bmsHistoryHeaderIdentifier = "标识符 / Identifier"
+	bmsHistoryHeaderDataName   = "数据名称 / Data Name"
+	bmsHistoryHeaderValue      = "值 / Value"
+)
 
 var bmsHistoryWideExcludedIdentifiers = map[string]struct{}{
 	"balancingOn":  {},
@@ -440,10 +610,11 @@ func queryBMSWideHistory(ctx context.Context, req model.BMSHistoryQueryReq, clai
 	columns := make([]model.BMSHistoryWideColumn, 0, len(columnRows))
 	for _, row := range columnRows {
 		columns = append(columns, model.BMSHistoryWideColumn{
-			Key:        buildBMSHistoryWideColumnKey(row.DataType, row.DataIdentifier),
-			DataType:   row.DataType,
-			Identifier: row.DataIdentifier,
-			DataName:   row.DataName,
+			Key:         buildBMSHistoryWideColumnKey(row.DataType, row.DataIdentifier),
+			DataType:    row.DataType,
+			Identifier:  row.DataIdentifier,
+			DataName:    row.DataName,
+			DisplayName: formatBMSHistoryWideDisplayName(row.DataIdentifier, row.DataName),
 		})
 	}
 
@@ -704,16 +875,16 @@ func exportBMSHistoryLongExcel(ctx context.Context, filePath, templateID string,
 
 	f := excelize.NewFile()
 	sheet := "Sheet1"
-	f.SetCellValue(sheet, "A1", "时间")
-	f.SetCellValue(sheet, "B1", "数据类型")
-	f.SetCellValue(sheet, "C1", "标识符")
-	f.SetCellValue(sheet, "D1", "数据名称")
-	f.SetCellValue(sheet, "E1", "数值")
+	f.SetCellValue(sheet, "A1", bmsHistoryHeaderTime)
+	f.SetCellValue(sheet, "B1", bmsHistoryHeaderDataType)
+	f.SetCellValue(sheet, "C1", bmsHistoryHeaderIdentifier)
+	f.SetCellValue(sheet, "D1", bmsHistoryHeaderDataName)
+	f.SetCellValue(sheet, "E1", bmsHistoryHeaderValue)
 
 	for i, row := range rows {
 		idx := i + 2
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", idx), formatBMSHistoryTime(row.TSMs))
-		f.SetCellValue(sheet, fmt.Sprintf("B%d", idx), row.DataType)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", idx), formatBMSHistoryDataType(row.DataType))
 		f.SetCellValue(sheet, fmt.Sprintf("C%d", idx), row.DataIdentifier)
 		f.SetCellValue(sheet, fmt.Sprintf("D%d", idx), row.DataName)
 		f.SetCellValue(sheet, fmt.Sprintf("E%d", idx), row.Value)
@@ -775,15 +946,11 @@ func exportBMSHistoryWideExcel(ctx context.Context, filePath, templateID string,
 
 	f := excelize.NewFile()
 	sheet := "Sheet1"
-	f.SetCellValue(sheet, "A1", "时间")
+	f.SetCellValue(sheet, "A1", bmsHistoryHeaderTime)
 	for i, col := range columnRows {
 		colIndex := i + 2
 		cellName, _ := excelize.CoordinatesToCellName(colIndex, 1)
-		header := col.DataIdentifier
-		if strings.TrimSpace(col.DataName) != "" {
-			header = fmt.Sprintf("%s(%s)", col.DataName, col.DataIdentifier)
-		}
-		f.SetCellValue(sheet, cellName, header)
+		f.SetCellValue(sheet, cellName, formatBMSHistoryWideDisplayName(col.DataIdentifier, col.DataName))
 	}
 
 	for rowIdx, ts := range timeOrder {
