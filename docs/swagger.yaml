@@ -396,6 +396,8 @@ definitions:
         type: string
       identity_ble_mac:
         type: string
+      imei:
+        type: string
       is_online:
         type: integer
       item_uuid:
@@ -4169,7 +4171,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: APP端设备详情页使用：从 devices + device_batteries 查询基础信息（含 ble_mac/item_uuid/comm_chip_id）
+      description: APP端设备详情页使用：从 devices + device_batteries 查询基础信息（含 ble_mac/item_uuid/comm_chip_id/imei）
       parameters:
       - description: 设备ID(UUID)
         in: path

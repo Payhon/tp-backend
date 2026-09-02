@@ -47,6 +47,7 @@ func setupDeviceLastConnectedTestDB(t *testing.T) *gorm.DB {
 			ble_mac TEXT,
 			identity_ble_mac TEXT,
 			comm_chip_id TEXT,
+			imei TEXT,
 			production_date DATETIME,
 			warranty_expire_date DATETIME,
 			soc REAL,

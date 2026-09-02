@@ -43,6 +43,7 @@ type appBatteryDetailRow struct {
 	BleMac             *string    `gorm:"column:ble_mac"`
 	IdentityBleMac     *string    `gorm:"column:identity_ble_mac"`
 	CommChipID         *string    `gorm:"column:comm_chip_id"`
+	Imei               *string    `gorm:"column:imei"`
 	ProductionDate     *time.Time `gorm:"column:production_date"`
 	WarrantyExpireDate *time.Time `gorm:"column:warranty_expire_date"`
 
@@ -261,6 +262,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 			dbat.ble_mac AS ble_mac,
 			dbat.identity_ble_mac AS identity_ble_mac,
 			dbat.comm_chip_id AS comm_chip_id,
+			dbat.imei AS imei,
 			dbat.production_date AS production_date,
 			dbat.warranty_expire_date AS warranty_expire_date,
 			dbat.soc AS soc,
@@ -308,6 +310,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 		BleMac:             row.BleMac,
 		IdentityBleMac:     row.IdentityBleMac,
 		CommChipID:         row.CommChipID,
+		Imei:               row.Imei,
 		ProductionDate:     productionDate,
 		WarrantyExpireDate: warrantyExpireDate,
 		Soc:                row.Soc,

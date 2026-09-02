@@ -986,7 +986,7 @@ const docTemplate = `{
         },
         "/api/v1/app/battery/detail/{device_id}": {
             "get": {
-                "description": "APP端设备详情页使用：从 devices + device_batteries 查询基础信息（含 ble_mac/item_uuid/comm_chip_id）",
+                "description": "APP端设备详情页使用：从 devices + device_batteries 查询基础信息（含 ble_mac/item_uuid/comm_chip_id/imei）",
                 "consumes": [
                     "application/json"
                 ],
@@ -7288,6 +7288,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "identity_ble_mac": {
+                    "type": "string"
+                },
+                "imei": {
                     "type": "string"
                 },
                 "is_online": {

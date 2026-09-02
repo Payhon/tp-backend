@@ -19,6 +19,7 @@ type AppBatteryDetailResp struct {
 	BleMac             *string  `json:"ble_mac"`
 	IdentityBleMac     *string  `json:"identity_ble_mac"`
 	CommChipID         *string  `json:"comm_chip_id"`
+	Imei               *string  `json:"imei"`
 	ProductionDate     *string  `json:"production_date"`
 	WarrantyExpireDate *string  `json:"warranty_expire_date"`
 	Soc                *float64 `json:"soc"`

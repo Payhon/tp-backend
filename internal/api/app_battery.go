@@ -348,7 +348,7 @@ func (trace *socketBootSessionTrace) observeAck(fields logrus.Fields, info socke
 
 // GetBatteryDetail 获取APP端电池设备详情
 // @Summary 获取电池设备详情(APP)
-// @Description APP端设备详情页使用：从 devices + device_batteries 查询基础信息（含 ble_mac/item_uuid/comm_chip_id）
+// @Description APP端设备详情页使用：从 devices + device_batteries 查询基础信息（含 ble_mac/item_uuid/comm_chip_id/imei）
 // @Tags APP-Battery
 // @Accept json
 // @Produce json
