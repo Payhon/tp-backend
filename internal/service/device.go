@@ -206,7 +206,7 @@ func (*Device) CreateDeviceBatch(req model.BatchCreateDeviceReq, claims *utils.U
 	return deviceList, err
 }
 
-func (*Device) UpdateDevice(req model.UpdateDeviceReq, _ *utils.UserClaims) (*model.Device, error) {
+func (*Device) UpdateDevice(req model.UpdateDeviceReq, claims *utils.UserClaims) (*model.Device, error) {
 	// 获取设备原信息
 	var oldDevice *model.Device
 	var err error
@@ -235,6 +235,37 @@ func (*Device) UpdateDevice(req model.UpdateDeviceReq, _ *utils.UserClaims) (*mo
 		}
 	} else {
 		return nil, errcode.New(204003) // 设备不存在
+	}
+
+	// 兼容已安装移动端的改名请求：终端用户修改自己的绑定名称，不改设备档案名称。
+	if claims != nil && claims.ID != "" && claims.TenantID != "" && !isAdminClaims(claims) {
+		userKind, err := GroupApp.OrgTypePermission.GetUserKind(context.Background(), claims.TenantID, claims.ID)
+		if err != nil {
+			return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
+		}
+		if userKind == model.UserKindEndUser {
+			if req.Id == "EMPTY" || req.Name == nil || len(StructToMap(req)) != 2 || oldDevice.TenantID != claims.TenantID {
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+			name := strings.TrimSpace(*req.Name)
+			var customName interface{} = name
+			if name == "" {
+				customName = nil
+			}
+			result := global.DB.Table("device_user_bindings").
+				Where("user_id = ? AND device_id = ?", claims.ID, req.Id).
+				Update("custom_name", customName)
+			if result.Error != nil {
+				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": result.Error.Error()})
+			}
+			if result.RowsAffected == 0 {
+				return nil, errcode.New(errcode.CodeNoPermission)
+			}
+			if name != "" {
+				oldDevice.Name = &name
+			}
+			return oldDevice, nil
+		}
 	}
 
 	// 如果req.DeviceNumber被修改，需要校验req.DeviceNumber是否系统唯一

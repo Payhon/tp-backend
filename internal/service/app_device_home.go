@@ -259,9 +259,9 @@ func addAccessibleOrgWhere(base string, args *[]interface{}, claims *utils.UserC
 	return base
 }
 
-func addDeviceFilters(base string, args *[]interface{}, req model.DeviceUserBindingListReq, allowName bool) string {
-	if allowName && trimPtr(req.DeviceName) != "" {
-		base += " AND d.name ILIKE ?"
+func addDeviceFilters(base string, args *[]interface{}, req model.DeviceUserBindingListReq, nameExpr string) string {
+	if nameExpr != "" && trimPtr(req.DeviceName) != "" {
+		base += " AND " + nameExpr + " ILIKE ?"
 		*args = append(*args, "%"+trimPtr(req.DeviceName)+"%")
 	}
 	if trimPtr(req.DeviceNumber) != "" {
@@ -286,7 +286,7 @@ func (*DeviceBinding) listSelfBoundDevices(ctx context.Context, req model.Device
 
 	baseWhere := "dub.user_id = ? AND d.tenant_id = ?"
 	args := []interface{}{targetUserID, claims.TenantID}
-	baseWhere = addDeviceFilters(baseWhere, &args, req, true)
+	baseWhere = addDeviceFilters(baseWhere, &args, req, "COALESCE(NULLIF(TRIM(dub.custom_name), ''), NULLIF(TRIM(d.name), ''), d.device_number)")
 
 	countSQL := `
 SELECT COUNT(1)
@@ -310,7 +310,7 @@ SELECT
 	u.phone_number AS user_phone,
 	d.id AS device_id,
 	d.device_number AS device_number,
-	d.name AS device_name,
+	COALESCE(NULLIF(TRIM(dub.custom_name), ''), NULLIF(TRIM(d.name), ''), d.device_number) AS device_name,
 	dbat.ble_mac AS ble_mac,
 	COALESCE(NULLIF(dbat.iccid, ''), NULLIF(dbat.comm_chip_id, '')) AS iccid,
 	dbat.imei AS imei,
@@ -361,7 +361,7 @@ func (*DeviceBinding) listOrgAddedDevices(ctx context.Context, req model.DeviceU
 	}
 
 	baseWhere = addAccessibleOrgWhere(baseWhere, &args, claims, viewCtx, "dbat.owner_org_id")
-	baseWhere = addDeviceFilters(baseWhere, &args, req, false)
+	baseWhere = addDeviceFilters(baseWhere, &args, req, "")
 
 	countSQL := `
 SELECT COUNT(1)
@@ -417,7 +417,7 @@ func (*DeviceBinding) listOrgEndUserBoundDevices(ctx context.Context, req model.
 	baseWhere := "d.tenant_id = ? AND COALESCE(u.user_kind, 'END_USER') = 'END_USER'"
 	args := []interface{}{claims.TenantID}
 	baseWhere = addAccessibleOrgWhere(baseWhere, &args, claims, viewCtx, "dbat.owner_org_id")
-	baseWhere = addDeviceFilters(baseWhere, &args, req, true)
+	baseWhere = addDeviceFilters(baseWhere, &args, req, "COALESCE(NULLIF(TRIM(d.name), ''), d.device_number)")
 
 	withClause := `
 WITH latest_bind AS (

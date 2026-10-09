@@ -208,6 +208,7 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "claims is required")
 	}
 
+	var bindingName *string
 	// 终端用户默认要求绑定；管理员允许跨设备查看（仍受 tenant 约束）
 	isAdmin := strings.Contains(strings.ToUpper(claims.Authority), "ADMIN")
 	if !isAdmin {
@@ -228,17 +229,18 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 				return nil, errcode.New(errcode.CodeNoPermission)
 			}
 		} else {
-			q := query.Use(global.DB)
-			if _, err := q.DeviceUserBinding.WithContext(ctx).
-				Where(
-					q.DeviceUserBinding.DeviceID.Eq(deviceID),
-					q.DeviceUserBinding.UserID.Eq(claims.ID),
-				).First(); err != nil {
+			var binding struct{ CustomName *string }
+			err := global.DB.WithContext(ctx).Table("device_user_bindings").
+				Select("custom_name").
+				Where("device_id = ? AND user_id = ?", deviceID, claims.ID).
+				Take(&binding).Error
+			if err != nil {
 				if err == gorm.ErrRecordNotFound {
 					return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not bound to current user")
 				}
 				return nil, errcode.WithData(errcode.CodeDBError, map[string]interface{}{"sql_error": err.Error()})
 			}
+			bindingName = binding.CustomName
 		}
 	}
 
@@ -278,6 +280,12 @@ func (*AppBattery) GetBatteryDetailForApp(ctx context.Context, deviceID string, 
 	}
 	if row.DeviceID == "" {
 		return nil, errcode.NewWithMessage(errcode.CodeParamError, "device not found")
+	}
+	if bindingName != nil && strings.TrimSpace(*bindingName) != "" {
+		name := strings.TrimSpace(*bindingName)
+		row.DeviceName = &name
+	} else if row.DeviceName == nil || strings.TrimSpace(*row.DeviceName) == "" {
+		row.DeviceName = &row.DeviceNumber
 	}
 
 	var updatedAt *string
