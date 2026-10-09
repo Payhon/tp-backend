@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"project/internal/model"
+	"project/pkg/utils"
 )
 
 func TestNormalizeDeviceParamPermissionKeys(t *testing.T) {
@@ -51,6 +53,48 @@ func TestNormalizeDeviceParamPermissionKeys(t *testing.T) {
 			t.Fatalf("unexpected item at %d: got=%q want=%q (all=%v)", i, got[i], want[i], got)
 		}
 	}
+}
+
+func TestMobileProtectionStatusPermissionIsolation(t *testing.T) {
+	db := setupDeviceLastConnectedTestDB(t)
+	for _, statement := range []string{
+		`CREATE TABLE users (id TEXT PRIMARY KEY, tenant_id TEXT, user_kind TEXT, org_id TEXT)`,
+		`CREATE TABLE orgs (id TEXT PRIMARY KEY, tenant_id TEXT, org_type TEXT)`,
+		`CREATE TABLE org_type_permissions (tenant_id TEXT, org_type TEXT, ui_codes TEXT, device_param_permissions TEXT, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE sys_ui_elements (id TEXT PRIMARY KEY, parent_id TEXT, element_code TEXT, element_type INTEGER)`,
+		`INSERT INTO users VALUES ('end', 'tenant', 'END_USER', 'pack'), ('org', 'tenant', 'ORG_USER', 'pack')`,
+		`INSERT INTO orgs VALUES ('pack', 'tenant', 'PACK_FACTORY')`,
+		`INSERT INTO sys_ui_elements VALUES ('mobile', '0', 'app_mobile_permissions', 2), ('history', 'mobile', 'app_device_detail_history', 4), ('protection', 'mobile', 'app_device_detail_protection_status', 4), ('web', '0', 'unrelated_web_permission', 4)`,
+		`INSERT INTO org_type_permissions (tenant_id, org_type, ui_codes) VALUES ('tenant', 'APP_USER', '["app_device_detail_history","unrelated_web_permission"]'), ('tenant', 'PACK_FACTORY', '["app_device_detail_protection_status"]')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare permission test: %v", err)
+		}
+	}
+	check := func(userID, orgType, want string) {
+		t.Helper()
+		resp, err := new(OrgTypePermission).GetCurrentMobileUIPermissions(context.Background(), &utils.UserClaims{
+			ID: userID, TenantID: "tenant",
+		})
+		if err != nil {
+			t.Fatalf("read %s permissions: %v", userID, err)
+		}
+		if resp.AllowAll || resp.OrgType != orgType || strings.Join(resp.UICodes, ",") != want {
+			t.Fatalf("permissions for %s = %+v, want %s / %q", userID, resp, orgType, want)
+		}
+	}
+	check("end", "APP_USER", "app_device_detail_history")
+	check("org", "PACK_FACTORY", "app_device_detail_protection_status")
+	if err := db.Exec(`UPDATE org_type_permissions SET ui_codes = CASE org_type WHEN 'APP_USER' THEN '["app_device_detail_history","app_device_detail_protection_status"]' ELSE '[]' END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	check("end", "APP_USER", "app_device_detail_history,app_device_detail_protection_status")
+	check("org", "PACK_FACTORY", "")
+	if err := db.Exec(`DELETE FROM org_type_permissions`).Error; err != nil {
+		t.Fatal(err)
+	}
+	check("end", "APP_USER", "")
+	check("org", "PACK_FACTORY", "")
 }
 
 func TestBuildDeviceParamPermissionTreeUsesCanonicalKeys(t *testing.T) {
