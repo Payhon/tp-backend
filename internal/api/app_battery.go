@@ -613,7 +613,7 @@ func (*AppBatteryApi) ServeBatterySocketByWS(c *gin.Context) {
 	if !acquired {
 		writeControl(map[string]interface{}{
 			"type":           "socket_occupied",
-			"message":        "设备正在被其他账号实时连接",
+			"message":        "设备已由其他终端建立实时连接",
 			"retry_after_ms": 30000,
 		}, "device socket occupied")
 		return

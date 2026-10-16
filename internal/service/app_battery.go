@@ -933,6 +933,9 @@ func (*AppBattery) ReportBatteryInteractiveSnapshotForApp(
 	if err := saveAppBatteryMqttInteractiveSnapshot(ctx, deviceID, claims.TenantID, snapshotRaw, now); err != nil {
 		return nil, err
 	}
+	publishAppBatteryWSEvent(deviceID, claims.TenantID, map[string]interface{}{
+		appBatteryMqttInteractiveSnapshotKey: snapshotRaw,
+	})
 
 	logrus.WithFields(logrus.Fields{
 		"device_id":   deviceID,
